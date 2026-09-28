@@ -8,13 +8,13 @@ import {
   EmailLogItem,
   BatchEmployeeDraft
 } from './types';
-import { Header } from './components/Header';
+import { Header, AppTab } from './components/Header';
+import { LoginScreen } from './components/LoginScreen';
 import { DocumentUploader } from './components/DocumentUploader';
 import { ExtractedForm } from './components/ExtractedForm';
 import { NhanSuTable } from './components/NhanSuTable';
 import { TieuChuanLuongManager } from './components/TieuChuanLuongManager';
 import { EmailViewer } from './components/EmailViewerModal';
-import { AppsScriptView } from './components/AppsScriptView';
 import { Dashboard } from './components/Dashboard';
 import { SopProgressHeader } from './components/SopProgressHeader';
 import {
@@ -22,21 +22,34 @@ import {
   CheckCircle2,
   AlertTriangle,
   FileSpreadsheet,
-  Layers,
   ArrowRight,
   ShieldCheck,
-  Building,
-  Mail
+  UserCheck
 } from 'lucide-react';
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<UserProfile>({
-    email: 'Happyendpu@gmail.com',
-    name: 'HAPPYENDPU',
-    role: 'admin',
+  // Trạng thái phiên đăng nhập & thông tin người dùng
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    try {
+      const saved = localStorage.getItem('hr_current_user');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // ignore
+    }
+    return null;
   });
 
-  const [activeTab, setActiveTab] = useState<'upload' | 'records' | 'dashboard' | 'salary' | 'emails' | 'apps_script'>('upload');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      return Boolean(localStorage.getItem('hr_current_user'));
+    } catch {
+      return false;
+    }
+  });
+
+  const [activeTab, setActiveTab] = useState<AppTab>('upload');
   const [images, setImages] = useState<OptimizedImageFile[]>([]);
   const [extractedData, setExtractedData] = useState<GeminiExtractionResult | null>(null);
   const [batchEmployees, setBatchEmployees] = useState<BatchEmployeeDraft[]>([]);
@@ -54,24 +67,7 @@ export default function App() {
     setTimeout(() => setNotification(null), 5000);
   };
 
-  // Tải thông tin người dùng và phân quyền
-  const fetchUserData = async (email: string) => {
-    try {
-      const res = await fetch('/api/auth/me', {
-        headers: { 'x-user-email': email },
-      });
-      const data = await res.json();
-      setCurrentUser({
-        email: data.email,
-        name: data.name,
-        role: data.role,
-      });
-    } catch (err) {
-      console.error('Lỗi lấy thông tin user:', err);
-    }
-  };
-
-  // Lấy dữ liệu Tiêu chuẩn lương (Sheet "TieuChuanLuong")
+  // Tải dữ liệu Tiêu chuẩn lương (Sheet "TieuChuanLuong")
   const loadTieuChuanLuong = async () => {
     try {
       const res = await fetch('/api/sheets/tieu-chuan-luong');
@@ -114,22 +110,47 @@ export default function App() {
     }
   };
 
-  // Khởi tạo ban đầu
+  // Khởi tạo ban đầu khi người dùng đã đăng nhập
   useEffect(() => {
-    fetchUserData(currentUser.email);
-    loadTieuChuanLuong();
-    loadRecords(currentUser.email);
-    loadEmailLogs(currentUser.email);
-  }, []);
+    if (currentUser?.email) {
+      loadTieuChuanLuong();
+      loadRecords(currentUser.email);
+      loadEmailLogs(currentUser.email);
+    }
+  }, [currentUser?.email]);
 
-  // Đổi tài khoản người dùng
-  const handleChangeUser = (newEmail: string) => {
-    const cleanEmail = newEmail.toLowerCase().trim();
-    fetchUserData(cleanEmail);
-    loadRecords(cleanEmail);
-    loadEmailLogs(cleanEmail);
-    showNotification('success', `Đã chuyển sang tài khoản: ${cleanEmail}`);
+  // Xử lý khi đăng nhập thành công
+  const handleLoginSuccess = (user: UserProfile) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    localStorage.setItem('hr_current_user', JSON.stringify(user));
+    setActiveTab('upload');
+    loadTieuChuanLuong();
+    loadRecords(user.email);
+    loadEmailLogs(user.email);
+    showNotification('success', `Đăng nhập thành công: ${user.name} (${user.role === 'admin' ? 'Quản trị viên' : 'Nhân viên tuyển dụng'})`);
   };
+
+  // Xử lý khi đăng xuất
+  const handleLogout = () => {
+    localStorage.removeItem('hr_current_user');
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    setImages([]);
+    setExtractedData(null);
+    setBatchEmployees([]);
+    setCurrentSopStep(1);
+    showNotification('success', 'Đã đăng xuất khỏi hệ thống thành công.');
+  };
+
+  // Bảo vệ tab theo phân quyền: Nếu không phải Admin thì chỉ được ở tab upload hoặc records
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'admin') {
+      if (activeTab === 'dashboard' || activeTab === 'salary' || activeTab === 'emails') {
+        setActiveTab('upload');
+      }
+    }
+  }, [activeTab, currentUser]);
 
   // Gọi Gemini Multimodal AI trích xuất thông tin
   const handleExtractAI = async () => {
@@ -185,6 +206,7 @@ export default function App() {
 
   // Lưu hồ sơ vào Sheet "DanhSachNhanSu" và kích hoạt gửi email
   const handleSaveToSheet = async (formData: any): Promise<boolean> => {
+    if (!currentUser) return false;
     setIsSaving(true);
     try {
       const payload = {
@@ -230,6 +252,7 @@ export default function App() {
 
   // Lưu danh sách nhiều hồ sơ vào Sheet "DanhSachNhanSu" (Batch Mode)
   const handleSaveBatchToSheet = async (batchList: BatchEmployeeDraft[]): Promise<boolean> => {
+    if (!currentUser) return false;
     setIsSaving(true);
     try {
       const res = await fetch('/api/sheets/danh-sach-nhan-su/batch', {
@@ -270,8 +293,39 @@ export default function App() {
     }
   };
 
+  // Cập nhật/Sửa toàn bộ hồ sơ (Dành riêng cho Quản trị viên - Admin)
+  const handleEditRecord = async (updatedRecord: NhanSuRecord): Promise<boolean> => {
+    if (!currentUser) return false;
+    try {
+      const res = await fetch(`/api/sheets/danh-sach-nhan-su/${updatedRecord.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-email': currentUser.email,
+        },
+        body: JSON.stringify(updatedRecord),
+      });
+
+      const result = await res.json();
+      if (!res.ok || !result.success) {
+        throw new Error(result.error || 'Không thể cập nhật hồ sơ.');
+      }
+
+      showNotification(
+        'success',
+        `Quản trị viên đã cập nhật thành công hồ sơ của ${updatedRecord.hoVaTen}!`
+      );
+      await loadRecords(currentUser.email);
+      return true;
+    } catch (err) {
+      showNotification('error', (err as Error).message);
+      return false;
+    }
+  };
+
   // Lưu / Cập nhật tiêu chuẩn lương (Admin)
   const handleSaveStandard = async (item: Partial<TieuChuanLuongItem>) => {
+    if (!currentUser) return;
     try {
       const res = await fetch('/api/sheets/tieu-chuan-luong', {
         method: 'POST',
@@ -297,6 +351,7 @@ export default function App() {
 
   // Xóa tiêu chuẩn lương (Admin)
   const handleDeleteStandard = async (id: string) => {
+    if (!currentUser) return;
     try {
       const res = await fetch(`/api/sheets/tieu-chuan-luong/${id}`, {
         method: 'DELETE',
@@ -315,6 +370,7 @@ export default function App() {
 
   // Xóa hồ sơ (Admin)
   const handleDeleteRecord = async (id: string) => {
+    if (!currentUser) return;
     try {
       const res = await fetch(`/api/sheets/danh-sach-nhan-su/${id}`, {
         method: 'DELETE',
@@ -331,12 +387,19 @@ export default function App() {
     }
   };
 
+  // NẾU CHƯA ĐĂNG NHẬP: Hiển thị Màn Hình Đăng Nhập chuyên dụng
+  if (!isAuthenticated || !currentUser) {
+    return <LoginScreen onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  const isAdmin = currentUser.role === 'admin';
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       {/* Header Bar */}
       <Header
         currentUser={currentUser}
-        onChangeUser={handleChangeUser}
+        onLogout={handleLogout}
         activeTab={activeTab}
         onTabChange={setActiveTab}
         recordsCount={records.length}
@@ -366,6 +429,34 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
         {activeTab === 'upload' && (
           <div className="space-y-6">
+            {/* Banner hiển thị vai trò */}
+            <div
+              className={`p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
+                isAdmin
+                  ? 'bg-purple-50/80 border-purple-200 text-purple-900'
+                  : 'bg-sky-50/80 border-sky-200 text-sky-900'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {isAdmin ? (
+                  <ShieldCheck className="w-4 h-4 text-purple-600 shrink-0" />
+                ) : (
+                  <UserCheck className="w-4 h-4 text-sky-600 shrink-0" />
+                )}
+                <span>
+                  {isAdmin ? (
+                    <>
+                      <strong>Quản trị viên (Admin):</strong> Bạn có toàn quyền xem, sửa, xóa tất cả hồ sơ, cập nhật bảng lương tiêu chuẩn và xem Dashboard.
+                    </>
+                  ) : (
+                    <>
+                      <strong>Nhân viên tuyển dụng:</strong> Bạn đang ở giao diện chuyên biệt để thực hiện tiếp nhận, quét AI, nhập và điền thông tin hồ sơ ứng viên.
+                    </>
+                  )}
+                </span>
+              </div>
+            </div>
+
             {/* Thanh tiến trình SOP 4 Bước */}
             <SopProgressHeader
               currentStep={currentSopStep}
@@ -392,7 +483,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setCurrentSopStep(2)}
-                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition flex items-center gap-1.5"
+                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <span>Tiếp tục xử lý Bước 2 (Form Chuẩn)</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -508,16 +599,20 @@ export default function App() {
           </div>
         )}
 
+        {/* Tab Bảng hồ sơ nhân sự (Sheet DanhSachNhanSu) */}
         {activeTab === 'records' && (
           <NhanSuTable
             records={records}
             currentUser={currentUser}
             onRefresh={() => loadRecords(currentUser.email)}
-            onDeleteRecord={currentUser.role === 'admin' ? handleDeleteRecord : undefined}
+            onDeleteRecord={isAdmin ? handleDeleteRecord : undefined}
+            onEditRecord={isAdmin ? handleEditRecord : undefined}
+            tieuChuanLuongList={tieuChuanLuong}
           />
         )}
 
-        {activeTab === 'dashboard' && (
+        {/* CÁC TAB CHỈ QUẢN TRỊ VIÊN MỚI TRUY CẬP ĐƯỢC */}
+        {isAdmin && activeTab === 'dashboard' && (
           <Dashboard
             records={records}
             currentUser={currentUser}
@@ -525,7 +620,7 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'salary' && (
+        {isAdmin && activeTab === 'salary' && (
           <TieuChuanLuongManager
             standards={tieuChuanLuong}
             currentUser={currentUser}
@@ -534,16 +629,12 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'emails' && (
+        {isAdmin && activeTab === 'emails' && (
           <EmailViewer
             emailLogs={emailLogs}
             userEmail={currentUser.email}
-            isAdmin={currentUser.role === 'admin'}
+            isAdmin={true}
           />
-        )}
-
-        {activeTab === 'apps_script' && (
-          <AppsScriptView />
         )}
       </main>
 
@@ -554,7 +645,10 @@ export default function App() {
             Hệ thống Nhập liệu Hồ sơ Nhân sự AI &bull; Google Sheets + Gemini Vision + MailApp
           </span>
           <span className="font-mono text-[11px] text-slate-400">
-            Tài khoản hiện tại: {currentUser.email} ({currentUser.role.toUpperCase()})
+            Tài khoản: {currentUser.email} &bull; Vai trò:{' '}
+            <strong className={isAdmin ? 'text-purple-700' : 'text-sky-700'}>
+              {isAdmin ? 'QUẢN TRỊ VIÊN' : 'NHÂN VIÊN TUYỂN DỤNG'}
+            </strong>
           </span>
         </div>
       </footer>

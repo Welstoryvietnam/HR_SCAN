@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { NhanSuRecord, UserProfile } from '../types';
+import { NhanSuRecord, UserProfile, TieuChuanLuongItem } from '../types';
 import { generateExcel43Columns } from '../utils/excelExport';
+import { EditRecordModal } from './EditRecordModal';
 import {
   Download,
   Search,
@@ -20,7 +21,8 @@ import {
   Network,
   ChevronRight,
   Layers,
-  Briefcase
+  Briefcase,
+  Pencil
 } from 'lucide-react';
 
 interface NhanSuTableProps {
@@ -28,6 +30,8 @@ interface NhanSuTableProps {
   currentUser: UserProfile;
   onRefresh: () => void;
   onDeleteRecord?: (id: string) => Promise<void>;
+  onEditRecord?: (updatedRecord: NhanSuRecord) => Promise<boolean>;
+  tieuChuanLuongList?: TieuChuanLuongItem[];
 }
 
 export const NhanSuTable: React.FC<NhanSuTableProps> = ({
@@ -35,10 +39,13 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
   currentUser,
   onRefresh,
   onDeleteRecord,
+  onEditRecord,
+  tieuChuanLuongList = [],
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedKhoiFilter, setSelectedKhoiFilter] = useState('');
   const [selectedRecord, setSelectedRecord] = useState<NhanSuRecord | null>(null);
+  const [recordToEdit, setRecordToEdit] = useState<NhanSuRecord | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
   const isAdmin = currentUser.role === 'admin';
@@ -348,11 +355,20 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                       <div className="inline-flex items-center gap-1">
                         <button
                           onClick={() => setSelectedRecord(item)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
                           title="Xem chi tiết hồ sơ"
                         >
                           <Eye className="w-4 h-4" />
                         </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => setRecordToEdit(item)}
+                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition"
+                            title="Chỉnh sửa toàn bộ hồ sơ (Quyền Admin)"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                        )}
                         {isAdmin && onDeleteRecord && (
                           <button
                             onClick={() => {
@@ -360,7 +376,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                                 onDeleteRecord(item.id);
                               }
                             }}
-                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg"
+                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition"
                             title="Xóa hồ sơ (Chỉ Admin)"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -588,16 +604,53 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
               </div>
             )}
 
-            <div className="pt-3 border-t border-slate-200 flex justify-end">
+            <div className="pt-3 border-t border-slate-200 flex items-center justify-between">
+              <div>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rec = selectedRecord;
+                      setSelectedRecord(null);
+                      setRecordToEdit(rec);
+                    }}
+                    className="px-3.5 py-2 bg-purple-700 hover:bg-purple-800 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>Chỉnh Sửa Toàn Bộ Hồ Sơ (Admin)</span>
+                  </button>
+                )}
+              </div>
               <button
                 onClick={() => setSelectedRecord(null)}
-                className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-semibold hover:bg-slate-900"
+                className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-semibold hover:bg-slate-900 cursor-pointer"
               >
                 Đóng
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Record Modal (Dành riêng cho Quản trị viên - Admin) */}
+      {recordToEdit && (
+        <EditRecordModal
+          record={recordToEdit}
+          tieuChuanLuongList={tieuChuanLuongList}
+          onClose={() => setRecordToEdit(null)}
+          onSave={async (updated) => {
+            if (onEditRecord) {
+              const ok = await onEditRecord(updated);
+              if (ok) {
+                setRecordToEdit(null);
+                onRefresh();
+                return true;
+              }
+              return false;
+            }
+            return false;
+          }}
+        />
       )}
     </div>
   );

@@ -897,8 +897,37 @@ app.get("/api/auth/me", (req, res) => {
     email: clientEmail,
     name: clientEmail.split("@")[0].toUpperCase(),
     role: isAdmin ? "admin" : "employee",
+    displayName: isAdmin ? "Quản trị viên (Toàn quyền)" : "Nhân viên tuyển dụng",
     isAdmin,
   });
+});
+
+// Đăng nhập hệ thống (Hỗ trợ xác thực Admin & Nhân viên tuyển dụng)
+app.post("/api/auth/login", (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "Vui lòng nhập địa chỉ Email hoặc Tên đăng nhập." });
+    }
+
+    const clientEmail = String(email).toLowerCase().trim();
+    const isAdmin = adminEmails.has(clientEmail);
+
+    const user = {
+      email: clientEmail,
+      name: clientEmail.split("@")[0].toUpperCase(),
+      role: isAdmin ? "admin" : "employee",
+      displayName: isAdmin ? "Quản trị viên (Toàn quyền)" : "Nhân viên tuyển dụng",
+    };
+
+    res.json({
+      success: true,
+      message: `Đăng nhập thành công với vai trò ${user.displayName}`,
+      user,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
 });
 
 // Lấy danh sách quản trị viên
@@ -1858,6 +1887,93 @@ app.post("/api/sheets/danh-sach-nhan-su/batch", (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi khi lưu hàng loạt hồ sơ:", error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Chỉnh sửa toàn bộ thông tin hồ sơ nhân sự (Dành riêng cho Quản trị viên - Admin)
+app.put("/api/sheets/danh-sach-nhan-su/:id", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
+    if (!adminEmails.has(userEmail)) {
+      return res.status(403).json({
+        error: "Từ chối truy cập: Chỉ Quản trị viên (Admin) mới có quyền chỉnh sửa toàn bộ thông tin hồ sơ nhân sự.",
+      });
+    }
+
+    const { id } = req.params;
+    const index = danhSachNhanSu.findIndex((item) => item.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: `Không tìm thấy hồ sơ với mã: ${id}` });
+    }
+
+    const existing = danhSachNhanSu[index];
+    const body = req.body;
+
+    // Tính toán lại các khoản phụ cấp và tổng thu nhập nếu có chỉnh sửa số tiền
+    const luongCoBan = body.luongCoBan !== undefined ? Number(body.luongCoBan) : existing.luongCoBan;
+    const phuCapChucVu = body.phuCapChucVu !== undefined ? Number(body.phuCapChucVu) : (existing.phuCapChucVu || 0);
+    const phuCapDienThoai = body.phuCapDienThoai !== undefined ? Number(body.phuCapDienThoai) : (existing.phuCapDienThoai || 0);
+    const troCapTayNghe = body.troCapTayNghe !== undefined ? Number(body.troCapTayNghe) : (existing.troCapTayNghe || 0);
+    const troCapGiaDinh = body.troCapGiaDinh !== undefined ? Number(body.troCapGiaDinh) : (existing.troCapGiaDinh || 0);
+    const thuongChuyenCan = body.thuongChuyenCan !== undefined ? Number(body.thuongChuyenCan) : (existing.thuongChuyenCan || 0);
+    const thuongSangKien = body.thuongSangKien !== undefined ? Number(body.thuongSangKien) : (existing.thuongSangKien || 0);
+
+    const phuCapMoiTruong = body.phuCapMoiTruong !== undefined ? Number(body.phuCapMoiTruong) : (existing.phuCapMoiTruong || 0);
+    const phuCapXangXe = body.phuCapXangXe !== undefined ? Number(body.phuCapXangXe) : (existing.phuCapXangXe || 0);
+    const anToanVeSinhVien = body.anToanVeSinhVien !== undefined ? Number(body.anToanVeSinhVien) : (existing.anToanVeSinhVien || 0);
+    const phuCapKinhDoanh = body.phuCapKinhDoanh !== undefined ? Number(body.phuCapKinhDoanh) : (existing.phuCapKinhDoanh || 0);
+    const phuCapNangNhoc = body.phuCapNangNhoc !== undefined ? Number(body.phuCapNangNhoc) : (existing.phuCapNangNhoc || 0);
+    const phuCapPhatSinh = body.phuCapPhatSinh !== undefined ? Number(body.phuCapPhatSinh) : (existing.phuCapPhatSinh || 0);
+
+    const phuCapCoDinh = body.phuCapCoDinh !== undefined
+      ? Number(body.phuCapCoDinh)
+      : (phuCapChucVu + phuCapDienThoai + troCapTayNghe + troCapGiaDinh + thuongChuyenCan + thuongSangKien);
+
+    const tongPhuCap = phuCapCoDinh + phuCapMoiTruong + phuCapXangXe + anToanVeSinhVien + phuCapKinhDoanh + phuCapNangNhoc + (Number(body.troCapDacThuFPT) || 0) + (Number(body.thuongNangLucAM) || 0) + (Number(body.phuCapLuuDong) || 0) + phuCapPhatSinh;
+    
+    const tongThuNhapDuKien = body.tongThuNhapDuKien !== undefined
+      ? Number(body.tongThuNhapDuKien)
+      : (luongCoBan + tongPhuCap);
+
+    const luongDongBHXH = body.luongDongBHXH !== undefined
+      ? Number(body.luongDongBHXH)
+      : (luongCoBan + phuCapChucVu);
+
+    const updatedRecord = {
+      ...existing,
+      ...body,
+      id, // Bảo toàn ID hồ sơ
+      timestamp: existing.timestamp,
+      luongCoBan,
+      phuCapChucVu,
+      phuCapDienThoai,
+      troCapTayNghe,
+      troCapGiaDinh,
+      thuongChuyenCan,
+      thuongSangKien,
+      phuCapMoiTruong,
+      phuCapXangXe,
+      anToanVeSinhVien,
+      phuCapKinhDoanh,
+      phuCapNangNhoc,
+      phuCapPhatSinh,
+      phuCapCoDinh,
+      tongPhuCap,
+      tongThuNhapDuKien,
+      luongDongBHXH,
+      capNhatLuc: new Date().toISOString(),
+    };
+
+    danhSachNhanSu[index] = updatedRecord;
+
+    res.json({
+      success: true,
+      message: `Đã cập nhật thành công hồ sơ của ${updatedRecord.hoVaTen}.`,
+      record: updatedRecord,
+    });
+  } catch (error) {
+    console.error("Lỗi khi cập nhật hồ sơ:", error);
     res.status(500).json({ error: (error as Error).message });
   }
 });
