@@ -1,0 +1,2088 @@
+import express from "express";
+import path from "path";
+import { createServer as createViteServer } from "vite";
+import { GoogleGenAI } from "@google/genai";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const app = express();
+const PORT = 3000;
+
+// Middleware for parsing large JSON (needed for multimodal Base64 images)
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+// Lazy/safe initialization for GoogleGenAI
+function getGeminiClient() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Biến môi trường GEMINI_API_KEY chưa được cấu hình. Vui lòng kiểm tra Secrets.");
+  }
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
+}
+
+// -------------------------------------------------------------
+// DỮ LIỆU BẢNG TÍNH MÔ PHỎNG (SHEETS IN-MEMORY DATABASE)
+// -------------------------------------------------------------
+
+// Danh sách Email Quản trị viên mặc định
+const adminEmails = new Set<string>([
+  "Happyendpu@gmail.com".toLowerCase(),
+  "admin@congty.com",
+  "hr.manager@workspace.vn",
+]);
+
+// Danh mục chuẩn Công việc và Chức vụ theo dữ liệu hình ảnh
+const jobPositionsHierarchy = [
+  {
+    id: "cv_ban_hang",
+    name: "Bán Hàng",
+    chucVus: ["Cửa Hàng Trưởng", "Nhân Viên"],
+  },
+  {
+    id: "cv_bep_phu",
+    name: "Bếp Phụ",
+    chucVus: ["Bếp Phụ"],
+  },
+  {
+    id: "cv_coffee_shop",
+    name: "Coffee Shop",
+    chucVus: ["Cửa Hàng Trưởng", "Nhân Viên"],
+  },
+  {
+    id: "cv_dau_bep",
+    name: "Đầu Bếp",
+    chucVus: [
+      "Bếp Chính",
+      "Bếp Chính Âu",
+      "Bếp Chính Hàn",
+      "Bếp Chính Trung",
+      "Bếp Trưởng",
+      "Bếp Trưởng Hàn",
+      "Phó Bếp Trưởng",
+      "Phó Bếp Trưởng Âu",
+      "Phó Bếp Trưởng Hàn",
+      "Phó Bếp Trưởng Trung",
+    ],
+  },
+  {
+    id: "cv_dinh_duong_vien",
+    name: "Dinh Dưỡng Viên",
+    chucVus: ["DDV I", "DDV II", "DDV III", "DDV IV"],
+  },
+  {
+    id: "cv_giam_sat_bep",
+    name: "Giám Sát Bếp",
+    chucVus: ["GS II", "GS III", "GS IV"],
+  },
+];
+
+// Sheet: TieuChuanLuong - Danh mục tiêu chuẩn theo đúng dữ liệu người dùng cung cấp
+let tieuChuanLuong = [
+  // 1. Bán Hàng
+  {
+    id: "TCL_BH_01",
+    congViec: "Bán Hàng",
+    chucVu: "Cửa Hàng Trưởng",
+    luongCoBan: 5895000,
+    phuCapChucVu: 500000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 1050000,
+    moTa: "Quản lý điểm bán hàng và nhân sự bán hàng",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_BH_02",
+    congViec: "Bán Hàng",
+    chucVu: "Nhân Viên",
+    luongCoBan: 5447000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 500000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 0,
+    phuCapCoDinh: 850000,
+    moTa: "Nhân viên bán hàng trực tiếp tại điểm bán",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+
+  // 2. Bếp Phụ
+  {
+    id: "TCL_BP_01",
+    congViec: "Bếp Phụ",
+    chucVu: "Bếp Phụ",
+    luongCoBan: 4962000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 0,
+    phuCapCoDinh: 350000,
+    moTa: "Sơ chế nguyên liệu và hỗ trợ công tác bếp",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+
+  // 3. Coffee Shop
+  {
+    id: "TCL_CF_01",
+    congViec: "Coffee Shop",
+    chucVu: "Cửa Hàng Trưởng",
+    luongCoBan: 5895000,
+    phuCapChucVu: 500000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 500000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 1550000,
+    moTa: "Quản lý cửa hàng cà phê và barista",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_CF_02",
+    congViec: "Coffee Shop",
+    chucVu: "Nhân Viên",
+    luongCoBan: 5447000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 500000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 0,
+    phuCapCoDinh: 850000,
+    moTa: "Nhân viên phục vụ và pha chế cà phê",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+
+  // 4. Đầu Bếp
+  {
+    id: "TCL_DB_01",
+    congViec: "Đầu Bếp",
+    chucVu: "Bếp Chính",
+    luongCoBan: 5447000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 550000,
+    moTa: "Chế biến và nấu món chính",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DB_02",
+    congViec: "Đầu Bếp",
+    chucVu: "Bếp Chính Âu",
+    luongCoBan: 5447000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 1200000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 1750000,
+    moTa: "Bếp chính món Âu",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DB_03",
+    congViec: "Đầu Bếp",
+    chucVu: "Bếp Chính Hàn",
+    luongCoBan: 5447000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 1200000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 1750000,
+    moTa: "Bếp chính món Hàn Quốc",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DB_04",
+    congViec: "Đầu Bếp",
+    chucVu: "Bếp Chính Trung",
+    luongCoBan: 5447000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 1200000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 1750000,
+    moTa: "Bếp chính món Trung Hoa",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DB_05",
+    congViec: "Đầu Bếp",
+    chucVu: "Bếp Trưởng",
+    luongCoBan: 7683000,
+    phuCapChucVu: 1500000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 500000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 2550000,
+    moTa: "Bếp trưởng điều hành hoạt động ẩm thực",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DB_06",
+    congViec: "Đầu Bếp",
+    chucVu: "Bếp Trưởng Hàn",
+    luongCoBan: 7683000,
+    phuCapChucVu: 1500000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 1200000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 3250000,
+    moTa: "Bếp trưởng chuyên sâu món Hàn Quốc",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DB_07",
+    congViec: "Đầu Bếp",
+    chucVu: "Phó Bếp Trưởng",
+    luongCoBan: 5895000,
+    phuCapChucVu: 1000000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 500000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 2050000,
+    moTa: "Phó bếp trưởng vận hành bếp",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DB_08",
+    congViec: "Đầu Bếp",
+    chucVu: "Phó Bếp Trưởng Âu",
+    luongCoBan: 5895000,
+    phuCapChucVu: 1000000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 1200000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 2750000,
+    moTa: "Phó bếp trưởng phụ trách món Âu",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DB_09",
+    congViec: "Đầu Bếp",
+    chucVu: "Phó Bếp Trưởng Hàn",
+    luongCoBan: 5895000,
+    phuCapChucVu: 1000000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 1200000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 2750000,
+    moTa: "Phó bếp trưởng phụ trách món Hàn",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DB_10",
+    congViec: "Đầu Bếp",
+    chucVu: "Phó Bếp Trưởng Trung",
+    luongCoBan: 5895000,
+    phuCapChucVu: 1000000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 1200000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 2750000,
+    moTa: "Phó bếp trưởng phụ trách món Trung Hoa",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+
+  // 5. Dinh Dưỡng Viên
+  {
+    id: "TCL_DDV_01",
+    congViec: "Dinh Dưỡng Viên",
+    chucVu: "DDV I",
+    luongCoBan: 5895000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 550000,
+    moTa: "Chuyên viên dinh dưỡng bậc I",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DDV_02",
+    congViec: "Dinh Dưỡng Viên",
+    chucVu: "DDV II",
+    luongCoBan: 6389000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 550000,
+    moTa: "Chuyên viên dinh dưỡng bậc II",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DDV_03",
+    congViec: "Dinh Dưỡng Viên",
+    chucVu: "DDV III",
+    luongCoBan: 7166000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 550000,
+    moTa: "Chuyên viên dinh dưỡng bậc III",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_DDV_04",
+    congViec: "Dinh Dưỡng Viên",
+    chucVu: "DDV IV",
+    luongCoBan: 7683000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 550000,
+    moTa: "Chuyên gia dinh dưỡng cao cấp bậc IV",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+
+  // 6. Giám Sát Bếp
+  {
+    id: "TCL_GSB_01",
+    congViec: "Giám Sát Bếp",
+    chucVu: "GS II",
+    luongCoBan: 6389000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 550000,
+    moTa: "Giám sát vận hành bếp bậc II",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_GSB_02",
+    congViec: "Giám Sát Bếp",
+    chucVu: "GS III",
+    luongCoBan: 7166000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 550000,
+    moTa: "Giám sát vận hành bếp bậc III",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_GSB_03",
+    congViec: "Giám Sát Bếp",
+    chucVu: "GS IV",
+    luongCoBan: 7683000,
+    phuCapChucVu: 0,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 550000,
+    moTa: "Giám sát vận hành bếp bậc IV",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  // 7. Quản Lý & Điều Hành
+  {
+    id: "TCL_QL_01",
+    congViec: "Quản Lý & Điều Hành",
+    chucVu: "Trưởng phòng",
+    luongCoBan: 20000000,
+    phuCapChucVu: 4000000,
+    phuCapDienThoai: 500000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 5050000,
+    moTa: "Trưởng phòng phụ trách bộ phận/phòng ban nghiệp vụ",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_QL_02",
+    congViec: "Quản Lý & Điều Hành",
+    chucVu: "Giám đốc",
+    luongCoBan: 30000000,
+    phuCapChucVu: 5000000,
+    phuCapDienThoai: 600000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 6150000,
+    moTa: "Giám đốc phụ trách điều hành khối/trung tâm",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_QL_03",
+    congViec: "Quản Lý & Điều Hành",
+    chucVu: "Phó Tổng Giám đốc",
+    luongCoBan: 45000000,
+    phuCapChucVu: 6000000,
+    phuCapDienThoai: 700000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 7250000,
+    moTa: "Phó Tổng Giám đốc điều hành ban lãnh đạo công ty",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+  {
+    id: "TCL_QL_04",
+    congViec: "Quản Lý & Điều Hành",
+    chucVu: "Quản lý vùng",
+    luongCoBan: 16000000,
+    phuCapChucVu: 0,
+    phuCapDienThoai: 500000,
+    phuCapMoiTruong: "Thủ công",
+    phuCapXangXe: "Thủ công",
+    anToanVeSinhVien: "Thủ công",
+    phuCapKinhDoanh: "Thủ công",
+    phuCapNangNhoc: "Thủ công",
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapCoDinh: 1050000,
+    moTa: "Quản lý vận hành các đơn vị điểm kinh doanh theo phân vùng",
+    capNhatLuc: "2026-09-15T08:00:00.000Z",
+  },
+];
+
+// Sheet: DanhSachNhanSu
+let danhSachNhanSu = [
+  {
+    id: "NS_20260901_001",
+    timestamp: "2026-09-02T09:15:00.000Z",
+    userEmail: "nguyenvana@congty.com",
+    hoVaTen: "NGUYỄN VĂN AN",
+    ngaySinh: "15/04/1995",
+    gioiTinh: "Nam",
+    soCCCD: "001095012345",
+    ngayCap: "20/05/2021",
+    noiCap: "Cục Cảnh sát QLHC về TTXH",
+    queQuan: "Xã Kim Chung, Huyện Hoài Đức, TP Hà Nội",
+    diaChiThuongTru: "Số 28, Ngõ 195 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, TP Hà Nội",
+    soDienThoai: "0912345678",
+    khoi: "FS MANAGEMENT",
+    ban: "FS1",
+    phong: "FS1",
+    congViecDuKien: "Đầu Bếp",
+    chucVu: "Bếp Trưởng",
+    isManualSalary: false,
+    thongTinGiaDinh: [
+      { quanHe: "Bố", hoTen: "NGUYỄN VĂN BÌNH", namSinh: "1965", ngheNghiep: "Hưu trí" },
+      { quanHe: "Mẹ", hoTen: "LÊ THỊ MAI", namSinh: "1968", ngheNghiep: "Kinh doanh tự do" },
+      { quanHe: "Vợ", hoTen: "TRẦN THU HÀ", namSinh: "1997", ngheNghiep: "Giáo viên" }
+    ],
+    luongCoBan: 7683000,
+    phuCapChucVu: 1500000,
+    phuCapDienThoai: 0,
+    troCapTayNghe: 500000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapMoiTruong: 300000,
+    phuCapXangXe: 200000,
+    phuCapNangNhoc: 200000,
+    anToanVeSinhVien: 0,
+    phuCapKinhDoanh: 0,
+    phuCapCoDinh: 2550000,
+    phuCapPhatSinh: 500000,
+    tongThuNhapDuKien: 10733000,
+    ghiChu: "Vị trí chuẩn: Bếp Trưởng - Đầy đủ chứng chỉ bếp trưởng & bằng cấp",
+    soTaiLieuDinhKem: 3,
+    trangThaiEmail: "Đã gửi",
+    thoiGianGuiEmail: "2026-09-02T09:15:30.000Z",
+  },
+  {
+    id: "NS_20260905_002",
+    timestamp: "2026-09-05T14:30:00.000Z",
+    userEmail: "tranthingoc@congty.com",
+    hoVaTen: "TRẦN THỊ NGỌC",
+    ngaySinh: "22/11/1998",
+    gioiTinh: "Nữ",
+    soCCCD: "036198009876",
+    ngayCap: "12/08/2022",
+    noiCap: "Cục Cảnh sát QLHC về TTXH",
+    queQuan: "Xã Đông Hưng, Huyện Tiền Hải, Tỉnh Thái Bình",
+    diaChiThuongTru: "Phòng 802 Chung cư VOV, Mễ Trì, Quận Nam Từ Liêm, TP Hà Nội",
+    soDienThoai: "0987654321",
+    khoi: "FD MANAGEMENT",
+    ban: "FD SALES & MARKETING",
+    phong: "FD SALES & MARKETING",
+    congViecDuKien: "Bán Hàng",
+    chucVu: "Cửa Hàng Trưởng",
+    isManualSalary: false,
+    thongTinGiaDinh: [
+      { quanHe: "Bố", hoTen: "TRẦN VĂN NAM", namSinh: "1963", ngheNghiep: "Làm nông" },
+      { quanHe: "Mẹ", hoTen: "PHẠM THỊ HOA", namSinh: "1967", ngheNghiep: "Nội trợ" }
+    ],
+    luongCoBan: 5895000,
+    phuCapChucVu: 500000,
+    phuCapDienThoai: 0,
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapKinhDoanh: 500000,
+    phuCapMoiTruong: 0,
+    anToanVeSinhVien: 0,
+    phuCapNangNhoc: 0,
+    phuCapCoDinh: 1050000,
+    phuCapPhatSinh: 500000,
+    tongThuNhapDuKien: 7445000,
+    ghiChu: "Vị trí chuẩn: Bán Hàng - Cửa Hàng Trưởng",
+    soTaiLieuDinhKem: 2,
+    trangThaiEmail: "Đã gửi",
+    thoiGianGuiEmail: "2026-09-05T14:30:25.000Z",
+  },
+  {
+    id: "NS_20260910_003",
+    timestamp: "2026-09-10T10:00:00.000Z",
+    userEmail: "Happyendpu@gmail.com",
+    hoVaTen: "LÊ HOÀNG MINH",
+    ngaySinh: "08/03/1992",
+    gioiTinh: "Nam",
+    soCCCD: "079092004567",
+    ngayCap: "15/01/2023",
+    noiCap: "Cục Cảnh sát QLHC về TTXH",
+    queQuan: "Phường Bến Nghé, Quận 1, TP Hồ Chí Minh",
+    diaChiThuongTru: "125 Lê Lợi, Phường Bến Thành, Quận 1, TP Hồ Chí Minh",
+    soDienThoai: "0909123888",
+    khoi: "FS BUSINESS SUPPORT",
+    ban: "PRODUCT PLANNING",
+    phong: "CULINARY ACADEMY",
+    congViecDuKien: "Coffee Shop",
+    chucVu: "Cửa Hàng Trưởng",
+    isManualSalary: false,
+    thongTinGiaDinh: [
+      { quanHe: "Vợ", hoTen: "ĐẶNG THỊ LAN", namSinh: "1994", ngheNghiep: "Dược sĩ" }
+    ],
+    luongCoBan: 5895000,
+    phuCapChucVu: 500000,
+    phuCapDienThoai: 0,
+    troCapTayNghe: 500000,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapMoiTruong: 0,
+    anToanVeSinhVien: 0,
+    phuCapKinhDoanh: 0,
+    phuCapNangNhoc: 0,
+    phuCapCoDinh: 1550000,
+    phuCapPhatSinh: 0,
+    tongThuNhapDuKien: 7445000,
+    ghiChu: "Vị trí chuẩn: Coffee Shop - Cửa Hàng Trưởng",
+    soTaiLieuDinhKem: 3,
+    trangThaiEmail: "Đã gửi",
+    thoiGianGuiEmail: "2026-09-10T10:00:45.000Z",
+  },
+  {
+    id: "NS_20260912_004",
+    timestamp: "2026-09-12T08:20:00.000Z",
+    userEmail: "Happyendpu@gmail.com",
+    hoVaTen: "VŨ THỊ HƯƠNG",
+    ngaySinh: "14/07/1996",
+    gioiTinh: "Nữ",
+    soCCCD: "030196001234",
+    ngayCap: "10/04/2021",
+    noiCap: "Cục Cảnh sát QLHC về TTXH",
+    queQuan: "Tỉnh Ninh Bình",
+    diaChiThuongTru: "Phường Dịch Vọng Hậu, Quận Cầu Giấy, TP Hà Nội",
+    soDienThoai: "0965123456",
+    khoi: "HR & GA",
+    ban: "HUMAN RESOURCES",
+    phong: "HUMAN RESOURCES",
+    congViecDuKien: "Dinh Dưỡng Viên",
+    chucVu: "DDV II",
+    isManualSalary: false,
+    thongTinGiaDinh: [
+      { quanHe: "Bố", hoTen: "VŨ VĂN HÙNG", namSinh: "1960", ngheNghiep: "Cán bộ hưu trí" }
+    ],
+    luongCoBan: 6389000,
+    phuCapChucVu: 0,
+    phuCapDienThoai: 0,
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 200000,
+    phuCapMoiTruong: 0,
+    anToanVeSinhVien: 0,
+    phuCapKinhDoanh: 0,
+    phuCapNangNhoc: 0,
+    phuCapCoDinh: 550000,
+    phuCapPhatSinh: 0,
+    tongThuNhapDuKien: 6939000,
+    ghiChu: "Vị trí chuẩn: Dinh Dưỡng Viên - DDV II",
+    soTaiLieuDinhKem: 2,
+    trangThaiEmail: "Đã gửi",
+    thoiGianGuiEmail: "2026-09-12T08:20:30.000Z",
+  },
+  {
+    id: "NS_20260913_005",
+    timestamp: "2026-09-13T16:45:00.000Z",
+    userEmail: "Happyendpu@gmail.com",
+    hoVaTen: "PHẠM QUỐC TUẤN",
+    ngaySinh: "29/10/1997",
+    gioiTinh: "Nam",
+    soCCCD: "001097008912",
+    ngayCap: "05/11/2022",
+    noiCap: "Cục Cảnh sát QLHC về TTXH",
+    queQuan: "TP Hải Phòng",
+    diaChiThuongTru: "Vinhomes Smart City, Tây Mỗ, Nam Từ Liêm, Hà Nội",
+    soDienThoai: "0977889900",
+    khoi: "MANAGEMENT & SUPPORT",
+    ban: "FINANCIAL MANAGEMENT",
+    phong: "FINANCIAL MANAGEMENT",
+    congViecDuKien: "Kế toán tổng hợp & Báo cáo quản trị",
+    chucVu: "Chuyên viên Kế toán",
+    isManualSalary: true,
+    thongTinGiaDinh: [
+      { quanHe: "Mẹ", hoTen: "HOÀNG THỊ THẢO", namSinh: "1970", ngheNghiep: "Giáo viên" }
+    ],
+    luongCoBan: 12500000,
+    phuCapChucVu: 0,
+    phuCapDienThoai: 0,
+    troCapTayNghe: 0,
+    troCapGiaDinh: 0,
+    thuongChuyenCan: 0,
+    thuongSangKien: 0,
+    phuCapMoiTruong: 0,
+    anToanVeSinhVien: 0,
+    phuCapKinhDoanh: 0,
+    phuCapNangNhoc: 0,
+    phuCapCoDinh: 2000000,
+    phuCapPhatSinh: 1500000,
+    tongThuNhapDuKien: 16000000,
+    ghiChu: "Vị trí ngoài tiêu chuẩn (nhập thủ công tự do). Chứng chỉ Kế toán trưởng",
+    soTaiLieuDinhKem: 2,
+    trangThaiEmail: "Đã gửi",
+    thoiGianGuiEmail: "2026-09-13T16:45:15.000Z",
+  }
+];
+
+// Lịch sử email gửi đi
+let emailLogs: Array<{
+  id: string;
+  timestamp: string;
+  toEmail: string;
+  subject: string;
+  htmlContent: string;
+  status: "Thành công" | "Thất bại";
+}> = [
+  {
+    id: "mail_init_1",
+    timestamp: "2026-09-10T10:00:45.000Z",
+    toEmail: "Happyendpu@gmail.com",
+    subject: "Xác nhận tiếp nhận hồ sơ nhân sự - LÊ HOÀNG MINH",
+    htmlContent: "Thông tin hồ sơ nhân sự của bạn đã được ghi nhận vào hệ thống với Tổng thu nhập dự kiến: 32.000.000 VNĐ.",
+    status: "Thành công"
+  }
+];
+
+// Hàm tìm lương tiêu chuẩn theo chức vụ và công việc
+function timLuongTheoChucVu(chucVu: string, congViec?: string) {
+  const normalizedPos = (chucVu || "").toLowerCase().trim();
+  const normalizedJob = (congViec || "").toLowerCase().trim();
+
+  // Ưu tiên khớp cả công việc và chức vụ
+  let match = tieuChuanLuong.find((t) => {
+    const jobMatch = !normalizedJob || t.congViec.toLowerCase() === normalizedJob || normalizedJob.includes(t.congViec.toLowerCase());
+    const posMatch = t.chucVu.toLowerCase() === normalizedPos;
+    return jobMatch && posMatch;
+  });
+
+  if (!match) {
+    match = tieuChuanLuong.find(
+      (t) =>
+        t.chucVu.toLowerCase() === normalizedPos ||
+        normalizedPos.includes(t.chucVu.toLowerCase()) ||
+        t.chucVu.toLowerCase().includes(normalizedPos)
+    );
+  }
+
+  if (match) {
+    return {
+      isStandard: true,
+      luongCoBan: match.luongCoBan,
+      phuCapCoDinh: match.phuCapCoDinh,
+      phuCapChucVu: match.phuCapChucVu || 0,
+      phuCapDienThoai: match.phuCapDienThoai || 0,
+      troCapTayNghe: match.troCapTayNghe || 0,
+      troCapGiaDinh: match.troCapGiaDinh || 150000,
+      thuongChuyenCan: match.thuongChuyenCan || 200000,
+      thuongSangKien: match.thuongSangKien || 0,
+      matchedChucVu: match.chucVu,
+      matchedCongViec: match.congViec,
+    };
+  }
+
+  // Nếu không thuộc danh mục tiêu chuẩn, áp dụng mặc định nhập thủ công
+  return {
+    isStandard: false,
+    luongCoBan: 11000000,
+    phuCapCoDinh: 2000000,
+    phuCapChucVu: 0,
+    phuCapDienThoai: 0,
+    troCapTayNghe: 0,
+    troCapGiaDinh: 150000,
+    thuongChuyenCan: 200000,
+    thuongSangKien: 0,
+    matchedChucVu: chucVu || "Vị trí nhập thủ công",
+    matchedCongViec: congViec || "Công việc khác",
+  };
+}
+
+// -------------------------------------------------------------
+// API ROUTES
+// -------------------------------------------------------------
+
+// Kiểm tra thông tin người dùng và phân quyền
+app.get("/api/auth/me", (req, res) => {
+  const clientEmail = ((req.headers["x-user-email"] as string) || "Happyendpu@gmail.com").toLowerCase().trim();
+  const isAdmin = adminEmails.has(clientEmail);
+
+  res.json({
+    email: clientEmail,
+    name: clientEmail.split("@")[0].toUpperCase(),
+    role: isAdmin ? "admin" : "employee",
+    isAdmin,
+  });
+});
+
+// Lấy danh sách quản trị viên
+app.get("/api/settings/admins", (req, res) => {
+  res.json({
+    admins: Array.from(adminEmails),
+  });
+});
+
+// Cấu trúc phân cấp phòng ban: Khối > Ban > Phòng theo dữ liệu hình ảnh thực tế
+app.get("/api/organization/hierarchy", (req, res) => {
+  const hierarchy = [
+    {
+      id: "khoi_fd_management",
+      name: "FD MANAGEMENT",
+      bans: [
+        {
+          id: "ban_fd_sales_marketing",
+          name: "FD SALES & MARKETING",
+          phongs: [{ id: "p_fd_sales_mkt", name: "FD SALES & MARKETING" }],
+        },
+        {
+          id: "ban_fd_support",
+          name: "FD SUPPORT",
+          phongs: [{ id: "p_fd_support", name: "FD SUPPORT" }],
+        },
+        {
+          id: "ban_global_trading",
+          name: "GLOBAL TRADING",
+          phongs: [{ id: "p_trading", name: "TRADING" }],
+        },
+        {
+          id: "ban_logistics",
+          name: "LOGISTICS",
+          phongs: [{ id: "p_logistics", name: "LOGISTICS" }],
+        },
+        {
+          id: "ban_purchase",
+          name: "PURCHASE",
+          phongs: [
+            { id: "p_purchasing1", name: "PURCHASING1" },
+            { id: "p_purchasing2", name: "PURCHASING2" },
+          ],
+        },
+        {
+          id: "ban_qa",
+          name: "QA",
+          phongs: [{ id: "p_qa", name: "QA" }],
+        },
+      ],
+    },
+    {
+      id: "khoi_fs_business_support",
+      name: "FS BUSINESS SUPPORT",
+      bans: [
+        {
+          id: "ban_business_planning",
+          name: "BUSINESS PLANNING",
+          phongs: [{ id: "p_business_planning", name: "BUSINESS PLANNING" }],
+        },
+        {
+          id: "ban_hygienics_safety",
+          name: "HYGIENICS & SAFETY",
+          phongs: [{ id: "p_hygienics_safety", name: "HYGIENICS & SAFETY" }],
+        },
+        {
+          id: "ban_infra_innovation",
+          name: "INFRA INNOVATION",
+          phongs: [
+            { id: "p_design", name: "DESIGN" },
+            { id: "p_infra", name: "INFRA" },
+          ],
+        },
+        {
+          id: "ban_operation_support",
+          name: "OPERATION SUPPORT",
+          phongs: [{ id: "p_operation_support", name: "OPERATION SUPPORT" }],
+        },
+        {
+          id: "ban_product_planning",
+          name: "PRODUCT PLANNING",
+          phongs: [
+            { id: "p_bmi", name: "BMI" },
+            { id: "p_culinary_academy", name: "CULINARY ACADEMY" },
+            { id: "p_korean_menu", name: "KOREAN MENU" },
+            { id: "p_logistics_canteen", name: "LOGISTICS CANTEEN" },
+            { id: "p_mc_bacninh", name: "MC-BACNINH" },
+            { id: "p_offering_innovation", name: "OFFERING INNOVATION" },
+          ],
+        },
+      ],
+    },
+    {
+      id: "khoi_fs_management",
+      name: "FS MANAGEMENT",
+      bans: [
+        {
+          id: "ban_customer_experience",
+          name: "CUSTOMER EXPERIENCE",
+          phongs: [{ id: "p_customer_experience", name: "CUSTOMER EXPERIENCE" }],
+        },
+        {
+          id: "ban_fs_management",
+          name: "FS MANAGEMENT",
+          phongs: [{ id: "p_fs_management", name: "FS MANAGEMENT" }],
+        },
+        {
+          id: "ban_fs1",
+          name: "FS1",
+          phongs: [
+            { id: "p_cafe_semv", name: "CAFE_SEMV" },
+            { id: "p_cafe_sev1", name: "CAFE_SEV1" },
+            { id: "p_cafe_sev2", name: "CAFE_SEV2" },
+            { id: "p_cafe_sevt2", name: "CAFE_SEVT2" },
+            { id: "p_cafe_sevt4", name: "CAFE_SEVT4" },
+            { id: "p_fs1", name: "FS1" },
+            { id: "p_qh_sdi", name: "QH_SDI" },
+            { id: "p_qh_sdv", name: "QH_SDV" },
+            { id: "p_qh_sev1", name: "QH_SEV1" },
+            { id: "p_qh_sev2", name: "QH_SEV2" },
+            { id: "p_qh_sevt2", name: "QH_SEVT2" },
+            { id: "p_qh_sevt4", name: "QH_SEVT4" },
+            { id: "p_rd_hanoi", name: "R&D HANOI" },
+            { id: "p_sdi", name: "SDI" },
+            { id: "p_sdv", name: "SDV" },
+            { id: "p_sdv_v3", name: "SDV V3" },
+            { id: "p_semv", name: "SEMV" },
+            { id: "p_sev1", name: "SEV1" },
+            { id: "p_sev2", name: "SEV2" },
+            { id: "p_sevt2", name: "SEVT2" },
+            { id: "p_sevt4", name: "SEVT4" },
+          ],
+        },
+        {
+          id: "ban_fs2",
+          name: "FS2",
+          phongs: [
+            { id: "p_cresyn", name: "CRESYN" },
+            { id: "p_dreamtech1", name: "DREAMTECH1" },
+            { id: "p_dreamtech2", name: "DREAMTECH2" },
+            { id: "p_fs2", name: "FS2" },
+            { id: "p_jaeyoung_vina", name: "JAEYOUNG VINA" },
+            { id: "p_jinsung_hitec", name: "JINSUNG HITEC" },
+            { id: "p_kefico", name: "KEFICO" },
+            { id: "p_landmark_brico", name: "LANDMARK BRICO" },
+            { id: "p_lotte_hotel", name: "LOTTE-HOTEL" },
+            { id: "p_lotte_shopping_mall", name: "LOTTE-SHOPPING MALL" },
+            { id: "p_nexcon", name: "NEXCON" },
+            { id: "p_qh_cresyn", name: "QH_CRESYN" },
+            { id: "p_qh_dreamtech2", name: "QH_DREAMTECH2" },
+            { id: "p_qh_dreamtech3", name: "QH_DREAMTECH3" },
+            { id: "p_regent2_canteen2", name: "REGENT2(CANTEEN2)" },
+            { id: "p_regent2_canteen3", name: "REGENT2(CANTEEN3)" },
+            { id: "p_star_fashion_2", name: "STAR FASHION 2" },
+            { id: "p_taixin2", name: "TAIXIN2" },
+            { id: "p_valueplus", name: "VALUEPLUS" },
+            { id: "p_wisol_hanoi", name: "WISOL HANOI" },
+          ],
+        },
+        {
+          id: "ban_fs3",
+          name: "FS3",
+          phongs: [
+            { id: "p_almus_tech", name: "ALMUS TECH" },
+            { id: "p_cafe_hansol", name: "CAFE_HANSOL" },
+            { id: "p_fpt_duytan", name: "FPT DUYTAN" },
+            { id: "p_fpt_fv3", name: "FPT FV3" },
+            { id: "p_fpt_hanoi", name: "FPT HANOI" },
+            { id: "p_fpt_tower", name: "FPT TOWER" },
+            { id: "p_fs3", name: "FS3" },
+            { id: "p_hansol", name: "HANSOL" },
+            { id: "p_itm", name: "ITM" },
+            { id: "p_kespion", name: "KESPION" },
+            { id: "p_kyocera_avx2", name: "KYOCERA AVX2" },
+            { id: "p_lotte_residence", name: "LOTTE RESIDENCE" },
+            { id: "p_mc_electronics_vina", name: "M&C ELECTRONICS VINA" },
+            { id: "p_magtron", name: "MAGTRON" },
+            { id: "p_mobase", name: "MOBASE" },
+            { id: "p_mobase2", name: "MOBASE2" },
+            { id: "p_orion", name: "ORION" },
+            { id: "p_qh_almus_tech", name: "QH_ALMUS TECH" },
+            { id: "p_qh_hansol", name: "QH_HANSOL" },
+            { id: "p_qh_itm_2", name: "QH_ITM 2" },
+            { id: "p_qh_sj_tech", name: "QH_SJ TECH" },
+            { id: "p_shinwoo_global", name: "SHINWOO GLOBAL" },
+            { id: "p_sj_tech", name: "SJ TECH" },
+          ],
+        },
+        {
+          id: "ban_fs4",
+          name: "FS4",
+          phongs: [
+            { id: "p_cammsys", name: "CAMMSYS" },
+            { id: "p_fs4", name: "FS4" },
+            { id: "p_hyunwoo_vina", name: "HYUNWOO VINA" },
+            { id: "p_isc_vina", name: "ISC VINA" },
+            { id: "p_kci", name: "KCI" },
+            { id: "p_ls_electric", name: "LS ELECTRIC" },
+            { id: "p_namuga", name: "NAMUGA" },
+            { id: "p_newflex", name: "NEWFLEX" },
+            { id: "p_qh_cammsys", name: "QH_CAMMSYS" },
+            { id: "p_qh_namuga", name: "QH_NAMUGA" },
+            { id: "p_qh_newflex", name: "QH_NEWFLEX" },
+            { id: "p_qh_shinwon", name: "QH_SHINWON" },
+            { id: "p_qh_uil_b", name: "QH_UIL B" },
+            { id: "p_segi", name: "SEGI" },
+            { id: "p_shinwon", name: "SHINWON" },
+            { id: "p_sunny_optics", name: "SUNNY OPTICS" },
+            { id: "p_uil", name: "UIL" },
+            { id: "p_uil_b", name: "UIL B" },
+          ],
+        },
+        {
+          id: "ban_fs5",
+          name: "FS5",
+          phongs: [
+            { id: "p_aab_plastic", name: "AAB PLASTIC" },
+            { id: "p_autonics_vnm", name: "AUTONICS VNM" },
+            { id: "p_cu_tech", name: "CU TECH" },
+            { id: "p_deli", name: "DELI" },
+            { id: "p_fs5", name: "FS5" },
+            { id: "p_fusion", name: "FUSION" },
+            { id: "p_goldsun", name: "GOLDSUN" },
+            { id: "p_kido_vinh", name: "KIDO VINH" },
+            { id: "p_komelon", name: "KOMELON" },
+            { id: "p_komos", name: "KOMOS" },
+            { id: "p_kortek_vina", name: "KORTEK VINA" },
+            { id: "p_kyungshin", name: "KYUNGSHIN" },
+            { id: "p_neo_silicon", name: "NEO SILICON" },
+            { id: "p_qh_kido_vinh", name: "QH_KIDO VINH" },
+            { id: "p_qisda", name: "QISDA" },
+            { id: "p_regent_5", name: "REGENT 5" },
+            { id: "p_sangwoo", name: "SANGWOO" },
+            { id: "p_spica", name: "SPICA" },
+            { id: "p_sunny_nghe_an", name: "SUNNY NGHE AN" },
+            { id: "p_tce", name: "TCE" },
+            { id: "p_tce_jeans", name: "TCE JEANS" },
+          ],
+        },
+        {
+          id: "ban_hcm_regional_office",
+          name: "HCM REGIONAL OFFICE",
+          phongs: [
+            { id: "p_hansol_hcm", name: "HANSOL HCM" },
+            { id: "p_hcm_fs", name: "HCM FS" },
+            { id: "p_henkel", name: "HENKEL" },
+            { id: "p_orion_hcm", name: "ORION HCM" },
+            { id: "p_qh_hansol_hcm", name: "QH_HANSOL HCM" },
+            { id: "p_sehc2", name: "SEHC2" },
+            { id: "p_tantien_hcm", name: "TANTIEN HCM" },
+          ],
+        },
+      ],
+    },
+    {
+      id: "khoi_general_director",
+      name: "GENERAL DIRECTOR",
+      bans: [
+        {
+          id: "ban_management_advisory",
+          name: "MANAGEMENT ADVISORY",
+          phongs: [{ id: "p_management_advisory", name: "MANAGEMENT ADVISORY" }],
+        },
+        {
+          id: "ban_sales_marketing_1",
+          name: "SALES & MARKETING1",
+          phongs: [{ id: "p_sales_mkt_1", name: "SALES & MARKETING1" }],
+        },
+        {
+          id: "ban_sales_marketing_2",
+          name: "SALES & MARKETING2",
+          phongs: [{ id: "p_sales_mkt_2", name: "SALES & MARKETING2" }],
+        },
+        {
+          id: "ban_strategic_planning",
+          name: "STRATEGIC PLANNING",
+          phongs: [{ id: "p_strategic_planning", name: "STRATEGIC PLANNING" }],
+        },
+      ],
+    },
+    {
+      id: "khoi_hr_ga",
+      name: "HR & GA",
+      bans: [
+        {
+          id: "ban_general_affairs",
+          name: "GENERAL AFFAIRS",
+          phongs: [{ id: "p_general_affairs", name: "GENERAL AFFAIRS" }],
+        },
+        {
+          id: "ban_human_resources",
+          name: "HUMAN RESOURCES",
+          phongs: [{ id: "p_human_resources", name: "HUMAN RESOURCES" }],
+        },
+      ],
+    },
+    {
+      id: "khoi_management_support",
+      name: "MANAGEMENT & SUPPORT",
+      bans: [
+        {
+          id: "ban_business_innovation",
+          name: "BUSINESS INNOVATION",
+          phongs: [{ id: "p_business_innovation", name: "BUSINESS INNOVATION" }],
+        },
+        {
+          id: "ban_financial_management",
+          name: "FINANCIAL MANAGEMENT",
+          phongs: [{ id: "p_financial_management", name: "FINANCIAL MANAGEMENT" }],
+        },
+        {
+          id: "ban_food_safety_lab",
+          name: "FOOD SAFETY LAB",
+          phongs: [{ id: "p_food_safety_lab", name: "FOOD SAFETY LAB" }],
+        },
+      ],
+    },
+  ];
+  res.json({ success: true, hierarchy });
+});
+
+// Lấy danh mục chuẩn Công việc và Chức vụ tương ứng
+app.get("/api/jobs-positions", (req, res) => {
+  res.json({
+    success: true,
+    data: jobPositionsHierarchy,
+  });
+});
+
+// Thêm/Xóa quản trị viên
+app.post("/api/settings/admins", (req, res) => {
+  try {
+    const { email, action } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "Email không được để trống" });
+    }
+    const cleanEmail = String(email).toLowerCase().trim();
+    if (action === "add") {
+      adminEmails.add(cleanEmail);
+    } else if (action === "remove") {
+      // Giữ lại ít nhất 1 admin
+      if (adminEmails.size <= 1) {
+        return res.status(400).json({ error: "Phải duy trì ít nhất một Quản trị viên" });
+      }
+      adminEmails.delete(cleanEmail);
+    }
+    res.json({ success: true, admins: Array.from(adminEmails) });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// Danh sách các model Gemini hợp lệ theo hướng dẫn nền tảng (ưu tiên model có độ sẵn sàng cao)
+const GEMINI_CANDIDATE_MODELS = [
+  "gemini-3.1-flash-lite", // Khả năng đa phương thức cao, tốc độ phản hồi nhanh, tải ổn định
+  "gemini-3.8-flash",      // Model chính tiêu chuẩn
+  "gemini-flash-latest",   // Model alias mới nhất
+];
+
+let activeGeminiModel = "gemini-3.1-flash-lite";
+
+// 1. GỌI GEMINI API TRÍCH XUẤT HỒ SƠ NHÂN SỰ TỪ MẢNG ẢNH ĐÃ NÉN (MULTIMODAL) CÓ CƠ CHẾ DỰ PHÒNG CHỐNG LỖI 503
+app.post("/api/ai/extract-documents", async (req, res) => {
+  try {
+    const { images } = req.body;
+    if (!images || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({
+        error: "Danh sách hình ảnh không hợp lệ. Vui lòng gửi ít nhất 1 hình ảnh.",
+      });
+    }
+
+    const ai = getGeminiClient();
+
+    // Chuẩn bị các image parts cho Gemini
+    const parts: any[] = [];
+
+    images.forEach((img: { base64Data: string; mimeType?: string; docType?: string; fileName?: string }) => {
+      if (img && img.base64Data) {
+        parts.push({
+          inlineData: {
+            mimeType: img.mimeType || "image/jpeg",
+            data: img.base64Data,
+          },
+        });
+      }
+    });
+
+    if (parts.length === 0) {
+      return res.status(400).json({ error: "Không tìm thấy dữ liệu ảnh Base64 hợp lệ." });
+    }
+
+    // Prompt ngắn gọn, súc tích, tuân thủ nghiêm ngặt SOP Bước 2: KHÔNG TỰ SUY ĐOÁN & ƯU TIÊN VNeID
+    const promptText = `Bạn là Trợ lý AI chuyên môn trích xuất hồ sơ nhân sự theo chuẩn quy trình SOP.
+NHIỆM VỤ BƯỚC 2: Trích xuất thông tin của nhân viên từ các ảnh tài liệu đính kèm (Ảnh chụp màn hình ứng dụng VNeID, CCCD 2 mặt, Sơ yếu lý lịch, Giấy xác nhận cư trú).
+
+QUY TẮC ĐẶC BIỆT VỀ VNeID & ĐỊA CHỈ HÀNH CHÍNH (ƯU TIÊN VNeID):
+- NGUYÊN TẮC BẮT BUỘC: Nếu trong danh sách ảnh có ảnh chụp màn hình ứng dụng VNeID (mục cư trú, quê quán, thông tin định danh), BẮT BUỘC ƯU TIÊN TUYỆT ĐỐI lấy "diaChiThuongTru" và "queQuan" từ màn hình VNeID, vì VNeID chứa thông tin đã cập nhật theo đơn vị hành chính mới nhất sau các đợt sáp nhập cấp xã/phường/quận/huyện/tỉnh.
+- Nếu KHÔNG có ảnh VNeID mà chỉ có CCCD, đọc địa chỉ trên mặt CCCD và HR sẽ kiểm tra/cập nhật theo đơn vị hành chính mới.
+- Thiết lập trường "nguonDiaChi": "VNeID" (nếu có ảnh màn hình VNeID) hoặc "CCCD" (nếu chỉ đọc từ mặt thẻ CCCD).
+- Thiết lập trường "ghiChuSapNhap": ghi chú rõ nguồn gốc (ví dụ: "Đã cập nhật theo VNeID đơn vị mới sau sáp nhập" hoặc "Từ mặt CCCD - Cần HR rà soát sáp nhập mới").
+
+QUY TẮC BẮT BUỘC VỀ ĐỘ CHÍNH XÁC (ANTI-HALLUCINATION):
+- Nếu có bất kỳ thông tin nào bị mờ, bị che khuất, không đọc được hoặc KHÔNG CÓ trong tài liệu: TUYỆT ĐỐI KHÔNG ĐƯỢC TỰ SUY ĐOÁN hay bịa đặt kết quả.
+- Khi một thông tin không rõ hoặc thiếu: để giá trị là chuỗi rỗng "", đồng thời thêm tên trường vào mảng "thongTinChuaRo" và đặt câu hỏi cụ thể trong mảng "cauHoiLamRo" để hỏi lại người dùng.
+
+Yêu cầu định dạng:
+- hoVaTen: VIẾT HOA toàn bộ tiếng Việt có dấu (nếu rõ), nếu mờ/không rõ thì để "".
+- ngaySinh, ngayCap: định dạng DD/MM/YYYY.
+- gioiTinh: "Nam" hoặc "Nữ" (nếu có căn cứ rõ).
+- soCCCD: chuỗi 12 chữ số (chỉ ghi khi nhận diện đầy đủ 12 số, không đoán mò).
+- nguonDiaChi: "VNeID" hoặc "CCCD".
+- ghiChuSapNhap: tóm tắt đơn vị hành chính sau sáp nhập.
+- chucVu: tên chức vụ cụ thể phát hiện trong hồ sơ/đơn xin việc nếu có, không có thì để "".
+- khoi, ban, phong: phân cấp phòng ban nếu có trong đơn/tài liệu, nếu không có thì để "".
+- thongTinGiaDinh: mảng người thân gồm { "quanHe", "hoTen", "namSinh", "ngheNghiep" } nếu có trong Sơ yếu lý lịch.
+- mucDoTinCay: "CAO" nếu đọc rõ các trường chính (Họ tên, CCCD, Ngày sinh); "CAN_XAC_NHAN" nếu có từ 1-3 trường mờ/thiếu; "CHUA_RO" nếu ảnh quá mờ hoặc thiếu tài liệu chính.
+
+Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong markdown tick:
+{
+  "hoVaTen": "",
+  "ngaySinh": "",
+  "gioiTinh": "Nam",
+  "soCCCD": "",
+  "ngayCap": "",
+  "noiCap": "",
+  "queQuan": "",
+  "diaChiThuongTru": "",
+  "nguonDiaChi": "VNeID",
+  "ghiChuSapNhap": "",
+  "soDienThoai": "",
+  "khoi": "",
+  "ban": "",
+  "phong": "",
+  "congViecDuKien": "",
+  "chucVu": "",
+  "thongTinGiaDinh": [
+    { "quanHe": "", "hoTen": "", "namSinh": "", "ngheNghiep": "" }
+  ],
+  "ghiChu": "",
+  "thongTinChuaRo": [],
+  "cauHoiLamRo": [],
+  "mucDoTinCay": "CAO"
+}`;
+
+    parts.push({ text: promptText });
+
+    // Tự động thử qua danh sách model dự phòng (High-Availability Fallback) nếu gặp lỗi 503 UNAVAILABLE / 429
+    const modelsToTry = [
+      activeGeminiModel,
+      ...GEMINI_CANDIDATE_MODELS.filter((m) => m !== activeGeminiModel),
+    ];
+
+    let response: any = null;
+    let successfulModel = activeGeminiModel;
+    let lastError: any = null;
+
+    for (const model of modelsToTry) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          console.log(`[Gemini Vision] Đang gọi model: ${model} (thử lần ${attempt + 1})...`);
+          const res = await ai.models.generateContent({
+            model,
+            contents: { parts },
+            config: {
+              responseMimeType: "application/json",
+              temperature: 0.1,
+            },
+          });
+
+          if (res && res.text) {
+            response = res;
+            successfulModel = model;
+            activeGeminiModel = model; // Cập nhật model thành công cho các lần gọi kế tiếp
+            console.log(`[Gemini Vision] Trích xuất thành công với model: ${model}`);
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+          const errMsg = String(err?.message || "");
+          console.warn(`[Gemini Vision] Model ${model} tạm thời bận (attempt ${attempt + 1}):`, errMsg);
+
+          const isTransient =
+            errMsg.includes("503") ||
+            errMsg.includes("UNAVAILABLE") ||
+            errMsg.includes("high demand") ||
+            errMsg.includes("429") ||
+            errMsg.includes("RESOURCE_EXHAUSTED") ||
+            errMsg.includes("overloaded");
+
+          if (isTransient && attempt === 0) {
+            // Chờ ngắn 800ms rồi thử lại model này 1 lần
+            await new Promise((resolve) => setTimeout(resolve, 800));
+            continue;
+          }
+          // Chuyển sang model dự phòng tiếp theo
+          break;
+        }
+      }
+
+      if (response) {
+        break;
+      }
+    }
+
+    if (!response) {
+      throw lastError || new Error("Tất cả các model Gemini dự phòng đều tạm thời không phản hồi.");
+    }
+
+    const responseText = response.text || "{}";
+    let extractedData: any = {};
+    try {
+      extractedData = JSON.parse(responseText);
+    } catch {
+      // Loại bỏ markdown nếu có
+      const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
+      extractedData = JSON.parse(cleanJson);
+    }
+
+    // Đảm bảo Họ tên được viết hoa
+    if (extractedData.hoVaTen) {
+      extractedData.hoVaTen = String(extractedData.hoVaTen).toUpperCase().trim();
+    }
+
+    if (!Array.isArray(extractedData.thongTinChuaRo)) {
+      extractedData.thongTinChuaRo = [];
+    }
+    if (!Array.isArray(extractedData.cauHoiLamRo)) {
+      extractedData.cauHoiLamRo = [];
+    }
+
+    // Tự động kiểm tra phát hiện các trường bắt buộc nếu còn thiếu hoặc rỗng
+    const requiredCheck: Array<{ field: string; label: string; question: string }> = [
+      { field: 'hoVaTen', label: 'Họ và tên', question: 'Không phát hiện rõ Họ và tên trên tài liệu, vui lòng xác nhận hoặc nhập chính xác.' },
+      { field: 'soCCCD', label: 'Số CCCD (12 số)', question: 'Ảnh chưa rõ hoặc thiếu số CCCD 12 chữ số, vui lòng kiểm tra lại.' },
+      { field: 'ngaySinh', label: 'Ngày sinh', question: 'Chưa xác định rõ ngày sinh (DD/MM/YYYY), vui lòng bổ sung.' },
+      { field: 'diaChiThuongTru', label: 'Địa chỉ thường trú', question: 'Địa chỉ thường trú bị mờ hoặc chưa có, vui lòng xác nhận lại.' },
+      { field: 'ngayCap', label: 'Ngày cấp CCCD', question: 'Mặt sau CCCD không thấy rõ ngày cấp, vui lòng cung cấp ngày cấp.' },
+      { field: 'noiCap', label: 'Nơi cấp CCCD', question: 'Chưa rõ nơi cấp CCCD, vui lòng xác nhận lại.' }
+    ];
+
+    requiredCheck.forEach((item) => {
+      if (!extractedData[item.field] || String(extractedData[item.field]).trim() === '') {
+        if (!extractedData.thongTinChuaRo.includes(item.label)) {
+          extractedData.thongTinChuaRo.push(item.label);
+          extractedData.cauHoiLamRo.push(item.question);
+        }
+      }
+    });
+
+    if (extractedData.thongTinChuaRo.length > 0) {
+      extractedData.mucDoTinCay = extractedData.thongTinChuaRo.length > 2 ? 'CHUA_RO' : 'CAN_XAC_NHAN';
+    } else {
+      extractedData.mucDoTinCay = 'CAO';
+    }
+
+    // Tra cứu lương tiêu chuẩn dự kiến theo chức vụ trích xuất được
+    const salaryLookup = timLuongTheoChucVu(extractedData.chucVu || extractedData.congViecDuKien || "");
+
+    res.json({
+      success: true,
+      data: {
+        ...extractedData,
+        suggestedLuongCoBan: salaryLookup.luongCoBan,
+        suggestedPhuCapCoDinh: salaryLookup.phuCapCoDinh,
+        matchedChucVu: salaryLookup.matchedChucVu,
+      },
+      modelUsed: successfulModel,
+      rawResponse: responseText,
+    });
+  } catch (error) {
+    const rawError = (error as Error)?.message || "";
+    console.warn("[Gemini Vision Handled Warning]:", rawError);
+    let friendlyMessage = "Không thể trích xuất thông tin tài liệu. Vui lòng thử lại.";
+
+    if (rawError.includes("503") || rawError.includes("high demand") || rawError.includes("UNAVAILABLE")) {
+      friendlyMessage = "Hệ thống AI Gemini hiện đang có lượng truy cập đột biến (Mã 503). Vui lòng nhấn nút thử lại sau vài giây.";
+    } else if (rawError.includes("429") || rawError.includes("RESOURCE_EXHAUSTED")) {
+      friendlyMessage = "Hạn mức yêu cầu AI tạm thời đạt giới hạn (Mã 429). Vui lòng đợi 30 giây và thử lại.";
+    } else if (rawError.includes("GEMINI_API_KEY")) {
+      friendlyMessage = "Chưa cấu hình biến môi trường GEMINI_API_KEY hợp lệ.";
+    } else {
+      friendlyMessage = `Lỗi xử lý tài liệu: ${rawError}`;
+    }
+
+    res.status(503).json({
+      success: false,
+      error: friendlyMessage,
+    });
+  }
+});
+
+// 2. SHEET: TIEUCHUANLUONG (Lấy danh sách)
+app.get("/api/sheets/tieu-chuan-luong", (req, res) => {
+  res.json({ success: true, data: tieuChuanLuong });
+});
+
+// SHEET: TIEUCHUANLUONG (Thêm/Sửa - Dành cho Admin)
+app.post("/api/sheets/tieu-chuan-luong", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
+    const isAdmin = adminEmails.has(userEmail);
+
+    if (!isAdmin) {
+      return res.status(403).json({
+        error: "Từ chối truy cập: Chỉ Quản trị viên (Admin) mới có quyền sửa đổi Sheet 'TieuChuanLuong'.",
+      });
+    }
+
+    const {
+      id,
+      congViec,
+      chucVu,
+      luongCoBan,
+      phuCapChucVu,
+      phuCapDienThoai,
+      phuCapMoiTruong,
+      phuCapXangXe,
+      anToanVeSinhVien,
+      phuCapKinhDoanh,
+      phuCapNangNhoc,
+      troCapTayNghe,
+      troCapGiaDinh,
+      thuongChuyenCan,
+      thuongSangKien,
+      phuCapCoDinh,
+      moTa,
+    } = req.body;
+    if (!chucVu || luongCoBan === undefined) {
+      return res.status(400).json({ error: "Tên chức vụ và lương cơ bản là bắt buộc." });
+    }
+
+    const existingIndex = tieuChuanLuong.findIndex((t) => t.id === id || t.chucVu.toLowerCase() === chucVu.toLowerCase());
+    const existing = existingIndex >= 0 ? tieuChuanLuong[existingIndex] : null;
+
+    const computedPhuCapCoDinh = phuCapCoDinh !== undefined
+      ? Number(phuCapCoDinh) || 0
+      : ((Number(phuCapChucVu) || 0) + (Number(phuCapDienThoai) || 0) + (Number(troCapTayNghe) || 0) + (Number(troCapGiaDinh) || 150000) + (Number(thuongChuyenCan) || 200000) + (Number(thuongSangKien) || 0));
+
+    const item = {
+      id: id || existing?.id || `TCL_${Date.now()}`,
+      congViec: congViec || existing?.congViec || "Công việc chuyên môn",
+      chucVu: chucVu.trim(),
+      luongCoBan: Number(luongCoBan) || 0,
+      phuCapChucVu: phuCapChucVu !== undefined ? Number(phuCapChucVu) || 0 : (existing?.phuCapChucVu || 0),
+      phuCapDienThoai: phuCapDienThoai !== undefined ? Number(phuCapDienThoai) || 0 : (existing?.phuCapDienThoai || 0),
+      phuCapMoiTruong: phuCapMoiTruong || existing?.phuCapMoiTruong || "Thủ công",
+      phuCapXangXe: phuCapXangXe || existing?.phuCapXangXe || "Thủ công",
+      anToanVeSinhVien: anToanVeSinhVien || existing?.anToanVeSinhVien || "Thủ công",
+      phuCapKinhDoanh: phuCapKinhDoanh || existing?.phuCapKinhDoanh || "Thủ công",
+      phuCapNangNhoc: phuCapNangNhoc || existing?.phuCapNangNhoc || "Thủ công",
+      troCapTayNghe: troCapTayNghe !== undefined ? Number(troCapTayNghe) || 0 : (existing?.troCapTayNghe || 0),
+      troCapGiaDinh: troCapGiaDinh !== undefined ? Number(troCapGiaDinh) || 0 : (existing?.troCapGiaDinh || 150000),
+      thuongChuyenCan: thuongChuyenCan !== undefined ? Number(thuongChuyenCan) || 0 : (existing?.thuongChuyenCan || 200000),
+      thuongSangKien: thuongSangKien !== undefined ? Number(thuongSangKien) || 0 : (existing?.thuongSangKien || 0),
+      phuCapCoDinh: computedPhuCapCoDinh,
+      moTa: moTa || existing?.moTa || "",
+      capNhatLuc: new Date().toISOString(),
+    };
+
+    if (existingIndex >= 0) {
+      tieuChuanLuong[existingIndex] = item;
+    } else {
+      tieuChuanLuong.push(item);
+    }
+
+    res.json({ success: true, data: item, list: tieuChuanLuong });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Xóa tiêu chuẩn lương (Admin)
+app.delete("/api/sheets/tieu-chuan-luong/:id", (req, res) => {
+  const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
+  if (!adminEmails.has(userEmail)) {
+    return res.status(403).json({ error: "Chỉ Quản trị viên mới có quyền xóa dữ liệu tiêu chuẩn lương." });
+  }
+
+  const { id } = req.params;
+  tieuChuanLuong = tieuChuanLuong.filter((t) => t.id !== id);
+  res.json({ success: true, list: tieuChuanLuong });
+});
+
+// 3. SHEET: DANHSACHNHANSU (Lấy danh sách theo phân quyền tài khoản Google)
+app.get("/api/sheets/danh-sach-nhan-su", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || "Happyendpu@gmail.com").toLowerCase().trim();
+    const isAdmin = adminEmails.has(userEmail);
+
+    // Phân quyền thông minh:
+    // - Admin: xem toàn bộ hồ sơ của tất cả nhân viên
+    // - Nhân viên: chỉ xem lịch sử các hồ sơ do chính tài khoản của họ gửi lên
+    let filtered = danhSachNhanSu;
+    if (!isAdmin) {
+      filtered = danhSachNhanSu.filter((item) => item.userEmail.toLowerCase() === userEmail);
+    }
+
+    // Sắp xếp mới nhất lên đầu
+    const sorted = [...filtered].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+
+    res.json({
+      success: true,
+      isAdmin,
+      userEmail,
+      totalRecords: sorted.length,
+      data: sorted,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Hàm nghiệp vụ chuẩn hóa, lưu trữ hồ sơ và tạo email xác nhận (Hỗ trợ cả đơn lẻ & hàng loạt)
+function processAndSaveRecord(body: any, userEmail: string) {
+  const {
+    hoVaTen,
+    ngaySinh,
+    gioiTinh,
+    soCCCD,
+    ngayCap,
+    noiCap,
+    queQuan,
+    diaChiThuongTru,
+    nguonDiaChi = "VNeID",
+    ghiChuSapNhap = "",
+    diemLamViec = "",
+    loaiHopDong = "Toàn thời gian (Chính thức)",
+    soDienThoai,
+    khoi = "",
+    ban = "",
+    phong = "",
+    congViecDuKien,
+    chucVu,
+    thongTinGiaDinh,
+    phuCapPhatSinh = 0,
+    troCapDacThuFPT = 0,
+    thuongNangLucAM = 0,
+    phuCapLuuDong = 0,
+    luongDongBHXH,
+    maNhanVien = "",
+    tinhTrangHonNhan = "Độc thân",
+    trinhDoHocVan = "Trung cấp / Cao đẳng / Đại học",
+    ghiChu = "",
+    soTaiLieuDinhKem = 1,
+  } = body;
+
+  if (!hoVaTen || !soCCCD) {
+    throw new Error("Họ và tên và Số CCCD là các trường bắt buộc.");
+  }
+
+  // Tra cứu Sheet "TieuChuanLuong" dựa theo chức vụ/công việc
+  const salaryLookup = timLuongTheoChucVu(chucVu || "", congViecDuKien || "");
+  
+  // Quy định: Nếu vị trí không nằm trong bảng tiêu chuẩn, hoặc client đánh dấu nhập thủ công
+  const isManualSalary = body.isManualSalary !== undefined 
+    ? Boolean(body.isManualSalary) 
+    : !salaryLookup.isStandard;
+
+  const luongCoBan = body.luongCoBan !== undefined 
+    ? Number(body.luongCoBan) 
+    : salaryLookup.luongCoBan;
+
+  const phuCapChucVu = body.phuCapChucVu !== undefined 
+    ? Number(body.phuCapChucVu) 
+    : salaryLookup.phuCapChucVu;
+
+  const phuCapDienThoai = body.phuCapDienThoai !== undefined 
+    ? Number(body.phuCapDienThoai) 
+    : (salaryLookup.phuCapDienThoai || 0);
+
+  const troCapTayNghe = body.troCapTayNghe !== undefined 
+    ? Number(body.troCapTayNghe) 
+    : salaryLookup.troCapTayNghe;
+
+  const troCapGiaDinh = body.troCapGiaDinh !== undefined 
+    ? Number(body.troCapGiaDinh) 
+    : salaryLookup.troCapGiaDinh;
+
+  const thuongChuyenCan = body.thuongChuyenCan !== undefined 
+    ? Number(body.thuongChuyenCan) 
+    : salaryLookup.thuongChuyenCan;
+
+  const thuongSangKien = body.thuongSangKien !== undefined 
+    ? Number(body.thuongSangKien) 
+    : salaryLookup.thuongSangKien;
+
+  // Các khoản phụ cấp thủ công theo bảng tiêu chuẩn (Môi trường, Xăng xe, ATVSV, Kinh doanh, Nặng nhọc)
+  const phuCapMoiTruong = Number(body.phuCapMoiTruong) || 0;
+  const phuCapXangXe = Number(body.phuCapXangXe) || 0;
+  const anToanVeSinhVien = Number(body.anToanVeSinhVien) || 0;
+  const phuCapKinhDoanh = Number(body.phuCapKinhDoanh) || 0;
+  const phuCapNangNhoc = Number(body.phuCapNangNhoc) || 0;
+  const phuCapPhatSinhNum = Number(phuCapPhatSinh) || 0;
+  const troCapDacThuFPTNum = Number(troCapDacThuFPT) || 0;
+  const thuongNangLucAMNum = Number(thuongNangLucAM) || 0;
+  const phuCapLuuDongNum = Number(phuCapLuuDong) || 0;
+
+  // Phụ cấp cố định: lấy từ client nếu có, hoặc tính tổng các khoản phụ cấp chuẩn
+  const phuCapCoDinh = body.phuCapCoDinh !== undefined 
+    ? Number(body.phuCapCoDinh) 
+    : (phuCapChucVu + phuCapDienThoai + troCapTayNghe + troCapGiaDinh + thuongChuyenCan + thuongSangKien);
+
+  // Mức đóng BHXH
+  const finalLuongDongBHXH = luongDongBHXH !== undefined 
+    ? Number(luongDongBHXH) 
+    : (luongCoBan + phuCapChucVu);
+
+  // Tự động tính toán: Tổng thu nhập dự kiến = Lương cơ bản + tất cả các khoản phụ cấp
+  const tongPhuCapAll = phuCapCoDinh + phuCapMoiTruong + phuCapXangXe + anToanVeSinhVien + phuCapKinhDoanh + phuCapNangNhoc + troCapDacThuFPTNum + thuongNangLucAMNum + phuCapLuuDongNum + phuCapPhatSinhNum;
+  const tongThuNhapDuKien = body.tongThuNhapDuKien !== undefined
+    ? Number(body.tongThuNhapDuKien)
+    : (luongCoBan + tongPhuCapAll);
+
+  const timestamp = new Date().toISOString();
+  const newRecord = {
+    id: `NS_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    timestamp,
+    userEmail,
+    hoVaTen: String(hoVaTen).toUpperCase().trim(),
+    ngaySinh: ngaySinh || "",
+    gioiTinh: gioiTinh || "Nam",
+    soCCCD: String(soCCCD).trim(),
+    ngayCap: ngayCap || "",
+    noiCap: noiCap || "",
+    queQuan: queQuan || "",
+    diaChiThuongTru: diaChiThuongTru || "",
+    nguonDiaChi: nguonDiaChi || "VNeID",
+    ghiChuSapNhap: ghiChuSapNhap || "",
+    diemLamViec: diemLamViec || "",
+    loaiHopDong: loaiHopDong || "Toàn thời gian (Chính thức)",
+    soDienThoai: soDienThoai || "",
+    khoi: khoi || "",
+    ban: ban || "",
+    phong: phong || "",
+    congViecDuKien: congViecDuKien || "",
+    chucVu: chucVu || salaryLookup.matchedChucVu,
+    isManualSalary,
+    thongTinGiaDinh: Array.isArray(thongTinGiaDinh) ? thongTinGiaDinh : [],
+    luongCoBan,
+    phuCapChucVu,
+    phuCapDienThoai,
+    troCapTayNghe,
+    troCapGiaDinh,
+    thuongChuyenCan,
+    thuongSangKien,
+    phuCapMoiTruong,
+    phuCapXangXe,
+    anToanVeSinhVien,
+    phuCapKinhDoanh,
+    phuCapNangNhoc,
+    troCapDacThuFPT: troCapDacThuFPTNum,
+    thuongNangLucAM: thuongNangLucAMNum,
+    phuCapLuuDong: phuCapLuuDongNum,
+    phuCapCoDinh,
+    phuCapPhatSinh: phuCapPhatSinhNum,
+    tongPhuCap: tongPhuCapAll,
+    tongThuNhapDuKien,
+    luongDongBHXH: finalLuongDongBHXH,
+    maNhanVien: maNhanVien || "",
+    tinhTrangHonNhan: tinhTrangHonNhan || "Độc thân",
+    trinhDoHocVan: trinhDoHocVan || "Trung cấp / Cao đẳng / Đại học",
+    ghiChu: ghiChu || "",
+    soTaiLieuDinhKem: Number(soTaiLieuDinhKem) || 1,
+    trangThaiEmail: "Đã gửi" as const,
+    thoiGianGuiEmail: timestamp,
+  };
+
+  // Lưu trữ dữ liệu vào Sheet "DanhSachNhanSu"
+  danhSachNhanSu.unshift(newRecord);
+
+  // Tự động ghi nhận log gửi email
+  const emailSubject = `[Xác nhận] Đã tiếp nhận hồ sơ nhân sự - ${newRecord.hoVaTen}`;
+  const emailHtml = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+      <div style="background: #1e3a8a; color: #ffffff; padding: 24px; text-align: center;">
+        <h2 style="margin: 0; font-size: 20px;">THÔNG BÁO TIẾP NHẬN HỒ SƠ NHÂN SỰ</h2>
+        <p style="margin: 6px 0 0 0; opacity: 0.9; font-size: 14px;">Hệ thống Tự động hóa Nhân sự AI - Google Workspace</p>
+      </div>
+      <div style="padding: 24px;">
+        <p>Kính gửi <strong>${newRecord.hoVaTen}</strong>,</p>
+        <p>Hồ sơ tuyển dụng và nhập liệu nhân sự của bạn gửi từ tài khoản <strong>${userEmail}</strong> đã được số hóa và ghi nhận thành công vào cơ sở dữ liệu bảng tính Google Sheets.</p>
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 16px; margin: 16px 0;">
+          <h3 style="margin-top: 0; color: #0f172a; font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Thông tin cá nhân & Đơn vị:</h3>
+          <p>Họ và tên: <strong>${newRecord.hoVaTen}</strong> | CCCD: ${newRecord.soCCCD}</p>
+          <p>Cơ cấu tổ chức: <strong>${newRecord.khoi ? `${newRecord.khoi} > ${newRecord.ban} > ${newRecord.phong}` : 'Chưa phân bổ'}</strong></p>
+          <p>Vị trí: <strong>${newRecord.congViecDuKien ? `${newRecord.congViecDuKien} - ` : ''}${newRecord.chucVu}</strong></p>
+        </div>
+        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 16px; margin: 16px 0;">
+          <p style="margin:0; font-weight:bold; color:#064e3b; font-size:16px;">TỔNG THU NHẬP DỰ KIẾN: ${newRecord.tongThuNhapDuKien.toLocaleString("vi-VN")} VNĐ/tháng</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  emailLogs.unshift({
+    id: `mail_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    timestamp,
+    toEmail: userEmail,
+    subject: emailSubject,
+    htmlContent: emailHtml,
+    status: "Thành công",
+  });
+
+  return newRecord;
+}
+
+// LƯU 1 HỒ SƠ NHÂN SỰ VÀO SHEET "DANHSACHNHANSU"
+app.post("/api/sheets/danh-sach-nhan-su", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || req.body.userEmail || "nhanvien@congty.com").toLowerCase().trim();
+    const newRecord = processAndSaveRecord(req.body, userEmail);
+
+    res.json({
+      success: true,
+      message: "Lưu hồ sơ thành công và đã gửi email xác nhận.",
+      record: newRecord,
+      emailSent: true,
+    });
+  } catch (error) {
+    console.error("Lỗi khi lưu hồ sơ:", error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// LƯU HÀNG LOẠT NHIỀU HỒ SƠ NHÂN SỰ VÀO SHEET "DANHSACHNHANSU"
+app.post("/api/sheets/danh-sach-nhan-su/batch", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || req.body.userEmail || "nhanvien@congty.com").toLowerCase().trim();
+    const rawList = req.body.records || req.body.employees || req.body;
+    const batchList = Array.isArray(rawList) ? rawList : [];
+
+    if (batchList.length === 0) {
+      return res.status(400).json({ error: "Danh sách hồ sơ rỗng hoặc không đúng định dạng mảng." });
+    }
+
+    const savedRecords: any[] = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < batchList.length; i++) {
+      try {
+        const item = batchList[i];
+        const saved = processAndSaveRecord(item, userEmail);
+        savedRecords.push(saved);
+      } catch (err: any) {
+        errors.push(`Dòng ${i + 1} (${batchList[i]?.hoVaTen || 'Ẩn danh'}): ${err.message}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Đã lưu thành công ${savedRecords.length} / ${batchList.length} hồ sơ nhân sự vào Google Sheets.`,
+      count: savedRecords.length,
+      records: savedRecords,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (error) {
+    console.error("Lỗi khi lưu hàng loạt hồ sơ:", error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Xóa hồ sơ (Dành cho Admin)
+app.delete("/api/sheets/danh-sach-nhan-su/:id", (req, res) => {
+  const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
+  if (!adminEmails.has(userEmail)) {
+    return res.status(403).json({ error: "Chỉ Quản trị viên mới có quyền xóa hồ sơ nhân sự." });
+  }
+
+  const { id } = req.params;
+  danhSachNhanSu = danhSachNhanSu.filter((item) => item.id !== id);
+  res.json({ success: true, remaining: danhSachNhanSu.length });
+});
+
+// 4. XUẤT FILE CSV "Bang_Tong_Hop_Nhan_Su.csv" (Chỉ Quản trị viên - Admin)
+app.get("/api/export/csv", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || "Happyendpu@gmail.com").toLowerCase().trim();
+    const isAdmin = adminEmails.has(userEmail);
+
+    if (!isAdmin) {
+      return res.status(403).json({
+        error: "Từ chối truy cập: Chỉ Quản trị viên (Admin) mới có quyền tải xuống Bảng tổng hợp nhân sự.",
+      });
+    }
+
+    // Tiêu đề cột CSV theo chuẩn nghiệp vụ HR (bao gồm Khối > Ban > Phòng và chi tiết phụ cấp / loại vị trí)
+    const headers = [
+      "Mã Hồ Sơ",
+      "Thời Gian Nộp",
+      "Email Người Gửi",
+      "Họ Và Tên",
+      "Ngày Sinh",
+      "Giới Tính",
+      "Số CCCD",
+      "Ngày Cấp",
+      "Nơi Cấp",
+      "Quê Quán",
+      "Địa Chỉ Thường Trú",
+      "Số Điện Thoại",
+      "Khối",
+      "Ban",
+      "Phòng",
+      "Công Việc",
+      "Chức Vụ",
+      "Chế Độ Lương",
+      "Lương Cơ Bản (VNĐ)",
+      "Phụ Cấp Chức Vụ (VNĐ)",
+      "Phụ Cấp Điện Thoại (VNĐ)",
+      "Trợ Cấp Tay Nghề (VNĐ)",
+      "Trợ Cấp Gia Đình (VNĐ)",
+      "Thưởng Chuyên Cần (VNĐ)",
+      "Thưởng Sáng Kiến (VNĐ)",
+      "PC Môi Trường (VNĐ)",
+      "Phụ Cấp Xăng Xe (VNĐ)",
+      "An Toàn Vệ Sinh Viên (VNĐ)",
+      "PC Kinh Doanh (VNĐ)",
+      "PC Nặng Nhọc (VNĐ)",
+      "Phụ Cấp Cố Định (VNĐ)",
+      "Phụ Cấp Phát Sinh (VNĐ)",
+      "Tổng Thu Nhập Dự Kiến (VNĐ)",
+      "Thông Tin Gia Đình",
+      "Ghi Chú",
+      "Trạng Thái Email",
+    ];
+
+    const escapeCsv = (str: any) => {
+      if (str === null || str === undefined) return '""';
+      const s = String(str).replace(/"/g, '""');
+      return `"${s}"`;
+    };
+
+    const rows = danhSachNhanSu.map((ns) => {
+      const familyStr = Array.isArray(ns.thongTinGiaDinh)
+        ? ns.thongTinGiaDinh.map((f) => `${f.quanHe}: ${f.hoTen} (${f.namSinh || "?"}) - ${f.ngheNghiep || ""}`).join("; ")
+        : "";
+
+      return [
+        escapeCsv(ns.id),
+        escapeCsv(new Date(ns.timestamp).toLocaleString("vi-VN")),
+        escapeCsv(ns.userEmail),
+        escapeCsv(ns.hoVaTen),
+        escapeCsv(ns.ngaySinh),
+        escapeCsv(ns.gioiTinh),
+        escapeCsv(ns.soCCCD),
+        escapeCsv(ns.ngayCap),
+        escapeCsv(ns.noiCap),
+        escapeCsv(ns.queQuan),
+        escapeCsv(ns.diaChiThuongTru),
+        escapeCsv(ns.soDienThoai),
+        escapeCsv(ns.khoi || ""),
+        escapeCsv(ns.ban || ""),
+        escapeCsv(ns.phong || ""),
+        escapeCsv(ns.congViecDuKien || ""),
+        escapeCsv(ns.chucVu),
+        escapeCsv(ns.isManualSalary ? "Nhập thủ công" : "Tiêu chuẩn"),
+        escapeCsv(ns.luongCoBan),
+        escapeCsv(ns.phuCapChucVu || 0),
+        escapeCsv(ns.phuCapDienThoai || 0),
+        escapeCsv(ns.troCapTayNghe || 0),
+        escapeCsv(ns.troCapGiaDinh || 0),
+        escapeCsv(ns.thuongChuyenCan || 0),
+        escapeCsv(ns.thuongSangKien || 0),
+        escapeCsv(ns.phuCapMoiTruong || 0),
+        escapeCsv(ns.phuCapXangXe || 0),
+        escapeCsv(ns.anToanVeSinhVien || 0),
+        escapeCsv(ns.phuCapKinhDoanh || 0),
+        escapeCsv(ns.phuCapNangNhoc || 0),
+        escapeCsv(ns.phuCapCoDinh),
+        escapeCsv(ns.phuCapPhatSinh),
+        escapeCsv(ns.tongThuNhapDuKien),
+        escapeCsv(familyStr),
+        escapeCsv(ns.ghiChu),
+        escapeCsv(ns.trangThaiEmail),
+      ].join(",");
+    });
+
+    // Thêm UTF-8 BOM (\uFEFF) để Excel hiển thị đúng dấu tiếng Việt không bị lỗi font
+    const csvContent = "\uFEFF" + [headers.map(escapeCsv).join(","), ...rows].join("\r\n");
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="Bang_Tong_Hop_Nhan_Su.csv"');
+    res.send(csvContent);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Xuất CSV Sheet TieuChuanLuong với từng loại phụ cấp
+app.get("/api/export/tieu-chuan-luong/csv", (req, res) => {
+  try {
+    const headers = [
+      "Mã Vị Trí",
+      "Công Việc",
+      "Chức Vụ",
+      "Lương Cơ Bản (VNĐ)",
+      "Phụ Cấp Chức Vụ (VNĐ)",
+      "Phụ Cấp Điện Thoại (VNĐ)",
+      "PC Môi Trường",
+      "PC Xăng Xe",
+      "An Toàn Vệ Sinh Viên",
+      "PC Kinh Doanh",
+      "PC Nặng Nhọc",
+      "Trợ Cấp Tay Nghề (VNĐ)",
+      "Trợ Cấp Gia Đình (VNĐ)",
+      "Thưởng Chuyên Cần (VNĐ)",
+      "Thưởng Sáng Kiến (VNĐ)",
+      "Tổng Phụ Cấp Cố Định (VNĐ)",
+      "Tổng Định Mức (Lương CB + PC Cố Định)",
+      "Mô Tả / Ghi Chú",
+    ];
+
+    const escapeCsv = (str: any) => {
+      if (str === null || str === undefined) return '""';
+      const s = String(str).replace(/"/g, '""');
+      return `"${s}"`;
+    };
+
+    const rows = tieuChuanLuong.map((item) => [
+      escapeCsv(item.id),
+      escapeCsv(item.congViec),
+      escapeCsv(item.chucVu),
+      escapeCsv(item.luongCoBan),
+      escapeCsv(item.phuCapChucVu || 0),
+      escapeCsv(item.phuCapDienThoai || 0),
+      escapeCsv(item.phuCapMoiTruong || "Thủ công"),
+      escapeCsv(item.phuCapXangXe || "Thủ công"),
+      escapeCsv(item.anToanVeSinhVien || "Thủ công"),
+      escapeCsv(item.phuCapKinhDoanh || "Thủ công"),
+      escapeCsv(item.phuCapNangNhoc || "Thủ công"),
+      escapeCsv(item.troCapTayNghe || 0),
+      escapeCsv(item.troCapGiaDinh || 0),
+      escapeCsv(item.thuongChuyenCan || 0),
+      escapeCsv(item.thuongSangKien || 0),
+      escapeCsv(item.phuCapCoDinh),
+      escapeCsv(item.luongCoBan + item.phuCapCoDinh),
+      escapeCsv(item.moTa || ""),
+    ].join(","));
+
+    const csvContent = "\uFEFF" + [headers.map(escapeCsv).join(","), ...rows].join("\r\n");
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="Sheet_TieuChuanLuong_TungLoaiPhuCap.csv"');
+    res.send(csvContent);
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Lấy danh sách Email logs (mô phỏng MailApp)
+app.get("/api/email-logs", (req, res) => {
+  const userEmail = ((req.headers["x-user-email"] as string) || "Happyendpu@gmail.com").toLowerCase().trim();
+  const isAdmin = adminEmails.has(userEmail);
+
+  if (isAdmin) {
+    res.json({ logs: emailLogs });
+  } else {
+    res.json({ logs: emailLogs.filter((l) => l.toEmail.toLowerCase() === userEmail) });
+  }
+});
+
+// -------------------------------------------------------------
+// VITE MIDDLEWARE & SERVER STARTUP
+// -------------------------------------------------------------
+
+async function startServer() {
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`HR Document AI Web App running on http://localhost:${PORT}`);
+  });
+}
+
+startServer();

@@ -1,0 +1,2467 @@
+import React, { useState, useEffect } from 'react';
+import { GeminiExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, NhanSuRecord, BatchEmployeeDraft } from '../types';
+import { DEFAULT_ORGANIZATION_HIERARCHY } from '../data/organizationHierarchy';
+import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
+import { findTieuChuanLuong, DEFAULT_TIEU_CHUAN_LUONG } from '../data/tieuChuanLuongData';
+import { generateExcel43Columns, HR_43_COLUMNS } from '../utils/excelExport';
+import {
+  Save,
+  Plus,
+  Trash2,
+  Calculator,
+  UserCheck,
+  Building,
+  Mail,
+  CheckCircle,
+  FileCheck2,
+  AlertTriangle,
+  Coins,
+  Network,
+  ChevronRight,
+  ChevronLeft,
+  Layers,
+  Edit3,
+  Briefcase,
+  Award,
+  Sparkles,
+  Info,
+  HelpCircle,
+  ShieldAlert,
+  FileSpreadsheet,
+  CheckCircle2,
+  User,
+  Phone,
+  MapPin,
+  Calendar,
+  CreditCard,
+  Building2,
+  DollarSign,
+  Download,
+  Check,
+  FileText,
+  BadgeCheck,
+  Users,
+  CheckSquare,
+  Square,
+  ArrowRight,
+} from 'lucide-react';
+
+interface ExtractedFormProps {
+  initialData: GeminiExtractionResult | null;
+  tieuChuanLuongList: TieuChuanLuongItem[];
+  userEmail: string;
+  onSaveToSheet: (formData: any) => Promise<boolean>;
+  isSaving: boolean;
+  onStepChange?: (step: number) => void;
+  currentStep?: number;
+  onBackToStep1?: () => void;
+  onResetNewRecord?: () => void;
+  uploadedImagesCount?: number;
+  batchEmployees?: BatchEmployeeDraft[];
+  onBatchEmployeesChange?: (employees: BatchEmployeeDraft[]) => void;
+  onSaveBatchToSheet?: (batchList: BatchEmployeeDraft[]) => Promise<boolean>;
+}
+
+// Hàm format tiền tệ an toàn tuyệt đối chống crash unhandled TypeError
+const formatVND = (value: number | string | undefined | null): string => {
+  if (value === undefined || value === null || value === '') return '0';
+  const num = Number(value);
+  if (isNaN(num)) return '0';
+  return num.toLocaleString('vi-VN');
+};
+
+export const ExtractedForm: React.FC<ExtractedFormProps> = ({
+  initialData,
+  tieuChuanLuongList,
+  userEmail,
+  onSaveToSheet,
+  isSaving,
+  onStepChange,
+  currentStep,
+  onBackToStep1,
+  onResetNewRecord,
+  uploadedImagesCount = 0,
+  batchEmployees = [],
+  onBatchEmployeesChange,
+  onSaveBatchToSheet,
+}) => {
+  // Quản lý bước hiển thị trong SOP: chỉ hiển thị đúng bước hiện tại 2, 3, hoặc 4
+  const [activeTabStep, setActiveTabStep] = useState<2 | 3 | 4>(
+    currentStep && currentStep >= 2 && currentStep <= 4 ? (currentStep as 2 | 3 | 4) : 2
+  );
+
+  // Đồng bộ bước hiển thị khi prop currentStep thay đổi từ bên ngoài (ví dụ header SOP)
+  useEffect(() => {
+    if (currentStep && (currentStep === 2 || currentStep === 3 || currentStep === 4)) {
+      setActiveTabStep(currentStep as 2 | 3 | 4);
+    }
+  }, [currentStep]);
+
+  // Bước 2: Thông tin cá nhân & Giấy tờ tùy thân (VNeID / CCCD)
+  const [hoVaTen, setHoVaTen] = useState('');
+  const [ngaySinh, setNgaySinh] = useState('');
+  const [gioiTinh, setGioiTinh] = useState('Nam');
+  const [soCCCD, setSoCCCD] = useState('');
+  const [ngayCap, setNgayCap] = useState('');
+  const [noiCap, setNoiCap] = useState('');
+  const [queQuan, setQueQuan] = useState('');
+  const [diaChiThuongTru, setDiaChiThuongTru] = useState('');
+  const [nguonDiaChi, setNguonDiaChi] = useState<'VNeID' | 'CCCD'>('VNeID');
+  const [ghiChuSapNhap, setGhiChuSapNhap] = useState('');
+  const [soDienThoai, setSoDienThoai] = useState('');
+  const [thongTinGiaDinh, setThongTinGiaDinh] = useState<ThanhVienGiaDinh[]>([]);
+
+  // Bước 3: Cơ cấu tổ chức & Vị trí công tác (do con người chọn)
+  const [khoi, setKhoi] = useState('FD MANAGEMENT');
+  const [ban, setBan] = useState('FD SALES & MARKETING');
+  const [phong, setPhong] = useState('FD SALES & MARKETING');
+  const [isCustomOrg, setIsCustomOrg] = useState(false);
+
+  const [congViecDuKien, setCongViecDuKien] = useState('Đầu Bếp');
+  const [chucVu, setChucVu] = useState('Bếp Trưởng');
+  const [isCustomJob, setIsCustomJob] = useState(false);
+  const [diemLamViec, setDiemLamViec] = useState('Hà Nội - FPT Tower');
+  const [loaiHopDong, setLoaiHopDong] = useState('Toàn thời gian (Chính thức)');
+
+  // Bước 4: 12+ khoản Lương & Phụ cấp (SẼ ĐIỀN TAY / HIỆU CHỈNH TRỰC TIẾP)
+  const [isManualSalary, setIsManualMode] = useState(true); // Cho phép HR tự do điền tay mọi khoản
+  const [luongCoBan, setLuongCoBan] = useState<number>(7683000);
+  const [phuCapChucVu, setPhuCapChucVu] = useState<number>(1500000);
+  const [phuCapDienThoai, setPhuCapDienThoai] = useState<number>(0);
+  const [phuCapXangXe, setPhuCapXangXe] = useState<number>(0);
+  const [phuCapMoiTruong, setPhuCapMoiTruong] = useState<number>(0);
+  const [anToanVeSinhVien, setAnToanVeSinhVien] = useState<number>(0);
+  const [phuCapKinhDoanh, setPhuCapKinhDoanh] = useState<number>(0);
+  const [phuCapNangNhoc, setPhuCapNangNhoc] = useState<number>(0);
+  const [troCapTayNghe, setTroCapTayNghe] = useState<number>(500000);
+  const [troCapGiaDinh, setTroCapGiaDinh] = useState<number>(150000);
+  const [thuongChuyenCan, setThuongChuyenCan] = useState<number>(200000);
+  const [thuongSangKien, setThuongSangKien] = useState<number>(200000);
+  // Các khoản biến động điền tay đặc thù
+  const [troCapDacThuFPT, setTroCapDacThuFPT] = useState<number>(0);
+  const [thuongNangLucAM, setThuongNangLucAM] = useState<number>(0);
+  const [phuCapLuuDong, setPhuCapLuuDong] = useState<number>(0);
+  const [phuCapPhatSinh, setPhuCapPhatSinh] = useState<number>(0);
+  const [luongDongBHXH, setLuongDongBHXH] = useState<number>(9183000);
+  const [ghiChu, setGhiChu] = useState('');
+
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+
+  // Quản lý trạng thái danh sách hàng loạt (Batch Mode)
+  const [batchList, setBatchList] = useState<BatchEmployeeDraft[]>(batchEmployees);
+  const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
+  const [activeBatchIndex, setActiveBatchIndex] = useState<number>(0);
+
+  // Cấu hình điền hàng loạt vị trí & chức vụ ở Bước 3
+  const [bulkKhoi, setBulkKhoi] = useState('FS MANAGEMENT');
+  const [bulkBan, setBulkBan] = useState('FS1');
+  const [bulkPhong, setBulkPhong] = useState('FPT TOWER');
+  const [bulkCongViec, setBulkCongViec] = useState('Đầu Bếp');
+  const [bulkChucVu, setBulkChucVu] = useState('Bếp Trưởng');
+  const [bulkDiemLamViec, setBulkDiemLamViec] = useState('Hà Nội - FPT Tower');
+  const [bulkLoaiHopDong, setBulkLoaiHopDong] = useState('Toàn thời gian (Chính thức)');
+  const [bulkSuccessMsg, setBulkSuccessMsg] = useState<string | null>(null);
+
+  // Đồng bộ khi batchEmployees prop thay đổi
+  useEffect(() => {
+    if (batchEmployees && batchEmployees.length > 0) {
+      setBatchList(batchEmployees);
+      setSelectedBatchIds(batchEmployees.map((e) => e.id));
+    }
+  }, [batchEmployees]);
+
+  // Điền dữ liệu khi Gemini AI hoàn thành trích xuất đơn lẻ
+  useEffect(() => {
+    if (initialData) {
+      setHoVaTen(initialData.hoVaTen ? initialData.hoVaTen.toUpperCase() : '');
+      setNgaySinh(initialData.ngaySinh || '');
+      setGioiTinh(initialData.gioiTinh || 'Nam');
+      setSoCCCD(initialData.soCCCD || '');
+      setNgayCap(initialData.ngayCap || '');
+      setNoiCap(initialData.noiCap || '');
+      setQueQuan(initialData.queQuan || '');
+      setDiaChiThuongTru(initialData.diaChiThuongTru || '');
+      setNguonDiaChi(initialData.nguonDiaChi || 'VNeID');
+      setGhiChuSapNhap(
+        initialData.ghiChuSapNhap ||
+          (initialData.nguonDiaChi === 'VNeID'
+            ? 'Đã lấy theo dữ liệu VNeID mới nhất sau đợt sáp nhập cấp xã/phường/huyện'
+            : 'Trích xuất từ mặt CCCD - HR cần kiểm tra địa giới sáp nhập mới')
+      );
+      setSoDienThoai(initialData.soDienThoai || '');
+
+      if (initialData.thongTinGiaDinh && initialData.thongTinGiaDinh.length > 0) {
+        setThongTinGiaDinh(initialData.thongTinGiaDinh);
+      }
+
+      // Tự động chuyển về Bước 2 để người dùng kiểm tra thông tin AI trả ra
+      setActiveTabStep(2);
+      if (onStepChange) onStepChange(2);
+    }
+  }, [initialData]);
+
+  // Tự động gợi ý các định mức lương chuẩn khi chức vụ ở Bước 3 thay đổi (HR vẫn có thể tự do sửa tay)
+  useEffect(() => {
+    const std = findTieuChuanLuong(congViecDuKien, chucVu);
+    if (std) {
+      setLuongCoBan(std.luongCoBan || 0);
+      setPhuCapChucVu(std.phuCapChucVu || 0);
+      setPhuCapDienThoai(std.phuCapDienThoai || 0);
+      setTroCapTayNghe(std.troCapTayNghe || 0);
+      setTroCapGiaDinh(std.troCapGiaDinh || 0);
+      setThuongChuyenCan(std.thuongChuyenCan || 0);
+      setThuongSangKien(std.thuongSangKien || 0);
+      setLuongDongBHXH((std.luongCoBan || 0) + (std.phuCapChucVu || 0));
+    }
+  }, [congViecDuKien, chucVu]);
+
+  // Đồng bộ thay đổi step ra ngoài nếu có callback
+  const handleSelectStep = (step: 2 | 3 | 4) => {
+    setActiveTabStep(step);
+    if (onStepChange) {
+      onStepChange(step);
+    }
+  };
+
+  // Tra cứu bảng tiêu chuẩn lương
+  const matchedStandard = findTieuChuanLuong(congViecDuKien, chucVu);
+
+  // Tính toán tổng các khoản phụ cấp (12+ khoản)
+  const phuCapCoDinh =
+    (Number(phuCapChucVu) || 0) +
+    (Number(phuCapDienThoai) || 0) +
+    (Number(troCapTayNghe) || 0) +
+    (Number(troCapGiaDinh) || 0) +
+    (Number(thuongChuyenCan) || 0) +
+    (Number(thuongSangKien) || 0);
+
+  const tongPhuCap =
+    phuCapCoDinh +
+    (Number(phuCapMoiTruong) || 0) +
+    (Number(phuCapXangXe) || 0) +
+    (Number(anToanVeSinhVien) || 0) +
+    (Number(phuCapKinhDoanh) || 0) +
+    (Number(phuCapNangNhoc) || 0) +
+    (Number(troCapDacThuFPT) || 0) +
+    (Number(thuongNangLucAM) || 0) +
+    (Number(phuCapLuuDong) || 0) +
+    (Number(phuCapPhatSinh) || 0);
+
+  const tongThuNhapDuKien = (Number(luongCoBan) || 0) + tongPhuCap;
+
+  // Đối tượng Master Record 43 cột chuẩn
+  const currentRecordObject: NhanSuRecord = {
+    id: `NS_${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    userEmail,
+    hoVaTen: hoVaTen.trim().toUpperCase() || 'CHƯA ĐẶT TÊN',
+    ngaySinh,
+    gioiTinh,
+    soCCCD: soCCCD.trim(),
+    ngayCap,
+    noiCap,
+    queQuan,
+    diaChiThuongTru,
+    nguonDiaChi,
+    ghiChuSapNhap,
+    soDienThoai,
+    khoi: khoi.trim(),
+    ban: ban.trim(),
+    phong: phong.trim(),
+    congViecDuKien,
+    chucVu: chucVu || 'Nhân viên',
+    diemLamViec,
+    loaiHopDong,
+    luongCoBan: Number(luongCoBan) || 0,
+    phuCapChucVu: Number(phuCapChucVu) || 0,
+    phuCapDienThoai: Number(phuCapDienThoai) || 0,
+    phuCapXangXe: Number(phuCapXangXe) || 0,
+    phuCapMoiTruong: Number(phuCapMoiTruong) || 0,
+    anToanVeSinhVien: Number(anToanVeSinhVien) || 0,
+    phuCapKinhDoanh: Number(phuCapKinhDoanh) || 0,
+    phuCapNangNhoc: Number(phuCapNangNhoc) || 0,
+    troCapTayNghe: Number(troCapTayNghe) || 0,
+    troCapGiaDinh: Number(troCapGiaDinh) || 0,
+    thuongChuyenCan: Number(thuongChuyenCan) || 0,
+    thuongSangKien: Number(thuongSangKien) || 0,
+    troCapDacThuFPT: Number(troCapDacThuFPT) || 0,
+    thuongNangLucAM: Number(thuongNangLucAM) || 0,
+    phuCapLuuDong: Number(phuCapLuuDong) || 0,
+    phuCapCoDinh,
+    phuCapPhatSinh: Number(phuCapPhatSinh) || 0,
+    tongPhuCap,
+    tongThuNhapDuKien,
+    luongDongBHXH: Number(luongDongBHXH) || ((Number(luongCoBan) || 0) + (Number(phuCapChucVu) || 0)),
+    thongTinGiaDinh,
+    ghiChu,
+    soTaiLieuDinhKem: uploadedImagesCount || 1,
+    trangThaiEmail: 'Đã gửi',
+    thoiGianGuiEmail: new Date().toISOString(),
+  };
+
+  // Chuyển đổi danh sách batch thành mảng NhanSuRecord chuẩn 43 cột
+  const getBatchRecordObjects = (): NhanSuRecord[] => {
+    if (batchList.length === 0) return [currentRecordObject];
+    return batchList.map((emp, idx) => {
+      const std = findTieuChuanLuong(emp.congViecDuKien, emp.chucVu);
+      const lcb = Number(emp.luongCoBan) || std?.luongCoBan || 7683000;
+      const pcCV = Number(emp.phuCapChucVu) || std?.phuCapChucVu || 1500000;
+      const pcDT = Number(emp.phuCapDienThoai) || std?.phuCapDienThoai || 0;
+      const pcTN = Number(emp.troCapTayNghe) || std?.troCapTayNghe || 500000;
+      const pcGD = Number(emp.troCapGiaDinh) || std?.troCapGiaDinh || 150000;
+      const pcCC = Number(emp.thuongChuyenCan) || std?.thuongChuyenCan || 200000;
+      const pcSK = Number(emp.thuongSangKien) || std?.thuongSangKien || 200000;
+      const pcCoDinh = pcCV + pcDT + pcTN + pcGD + pcCC + pcSK;
+
+      const pcXX = Number(emp.phuCapXangXe) || 0;
+      const pcMT = Number(emp.phuCapMoiTruong) || 0;
+      const pcAT = Number(emp.anToanVeSinhVien) || 0;
+      const pcKD = Number(emp.phuCapKinhDoanh) || 0;
+      const pcNN = Number(emp.phuCapNangNhoc) || 0;
+      const pcFPT = Number(emp.troCapDacThuFPT) || 0;
+      const pcAM = Number(emp.thuongNangLucAM) || 0;
+      const pcLD = Number(emp.phuCapLuuDong) || 0;
+      const pcPS = Number(emp.phuCapPhatSinh) || 0;
+
+      const pcTong = pcCoDinh + pcXX + pcMT + pcAT + pcKD + pcNN + pcFPT + pcAM + pcLD + pcPS;
+      const tongThuNhap = lcb + pcTong;
+
+      return {
+        id: emp.id || `NS_BATCH_${idx + 1}`,
+        timestamp: new Date().toISOString(),
+        userEmail,
+        hoVaTen: (emp.hoVaTen || 'CHƯA ĐẶT TÊN').toUpperCase(),
+        ngaySinh: emp.ngaySinh || '',
+        gioiTinh: emp.gioiTinh || 'Nam',
+        soCCCD: emp.soCCCD || '',
+        ngayCap: emp.ngayCap || '01/01/2022',
+        noiCap: emp.noiCap || 'Cục Cảnh sát QLHC về TTXH',
+        queQuan: emp.queQuan || '',
+        diaChiThuongTru: emp.diaChiThuongTru || '',
+        nguonDiaChi: emp.nguonDiaChi || 'VNeID',
+        ghiChuSapNhap: emp.ghiChuSapNhap || '',
+        soDienThoai: emp.soDienThoai || '',
+        khoi: emp.khoi || 'FS MANAGEMENT',
+        ban: emp.ban || 'FS1',
+        phong: emp.phong || 'FPT TOWER',
+        congViecDuKien: emp.congViecDuKien || 'Đầu Bếp',
+        chucVu: emp.chucVu || 'Bếp Trưởng',
+        diemLamViec: emp.diemLamViec || 'Hà Nội - FPT Tower',
+        loaiHopDong: emp.loaiHopDong || 'Toàn thời gian (Chính thức)',
+        luongCoBan: lcb,
+        phuCapChucVu: pcCV,
+        phuCapDienThoai: pcDT,
+        phuCapXangXe: pcXX,
+        phuCapMoiTruong: pcMT,
+        anToanVeSinhVien: pcAT,
+        phuCapKinhDoanh: pcKD,
+        phuCapNangNhoc: pcNN,
+        troCapTayNghe: pcTN,
+        troCapGiaDinh: pcGD,
+        thuongChuyenCan: pcCC,
+        thuongSangKien: pcSK,
+        troCapDacThuFPT: pcFPT,
+        thuongNangLucAM: pcAM,
+        phuCapLuuDong: pcLD,
+        phuCapCoDinh: pcCoDinh,
+        phuCapPhatSinh: pcPS,
+        tongPhuCap: pcTong,
+        tongThuNhapDuKien: tongThuNhap,
+        luongDongBHXH: Number(emp.luongDongBHXH) || (lcb + pcCV),
+        thongTinGiaDinh: emp.thongTinGiaDinh || [],
+        ghiChu: emp.ghiChu || 'Đã kiểm tra & gán vị trí hàng loạt',
+        soTaiLieuDinhKem: uploadedImagesCount || 1,
+        trangThaiEmail: 'Đã gửi',
+        thoiGianGuiEmail: new Date().toISOString(),
+      };
+    });
+  };
+
+  // Xuất file Excel (.xlsx) 43 cột chuẩn màu sắc header (hỗ trợ cả 1 hoặc nhiều người)
+  const handleExportSingleExcel = async () => {
+    setIsExportingExcel(true);
+    try {
+      const recordsToExport = batchList.length > 0 ? getBatchRecordObjects() : [currentRecordObject];
+      const fileName =
+        recordsToExport.length > 1
+          ? `Bang_Luong_Nhan_Su_Chuan_43_Cot_${recordsToExport.length}_Nhan_Vien.xlsx`
+          : `HoSo_${hoVaTen.trim().replace(/\s+/g, '_') || 'NhanSu'}_Chuan_43_Cot.xlsx`;
+
+      await generateExcel43Columns(recordsToExport, fileName);
+    } catch (err) {
+      console.error('Lỗi xuất file Excel:', err);
+      alert('Không thể xuất file Excel: ' + (err as Error).message);
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  // Xử lý thay đổi Khối ở thanh công cụ hàng loạt Bước 3
+  const handleBulkKhoiChange = (newKhoi: string) => {
+    setBulkKhoi(newKhoi);
+    const kObj = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === newKhoi);
+    if (kObj && kObj.bans.length > 0) {
+      setBulkBan(kObj.bans[0].name);
+      if (kObj.bans[0].phongs.length > 0) {
+        setBulkPhong(kObj.bans[0].phongs[0].name);
+      } else {
+        setBulkPhong('');
+      }
+    } else {
+      setBulkBan('');
+      setBulkPhong('');
+    }
+  };
+
+  // Xử lý thay đổi Công việc ở thanh công cụ hàng loạt Bước 3
+  const handleBulkCongViecChange = (newJob: string) => {
+    setBulkCongViec(newJob);
+    const jobObj = DEFAULT_JOB_POSITIONS.find((j) => j.name === newJob);
+    if (jobObj && jobObj.chucVus.length > 0) {
+      setBulkChucVu(jobObj.chucVus[0]);
+    }
+  };
+
+  // Áp dụng công việc, chức vụ, phòng ban cho nhiều người cùng lúc (YÊU CẦU CỦA NGƯỜI DÙNG Ở BƯỚC 3)
+  const handleApplyBulkPositionToSelected = () => {
+    if (selectedBatchIds.length === 0) {
+      alert('Vui lòng tích chọn ít nhất 1 nhân viên trong danh sách để áp dụng!');
+      return;
+    }
+
+    const std = findTieuChuanLuong(bulkCongViec, bulkChucVu);
+    const updated = batchList.map((emp) => {
+      if (!selectedBatchIds.includes(emp.id)) return emp;
+      return {
+        ...emp,
+        khoi: bulkKhoi,
+        ban: bulkBan,
+        phong: bulkPhong,
+        congViecDuKien: bulkCongViec,
+        chucVu: bulkChucVu,
+        diemLamViec: bulkDiemLamViec,
+        loaiHopDong: bulkLoaiHopDong,
+        luongCoBan: std?.luongCoBan || emp.luongCoBan || 7683000,
+        phuCapChucVu: std?.phuCapChucVu || emp.phuCapChucVu || 1500000,
+        phuCapDienThoai: std?.phuCapDienThoai || emp.phuCapDienThoai || 0,
+        troCapTayNghe: std?.troCapTayNghe || emp.troCapTayNghe || 500000,
+        troCapGiaDinh: std?.troCapGiaDinh || emp.troCapGiaDinh || 150000,
+        thuongChuyenCan: std?.thuongChuyenCan || emp.thuongChuyenCan || 200000,
+        thuongSangKien: std?.thuongSangKien || emp.thuongSangKien || 200000,
+        luongDongBHXH: (std?.luongCoBan || 7683000) + (std?.phuCapChucVu || 1500000),
+      };
+    });
+
+    setBatchList(updated);
+    if (onBatchEmployeesChange) {
+      onBatchEmployeesChange(updated);
+    }
+    setBulkSuccessMsg(
+      `✓ Đã áp dụng thành công Chức vụ "${bulkChucVu}" (${bulkCongViec}) & Cơ cấu "${bulkKhoi} > ${bulkBan}" cho ${selectedBatchIds.length} nhân sự!`
+    );
+    setTimeout(() => setBulkSuccessMsg(null), 5000);
+  };
+
+  // Cập nhật từng dòng riêng biệt trong bảng ma trận Bước 3
+  const handleUpdateBatchEmployeeRow = (id: string, updates: Partial<BatchEmployeeDraft>) => {
+    const updated = batchList.map((emp) => {
+      if (emp.id !== id) return emp;
+      const merged = { ...emp, ...updates };
+      if (updates.congViecDuKien || updates.chucVu) {
+        const std = findTieuChuanLuong(merged.congViecDuKien, merged.chucVu);
+        if (std) {
+          merged.luongCoBan = std.luongCoBan;
+          merged.phuCapChucVu = std.phuCapChucVu;
+          merged.luongDongBHXH = (std.luongCoBan || 0) + (std.phuCapChucVu || 0);
+        }
+      }
+      return merged;
+    });
+    setBatchList(updated);
+    if (onBatchEmployeesChange) {
+      onBatchEmployeesChange(updated);
+    }
+  };
+
+  // Chọn / bỏ chọn tất cả nhân viên trong Bước 3
+  const handleToggleSelectAllBatch = () => {
+    if (selectedBatchIds.length === batchList.length) {
+      setSelectedBatchIds([]);
+    } else {
+      setSelectedBatchIds(batchList.map((e) => e.id));
+    }
+  };
+
+  // Chọn / bỏ chọn 1 nhân viên trong Bước 3
+  const handleToggleSelectOne = (id: string) => {
+    if (selectedBatchIds.includes(id)) {
+      setSelectedBatchIds(selectedBatchIds.filter((item) => item !== id));
+    } else {
+      setSelectedBatchIds([...selectedBatchIds, id]);
+    }
+  };
+
+  // Xử lý cơ cấu Khối > Ban > Phòng
+  const handleKhoiChange = (newKhoi: string) => {
+    setKhoi(newKhoi);
+    const kObj = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === newKhoi);
+    if (kObj && kObj.bans.length > 0) {
+      setBan(kObj.bans[0].name);
+      if (kObj.bans[0].phongs.length > 0) {
+        setPhong(kObj.bans[0].phongs[0].name);
+      } else {
+        setPhong('');
+      }
+    } else {
+      setBan('');
+      setPhong('');
+    }
+  };
+
+  const handleBanChange = (newBan: string) => {
+    setBan(newBan);
+    const kObj = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === khoi);
+    const bObj = kObj?.bans.find((b) => b.name === newBan);
+    if (bObj && bObj.phongs.length > 0) {
+      setPhong(bObj.phongs[0].name);
+    } else {
+      setPhong('');
+    }
+  };
+
+  // Xử lý Công việc > Chức vụ
+  const handleJobChange = (newJob: string) => {
+    setCongViecDuKien(newJob);
+    const jobObj = DEFAULT_JOB_POSITIONS.find((j) => j.name === newJob);
+    if (jobObj && jobObj.chucVus.length > 0) {
+      setChucVu(jobObj.chucVus[0]);
+    }
+  };
+
+  // Thêm / sửa / xóa người thân
+  const addFamilyMember = () => {
+    setThongTinGiaDinh([
+      ...thongTinGiaDinh,
+      { quanHe: 'Bố', hoTen: '', namSinh: '', ngheNghiep: '' },
+    ]);
+  };
+
+  const updateFamilyMember = (index: number, field: keyof ThanhVienGiaDinh, value: string) => {
+    const updated = [...thongTinGiaDinh];
+    updated[index] = { ...updated[index], [field]: value };
+    setThongTinGiaDinh(updated);
+  };
+
+  const removeFamilyMember = (index: number) => {
+    setThongTinGiaDinh(thongTinGiaDinh.filter((_, i) => i !== index));
+  };
+
+  // Nộp form lưu vào Google Sheet (Chuẩn 43 cột - Hỗ trợ cả 1 hoặc nhiều người)
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setValidationError(null);
+
+    if (batchList.length > 1 && onSaveBatchToSheet) {
+      await onSaveBatchToSheet(batchList);
+      return;
+    }
+
+    if (!hoVaTen.trim()) {
+      setValidationError('Vui lòng nhập Họ và tên (VIẾT HOA).');
+      setActiveTabStep(2);
+      return;
+    }
+    if (!soCCCD.trim()) {
+      setValidationError('Vui lòng nhập Số Căn cước công dân (12 số).');
+      setActiveTabStep(2);
+      return;
+    }
+
+    const payload = {
+      ...currentRecordObject,
+      isManualSalary: true,
+    };
+
+    await onSaveToSheet(payload);
+  };
+
+  // Phân tích danh sách trường chưa rõ từ AI
+  const thongTinChuaRo = initialData?.thongTinChuaRo || [];
+  const cauHoiLamRo = initialData?.cauHoiLamRo || [];
+
+  // Helper kiểm tra trường có bị thiếu hoặc cần làm rõ không
+  const isFieldUnclear = (fieldName: string, value: string) => {
+    if (!value || value.trim() === '') return true;
+    return thongTinChuaRo.some((item) => item.toLowerCase().includes(fieldName.toLowerCase()));
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-6">
+      {/* Form Header with SOP Steps Navigation */}
+      <div className="border-b border-slate-200 pb-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className={`text-white text-xs font-bold px-2 py-0.5 rounded ${
+                activeTabStep === 2 ? 'bg-blue-600' : activeTabStep === 3 ? 'bg-emerald-600' : 'bg-indigo-600'
+              }`}>
+                BƯỚC {activeTabStep} / 4
+              </span>
+              <h2 className="text-lg font-bold text-slate-900">
+                {activeTabStep === 2 && 'Bước 2: AI Trích Xuất Form Tiêu Chuẩn (Anti-Hallucination)'}
+                {activeTabStep === 3 && 'Bước 3: Con Người Chọn Đơn Vị & Chức Vụ'}
+                {activeTabStep === 4 && 'Bước 4: Bảng Tiêu Chuẩn Tiền Lương & Lưu Vào Google Sheet'}
+              </h2>
+            </div>
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
+              {activeTabStep === 2 && 'Kiểm tra thông tin cá nhân và giải đáp các câu hỏi làm rõ từ AI (nếu có ảnh mờ).'}
+              {activeTabStep === 3 && 'Chủ động phân bổ phòng ban (Khối ➔ Ban ➔ Phòng) và vị trí công tác (Công việc ➔ Chức vụ).'}
+              {activeTabStep === 4 && 'Đối chiếu định mức lương tiêu chuẩn, xem bảng Master Record hoàn chỉnh và bấm lưu.'}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+            <div className="text-xs px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
+              Tài khoản: <strong className="text-blue-700">{userEmail}</strong>
+            </div>
+            {onBackToStep1 && (
+              <button
+                type="button"
+                onClick={onBackToStep1}
+                className="text-xs font-semibold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition"
+              >
+                ← Quay lại Bước 1 (Tải/Chụp ảnh)
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Tab Stepper Bar for Step 2, 3, 4 */}
+        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+          <button
+            type="button"
+            onClick={() => handleSelectStep(2)}
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+              activeTabStep === 2
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
+              activeTabStep === 2 ? 'bg-white text-blue-700 font-black' : 'bg-slate-300 text-slate-700'
+            }`}>
+              2
+            </span>
+            <span>Bước 2: AI Trích Xuất Form Chuẩn</span>
+            {cauHoiLamRo.length > 0 && (
+              <span className="bg-amber-400 text-amber-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                {cauHoiLamRo.length} câu hỏi
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectStep(3)}
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+              activeTabStep === 3
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
+              activeTabStep === 3 ? 'bg-white text-emerald-700 font-black' : 'bg-slate-300 text-slate-700'
+            }`}>
+              3
+            </span>
+            <span>Bước 3: Con Người Chọn Đơn Vị &amp; Chức Vụ</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSelectStep(4)}
+            className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+              activeTabStep === 4
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
+              activeTabStep === 4 ? 'bg-white text-indigo-700 font-black' : 'bg-slate-300 text-slate-700'
+            }`}>
+              4
+            </span>
+            <span>Bước 4: Bảng Tiêu Chuẩn &amp; Lưu Sheet</span>
+          </button>
+        </div>
+      </div>
+
+      {validationError && (
+        <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{validationError}</span>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-8">
+        {/* ========================================================================= */}
+        {/* BƯỚC 2: AI TRẢ RA THÔNG TIN THEO FORM TIÊU CHUẨN (HỎI LẠI NẾU KHÔNG RÕ) */}
+        {/* ========================================================================= */}
+        {activeTabStep === 2 && (
+          <div className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/20 p-4 sm:p-5">
+            {/* Header Bước 2 */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-100 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="bg-blue-600 text-white text-xs font-black px-2 py-0.5 rounded">
+                    BƯỚC 2 (SOP)
+                  </span>
+                  <h3 className="text-base font-bold text-slate-900">
+                    AI Trả Ra Thông Tin Nhân Viên Theo Form Tiêu Chuẩn
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  <strong>Quy định nghiệp vụ SOP:</strong> Nếu có thông tin không rõ hoặc mờ trên ảnh, AI tuyệt đối <strong>không tự suy đoán</strong> mà hỏi lại để bạn xác nhận hoặc bổ sung.
+                </p>
+              </div>
+
+              <div className="text-right">
+                <span className="text-[11px] text-blue-700 bg-blue-100 font-semibold px-2 py-1 rounded">
+                  Form tiêu chuẩn Bước 2 (Sẵn sàng nhận form từ bạn)
+                </span>
+              </div>
+            </div>
+
+            {/* AI Clarification Dialog: Nếu có thông tin chưa rõ hoặc câu hỏi làm rõ */}
+            {cauHoiLamRo.length > 0 || thongTinChuaRo.length > 0 ? (
+              <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl text-amber-950 space-y-2.5">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
+                  <span className="text-xs font-bold uppercase tracking-wide text-amber-900">
+                    Cảnh báo Anti-Hallucination &amp; Câu hỏi làm rõ từ AI ({cauHoiLamRo.length} yêu cầu xác nhận)
+                  </span>
+                </div>
+                <p className="text-xs text-amber-800 leading-relaxed">
+                  Để đảm bảo tính chính xác tuyệt đối theo SOP, AI đã từ chối đoán mò các trường mờ hoặc thiếu dưới đây và cần bạn xác nhận trực tiếp vào ô tương ứng:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+                  {cauHoiLamRo.map((q, idx) => (
+                    <div key={idx} className="bg-white p-2.5 rounded-lg border border-amber-200 text-xs flex items-start gap-2 shadow-2xs">
+                      <HelpCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <span className="text-slate-800 font-medium">{q}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 flex items-center gap-2 text-xs">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>Đã xác thực rõ ràng:</strong> Toàn bộ các thông tin cơ bản trên ảnh đã được AI nhận diện chính xác mà không cần suy đoán.
+                </span>
+              </div>
+            )}
+
+            {/* Form Fields: Thông Tin Cá Nhân */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Họ và tên */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700">
+                      Họ và tên (VIẾT HOA) <span className="text-rose-500">*</span>
+                    </label>
+                    {isFieldUnclear('Họ và tên', hoVaTen) ? (
+                      <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded font-semibold">
+                        ⚠️ Cần xác nhận
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-medium">
+                        ✓ Rõ ràng
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={hoVaTen}
+                    onChange={(e) => setHoVaTen(e.target.value.toUpperCase())}
+                    placeholder="VÍ DỤ: NGUYỄN VĂN AN"
+                    required
+                    className={`w-full text-xs sm:text-sm px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 font-bold uppercase tracking-wide ${
+                      isFieldUnclear('Họ và tên', hoVaTen) ? 'border-amber-400 bg-amber-50/20' : 'border-slate-300 bg-slate-50/50'
+                    }`}
+                  />
+                </div>
+
+                {/* Số CCCD */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700">
+                      Số CCCD (12 chữ số) <span className="text-rose-500">*</span>
+                    </label>
+                    {isFieldUnclear('Số CCCD', soCCCD) ? (
+                      <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded font-semibold">
+                        ⚠️ Cần xác nhận
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-medium">
+                        ✓ 12 số
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={soCCCD}
+                    onChange={(e) => setSoCCCD(e.target.value)}
+                    placeholder="001095012345"
+                    required
+                    className={`w-full text-xs sm:text-sm px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 font-mono ${
+                      isFieldUnclear('Số CCCD', soCCCD) ? 'border-amber-400 bg-amber-50/20' : 'border-slate-300'
+                    }`}
+                  />
+                </div>
+
+                {/* Ngày sinh */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-700">Ngày sinh (DD/MM/YYYY)</label>
+                    {isFieldUnclear('Ngày sinh', ngaySinh) && (
+                      <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded font-semibold">
+                        ⚠️ Cần xác nhận
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={ngaySinh}
+                    onChange={(e) => setNgaySinh(e.target.value)}
+                    placeholder="15/04/1995"
+                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Giới tính */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Giới tính</label>
+                  <select
+                    value={gioiTinh}
+                    onChange={(e) => setGioiTinh(e.target.value)}
+                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="Nam">Nam</option>
+                    <option value="Nữ">Nữ</option>
+                    <option value="Khác">Khác</option>
+                  </select>
+                </div>
+
+                {/* Ngày cấp */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Ngày cấp CCCD</label>
+                  <input
+                    type="text"
+                    value={ngayCap}
+                    onChange={(e) => setNgayCap(e.target.value)}
+                    placeholder="20/05/2021"
+                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Nơi cấp */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Nơi cấp CCCD</label>
+                  <input
+                    type="text"
+                    value={noiCap}
+                    onChange={(e) => setNoiCap(e.target.value)}
+                    placeholder="Cục Cảnh sát QLHC về TTXH"
+                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Số điện thoại */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-semibold text-slate-700">Số điện thoại</label>
+                    {isFieldUnclear('Số điện thoại', soDienThoai) && (
+                      <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded font-semibold">
+                        ⚠️ Cần bổ sung
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={soDienThoai}
+                    onChange={(e) => setSoDienThoai(e.target.value)}
+                    placeholder="0912345678"
+                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+
+                {/* Nguồn địa chỉ: VNeID vs CCCD */}
+                <div className="sm:col-span-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-4 h-4 text-blue-600" />
+                      <label className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                        Nguồn Dữ Liệu Địa Chỉ Cư Trú (Ưu Tiên VNeID Sau Sáp Nhập)
+                      </label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNguonDiaChi('VNeID');
+                          if (!ghiChuSapNhap) setGhiChuSapNhap('Đã lấy theo dữ liệu VNeID mới nhất sau sáp nhập');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                          nguonDiaChi === 'VNeID'
+                            ? 'bg-amber-500 text-white shadow-xs'
+                            : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Ưu tiên VNeID (Mới)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNguonDiaChi('CCCD');
+                          if (!ghiChuSapNhap) setGhiChuSapNhap('Trích xuất từ mặt CCCD - Cần HR rà soát sáp nhập mới');
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                          nguonDiaChi === 'CCCD'
+                            ? 'bg-blue-600 text-white shadow-xs'
+                            : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span>Mặt thẻ CCCD</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {nguonDiaChi === 'VNeID' ? (
+                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5 text-xs text-amber-950">
+                      <Sparkles className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                      <div>
+                        <span className="font-bold">⭐ QUY TẮC ƯU TIÊN VNeID ĐANG ĐƯỢC ÁP DỤNG:</span>
+                        <p className="mt-0.5 text-amber-800">
+                          Địa chỉ thường trú và quê quán được ưu tiên lấy trực tiếp từ màn hình ứng dụng VNeID, đảm bảo tên phường/xã/quận/huyện đã được cập nhật đúng theo các nghị quyết sáp nhập hành chính mới nhất của Nhà nước.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2.5 text-xs text-blue-950">
+                      <Info className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                      <div>
+                        <span className="font-bold">📍 NGUỒN ĐỊA CHỈ: MẶT THẺ CCCD</span>
+                        <p className="mt-0.5 text-blue-800">
+                          Hồ sơ không có ảnh màn hình VNeID hoặc đang sử dụng dữ liệu in trên phôi thẻ CCCD. HR vui lòng rà soát lại nếu địa chỉ cũ chưa đổi tên sau đợt sáp nhập hành chính.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Ghi chú đơn vị hành chính sau sáp nhập */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                      Ghi chú đơn vị hành chính sau sáp nhập (Lưu vào Cột 13 Excel):
+                    </label>
+                    <input
+                      type="text"
+                      value={ghiChuSapNhap}
+                      onChange={(e) => setGhiChuSapNhap(e.target.value)}
+                      placeholder="Ví dụ: Đã đối chiếu theo VNeID: Phường Dịch Vọng sáp nhập mới"
+                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Quê quán */}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Quê quán</label>
+                  <input
+                    type="text"
+                    value={queQuan}
+                    onChange={(e) => setQueQuan(e.target.value)}
+                    placeholder="Xã Kim Chung, Huyện Hoài Đức, TP Hà Nội"
+                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Địa chỉ thường trú */}
+                <div className="sm:col-span-3">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Địa chỉ thường trú</label>
+                  <input
+                    type="text"
+                    value={diaChiThuongTru}
+                    onChange={(e) => setDiaChiThuongTru(e.target.value)}
+                    placeholder="Số 28, Ngõ 195 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội"
+                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Thành phần gia đình */}
+              <div className="pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                    Thành phần gia đình (Trích xuất từ Sơ yếu lý lịch)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={addFamilyMember}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Thêm người thân</span>
+                  </button>
+                </div>
+
+                {thongTinGiaDinh.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic bg-slate-50 p-2.5 rounded-lg">
+                    Chưa có thông tin người thân hoặc tài liệu không đề cập. Bạn có thể bấm "Thêm người thân" để bổ sung.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {thongTinGiaDinh.map((member, idx) => (
+                      <div
+                        key={idx}
+                        className="flex flex-wrap sm:flex-nowrap items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs"
+                      >
+                        <select
+                          value={member.quanHe}
+                          onChange={(e) => updateFamilyMember(idx, 'quanHe', e.target.value)}
+                          className="w-24 border border-slate-300 rounded px-2 py-1.5 bg-white font-medium"
+                        >
+                          <option value="Bố">Bố</option>
+                          <option value="Mẹ">Mẹ</option>
+                          <option value="Vợ">Vợ</option>
+                          <option value="Chồng">Chồng</option>
+                          <option value="Con">Con</option>
+                          <option value="Anh/Chị/Em">Anh/Chị/Em</option>
+                        </select>
+
+                        <input
+                          type="text"
+                          placeholder="Họ và tên người thân"
+                          value={member.hoTen}
+                          onChange={(e) => updateFamilyMember(idx, 'hoTen', e.target.value)}
+                          className="flex-1 min-w-[130px] border border-slate-300 rounded px-2 py-1.5 bg-white uppercase font-medium"
+                        />
+
+                        <input
+                          type="text"
+                          placeholder="Năm sinh"
+                          value={member.namSinh || ''}
+                          onChange={(e) => updateFamilyMember(idx, 'namSinh', e.target.value)}
+                          className="w-20 border border-slate-300 rounded px-2 py-1.5 bg-white"
+                        />
+
+                        <input
+                          type="text"
+                          placeholder="Nghề nghiệp"
+                          value={member.ngheNghiep || ''}
+                          onChange={(e) => updateFamilyMember(idx, 'ngheNghiep', e.target.value)}
+                          className="flex-1 min-w-[120px] border border-slate-300 rounded px-2 py-1.5 bg-white"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => removeFamilyMember(idx)}
+                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Điều hướng Bước 2 */}
+            {activeTabStep === 2 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onBackToStep1) onBackToStep1();
+                    else if (onStepChange) onStepChange(1);
+                  }}
+                  className="w-full sm:w-auto px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Quay Lại Bước 1 (Tải/Chụp lại ảnh)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!hoVaTen.trim()) {
+                      setValidationError('Vui lòng kiểm tra và nhập Họ và tên ứng viên trước khi chuyển sang Bước 3.');
+                      return;
+                    }
+                    setValidationError(null);
+                    handleSelectStep(3);
+                  }}
+                  className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
+                >
+                  <span>Xác Nhận Bước 2 &amp; Tiếp Tục Sang Bước 3 (Phân Bổ Phòng Ban)</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* BƯỚC 3: CON NGƯỜI THAO TÁC - LỰA CHỌN PHÒNG BAN, BỘ PHẬN, CÔNG VIỆC CHỨC VỤ */}
+        {/* ========================================================================= */}
+        {activeTabStep === 3 && (
+          <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/20 p-4 sm:p-5">
+            {/* Header Bước 3 */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-100 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="bg-emerald-600 text-white text-xs font-black px-2 py-0.5 rounded">
+                    BƯỚC 3 (SOP)
+                  </span>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Điền Thông Tin Công Việc &amp; Chức Vụ Của Nhiều Người Cùng Lúc
+                  </h3>
+                  <span className="bg-emerald-100 text-emerald-800 text-xs font-semibold px-2 py-0.5 rounded-full">
+                    Bulk Job Assignment
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  HR có thể <strong>chọn nhiều hoặc tất cả nhân sự để gán nhanh</strong> cùng một Khối/Ban/Phòng, Công việc, Chức vụ và Điểm làm việc, hoặc tinh chỉnh độc lập từng người trong bảng ma trận phía dưới.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomOrg(!isCustomOrg)}
+                  className="text-xs text-slate-600 hover:text-emerald-700 font-semibold px-2.5 py-1 rounded bg-white border border-slate-200 transition"
+                >
+                  {isCustomOrg ? 'Dùng cơ cấu chuẩn' : 'Nhập cơ cấu tùy chỉnh'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomJob(!isCustomJob);
+                    if (!isCustomJob) setIsManualMode(true);
+                  }}
+                  className="text-xs text-slate-600 hover:text-blue-700 font-semibold px-2.5 py-1 rounded bg-white border border-slate-200 transition"
+                >
+                  {isCustomJob ? 'Dùng 22 chức danh chuẩn' : 'Chức vụ ngoài chuẩn'}
+                </button>
+              </div>
+            </div>
+
+            {/* Thông báo áp dụng thành công nếu có */}
+            {bulkSuccessMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 flex items-center gap-2 shadow-2xs">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{bulkSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* ================= KHỐI CÔNG CỤ ĐIỀN HÀNG LOẠT (BULK ASSIGN TOOLBAR) ================= */}
+            {batchList.length > 0 && (
+              <div className="bg-white rounded-xl border-2 border-emerald-500/80 p-4 shadow-sm space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
+                      ⚡
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-bold text-slate-900">
+                        Thanh Công Cụ Điền Hàng Loạt: Gán Vị Trí Cho Nhiều Người Cùng Lúc
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Tích chọn nhân viên cần gán &rarr; Chọn chức vụ &amp; cơ cấu &rarr; Bấm "Áp Dụng Cho Nhân Sự Đang Chọn".
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Chọn tất cả / Bỏ chọn tất cả */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleToggleSelectAllBatch}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {selectedBatchIds.length === batchList.length ? (
+                        <>
+                          <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Đã chọn tất cả ({batchList.length})</span>
+                        </>
+                      ) : (
+                        <>
+                          <Square className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Chọn tất cả ({batchList.length})</span>
+                        </>
+                      )}
+                    </button>
+                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                      Đang chọn: {selectedBatchIds.length} / {batchList.length} nhân sự
+                    </span>
+                  </div>
+                </div>
+
+                {/* Danh sách chip chọn nhanh nhân viên */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] font-bold text-slate-600 mr-1">Tích chọn nhân sự:</span>
+                  {batchList.map((emp, idx) => {
+                    const isSelected = selectedBatchIds.includes(emp.id);
+                    return (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        onClick={() => handleToggleSelectOne(emp.id)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition border cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-50 text-emerald-900 border-emerald-400 font-bold shadow-2xs'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {isSelected ? (
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        ) : (
+                          <div className="w-3 h-3 rounded-sm border border-slate-400" />
+                        )}
+                        <span>{idx + 1}. {emp.hoVaTen}</span>
+                        {emp.chucVu && (
+                          <span className="text-[10px] text-slate-400 font-normal">({emp.chucVu})</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Form điền hàng loạt */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-200">
+                  {/* Khối */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      1. Khối (Hàng loạt)
+                    </label>
+                    <select
+                      value={bulkKhoi}
+                      onChange={(e) => handleBulkKhoiChange(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {DEFAULT_ORGANIZATION_HIERARCHY.map((k) => (
+                        <option key={k.name} value={k.name}>
+                          {k.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Ban */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      2. Ban (Hàng loạt)
+                    </label>
+                    <select
+                      value={bulkBan}
+                      onChange={(e) => {
+                        setBulkBan(e.target.value);
+                        const kObj = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === bulkKhoi);
+                        const bObj = kObj?.bans.find((b) => b.name === e.target.value);
+                        if (bObj && bObj.phongs.length > 0) {
+                          setBulkPhong(bObj.phongs[0].name);
+                        } else {
+                          setBulkPhong('');
+                        }
+                      }}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === bulkKhoi)?.bans.map((b) => (
+                        <option key={b.name} value={b.name}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Phòng */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      3. Phòng (Hàng loạt)
+                    </label>
+                    <select
+                      value={bulkPhong}
+                      onChange={(e) => setBulkPhong(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === bulkKhoi)
+                        ?.bans.find((b) => b.name === bulkBan)
+                        ?.phongs.map((p) => (
+                          <option key={p.name} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  {/* Công việc */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      4. Công việc dự kiến
+                    </label>
+                    <select
+                      value={bulkCongViec}
+                      onChange={(e) => handleBulkCongViecChange(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-bold text-blue-900 focus:ring-1 focus:ring-emerald-500"
+                    >
+                      {DEFAULT_JOB_POSITIONS.map((j) => (
+                        <option key={j.name} value={j.name}>
+                          {j.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Chức vụ */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      5. Chức vụ (Title)
+                    </label>
+                    <select
+                      value={bulkChucVu}
+                      onChange={(e) => setBulkChucVu(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1.5 border border-emerald-400 rounded-lg bg-white font-bold text-emerald-900 focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                    >
+                      {DEFAULT_JOB_POSITIONS.find((j) => j.name === bulkCongViec)?.chucVus.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Điểm làm việc */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      6. Điểm làm việc
+                    </label>
+                    <input
+                      type="text"
+                      value={bulkDiemLamViec}
+                      onChange={(e) => setBulkDiemLamViec(e.target.value)}
+                      placeholder="Hà Nội - FPT Tower"
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  {/* Loại hợp đồng */}
+                  <div>
+                    <label className="block text-slate-700 font-semibold mb-1">
+                      7. Loại Hợp Đồng
+                    </label>
+                    <select
+                      value={bulkLoaiHopDong}
+                      onChange={(e) => setBulkLoaiHopDong(e.target.value)}
+                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-emerald-500"
+                    >
+                      <option value="Toàn thời gian (Chính thức)">Toàn thời gian (Chính thức)</option>
+                      <option value="Hợp đồng thử việc (60 ngày)">Hợp đồng thử việc (60 ngày)</option>
+                      <option value="Hợp đồng xác định thời hạn (12 tháng)">Hợp đồng xác định thời hạn (12 tháng)</option>
+                      <option value="Hợp đồng không xác định thời hạn">Hợp đồng không xác định thời hạn</option>
+                      <option value="Bán thời gian (Part-time)">Bán thời gian (Part-time)</option>
+                      <option value="Thời vụ / Khoán việc">Thời vụ / Khoán việc</option>
+                    </select>
+                  </div>
+
+                  {/* Nút hành động áp dụng */}
+                  <div className="flex items-end">
+                    <button
+                      type="button"
+                      onClick={handleApplyBulkPositionToSelected}
+                      disabled={selectedBatchIds.length === 0}
+                      className="w-full px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-lg font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer h-[34px]"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Áp Dụng Cho {selectedBatchIds.length} Người</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================= BẢNG MA TRẬN PHÂN BỔ VỊ TRÍ CHI TIẾT CỦA TỪNG NHÂN SỰ ================= */}
+            {batchList.length > 0 && (
+              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white">
+                <div className="px-4 py-3 bg-slate-100 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Briefcase className="w-4 h-4 text-emerald-700" />
+                    <span className="text-xs font-bold text-slate-800">
+                      Bảng Phân Bổ Công Việc &amp; Chức Vụ Chi Tiết ({batchList.length} nhân sự)
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500">
+                    Bạn có thể chỉnh sửa trực tiếp từng dòng hoặc dùng thanh công cụ ở trên để gán hàng loạt
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto max-h-[460px]">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-50 text-slate-700 sticky top-0 border-b border-slate-200 font-bold z-10">
+                      <tr>
+                        <th className="py-2.5 px-3 text-center w-10">
+                          <input
+                            type="checkbox"
+                            checked={selectedBatchIds.length === batchList.length && batchList.length > 0}
+                            onChange={handleToggleSelectAllBatch}
+                            className="rounded text-emerald-600"
+                            title="Chọn / Bỏ chọn tất cả"
+                          />
+                        </th>
+                        <th className="py-2.5 px-3 text-center w-10">STT</th>
+                        <th className="py-2.5 px-3 min-w-[140px]">Họ và Tên &amp; CCCD</th>
+                        <th className="py-2.5 px-3 min-w-[130px]">Khối &amp; Ban</th>
+                        <th className="py-2.5 px-3 min-w-[140px]">Công Việc</th>
+                        <th className="py-2.5 px-3 min-w-[140px]">Chức Vụ (Title)</th>
+                        <th className="py-2.5 px-3 min-w-[130px]">Điểm Làm Việc</th>
+                        <th className="py-2.5 px-3 min-w-[130px]">Loại Hợp Đồng</th>
+                        <th className="py-2.5 px-3 text-center min-w-[90px]">Lương Chuẩn</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {batchList.map((emp, idx) => {
+                        const isSelected = selectedBatchIds.includes(emp.id);
+                        const std = findTieuChuanLuong(emp.congViecDuKien, emp.chucVu);
+                        return (
+                          <tr
+                            key={emp.id}
+                            className={`hover:bg-emerald-50/30 transition ${
+                              isSelected ? 'bg-emerald-50/15' : ''
+                            }`}
+                          >
+                            {/* Checkbox chọn */}
+                            <td className="py-2 px-3 text-center">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleSelectOne(emp.id)}
+                                className="rounded text-emerald-600 cursor-pointer"
+                              />
+                            </td>
+
+                            {/* STT */}
+                            <td className="py-2 px-3 text-center font-mono text-slate-500">
+                              {idx + 1}
+                            </td>
+
+                            {/* Họ tên & CCCD */}
+                            <td className="py-2 px-3">
+                              <div className="font-bold text-slate-900 uppercase">
+                                {emp.hoVaTen}
+                              </div>
+                              <div className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
+                                <span>CCCD: {emp.soCCCD}</span>
+                                {emp.nguonDiaChi === 'VNeID' && (
+                                  <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded font-bold">
+                                    VNeID
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Khối & Ban */}
+                            <td className="py-2 px-3">
+                              <select
+                                value={emp.khoi || bulkKhoi}
+                                onChange={(e) => {
+                                  const newKhoi = e.target.value;
+                                  const kObj = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === newKhoi);
+                                  const firstBan = kObj && kObj.bans.length > 0 ? kObj.bans[0].name : '';
+                                  const firstPhong = kObj && kObj.bans.length > 0 && kObj.bans[0].phongs.length > 0 ? kObj.bans[0].phongs[0].name : '';
+                                  handleUpdateBatchEmployeeRow(emp.id, {
+                                    khoi: newKhoi,
+                                    ban: firstBan,
+                                    phong: firstPhong,
+                                  });
+                                }}
+                                className="w-full text-xs px-2 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-700"
+                              >
+                                {DEFAULT_ORGANIZATION_HIERARCHY.map((k) => (
+                                  <option key={k.name} value={k.name}>
+                                    {k.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <div className="text-[10px] text-slate-500 mt-0.5 truncate">
+                                Ban: {emp.ban || bulkBan} | {emp.phong || bulkPhong}
+                              </div>
+                            </td>
+
+                            {/* Công việc */}
+                            <td className="py-2 px-3">
+                              <select
+                                value={emp.congViecDuKien || bulkCongViec}
+                                onChange={(e) => {
+                                  const newJob = e.target.value;
+                                  const jobObj = DEFAULT_JOB_POSITIONS.find((j) => j.name === newJob);
+                                  const firstTitle = jobObj && jobObj.chucVus.length > 0 ? jobObj.chucVus[0] : '';
+                                  handleUpdateBatchEmployeeRow(emp.id, {
+                                    congViecDuKien: newJob,
+                                    chucVu: firstTitle,
+                                  });
+                                }}
+                                className="w-full text-xs px-2 py-1 bg-white border border-slate-300 rounded font-bold text-blue-900"
+                              >
+                                {DEFAULT_JOB_POSITIONS.map((j) => (
+                                  <option key={j.name} value={j.name}>
+                                    {j.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+
+                            {/* Chức vụ */}
+                            <td className="py-2 px-3">
+                              <select
+                                value={emp.chucVu || bulkChucVu}
+                                onChange={(e) => {
+                                  handleUpdateBatchEmployeeRow(emp.id, {
+                                    chucVu: e.target.value,
+                                  });
+                                }}
+                                className="w-full text-xs px-2 py-1 bg-white border border-emerald-300 rounded font-bold text-emerald-900"
+                              >
+                                {DEFAULT_JOB_POSITIONS.find(
+                                  (j) => j.name === (emp.congViecDuKien || bulkCongViec)
+                                )?.chucVus.map((t) => (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+
+                            {/* Điểm làm việc */}
+                            <td className="py-2 px-3">
+                              <input
+                                type="text"
+                                value={emp.diemLamViec || bulkDiemLamViec}
+                                onChange={(e) =>
+                                  handleUpdateBatchEmployeeRow(emp.id, {
+                                    diemLamViec: e.target.value,
+                                  })
+                                }
+                                className="w-full text-xs px-2 py-1 bg-white border border-slate-300 rounded text-slate-700"
+                              />
+                            </td>
+
+                            {/* Loại HĐ */}
+                            <td className="py-2 px-3">
+                              <select
+                                value={emp.loaiHopDong || bulkLoaiHopDong}
+                                onChange={(e) =>
+                                  handleUpdateBatchEmployeeRow(emp.id, {
+                                    loaiHopDong: e.target.value,
+                                  })
+                                }
+                                className="w-full text-xs px-2 py-1 bg-white border border-slate-300 rounded text-slate-700"
+                              >
+                                <option value="Toàn thời gian (Chính thức)">Toàn thời gian</option>
+                                <option value="Hợp đồng thử việc (60 ngày)">Thử việc 60 ngày</option>
+                                <option value="Hợp đồng xác định thời hạn (12 tháng)">12 tháng</option>
+                                <option value="Hợp đồng không xác định thời hạn">Không thời hạn</option>
+                                <option value="Bán thời gian (Part-time)">Part-time</option>
+                                <option value="Thời vụ / Khoán việc">Thời vụ</option>
+                              </select>
+                            </td>
+
+                            {/* Lương chuẩn tự động gợi ý */}
+                            <td className="py-2 px-3 text-center">
+                              {std ? (
+                                <span className="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-900 rounded font-mono font-bold text-[10px]" title={`Lương CB: ${formatVND(std.luongCoBan)} đ, PC: ${formatVND(std.phuCapChucVu)} đ`}>
+                                  {formatVND(std.luongCoBan)} đ
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 italic">Theo vị trí</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Thẻ tóm tắt hồ sơ nhân sự đang xử lý */}
+            <div className="bg-white p-3.5 rounded-xl border border-emerald-300 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-sm">
+                  {hoVaTen ? hoVaTen.trim().charAt(0) : 'NV'}
+                </div>
+                <div>
+                  <div className="text-[11px] text-slate-500">Đang phân bổ nhân sự:</div>
+                  <div className="text-sm font-bold text-slate-900 tracking-wide uppercase">
+                    {hoVaTen || 'Ứng viên chưa đặt tên'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 flex flex-wrap gap-x-3 mt-0.5">
+                    <span>CCCD: <strong className="text-slate-700 font-mono">{soCCCD || 'Chưa có'}</strong></span>
+                    <span>SĐT: <strong className="text-slate-700 font-mono">{soDienThoai || 'Chưa có'}</strong></span>
+                    <span>Ngày sinh: <strong className="text-slate-700">{ngaySinh || 'Chưa có'}</strong></span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleSelectStep(2)}
+                className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Kiểm tra lại thông tin cá nhân (Bước 2)</span>
+              </button>
+            </div>
+
+            {/* Dải Breadcrumb hiển thị phân bổ */}
+            <div className="bg-white p-3 rounded-xl border border-emerald-200 shadow-2xs space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-bold text-slate-700 flex items-center gap-1">
+                  <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                  Cơ cấu:
+                </span>
+                <span className="bg-slate-100 border border-slate-200 text-slate-800 font-semibold px-2 py-0.5 rounded">
+                  Khối: {khoi || 'Chưa chọn'}
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                <span className="bg-slate-100 border border-slate-200 text-slate-800 font-semibold px-2 py-0.5 rounded">
+                  Ban: {ban || 'Chưa chọn'}
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                <span className="bg-emerald-600 text-white font-bold px-2 py-0.5 rounded">
+                  Phòng: {phong || 'Chưa chọn'}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs pt-1 border-t border-slate-100">
+                <span className="font-bold text-slate-700 flex items-center gap-1">
+                  <Briefcase className="w-3.5 h-3.5 text-blue-600" />
+                  Chức danh:
+                </span>
+                <span className="bg-blue-50 border border-blue-200 text-blue-900 font-semibold px-2 py-0.5 rounded">
+                  Công việc: {congViecDuKien}
+                </span>
+                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                <span className="bg-indigo-600 text-white font-bold px-2 py-0.5 rounded flex items-center gap-1">
+                  <Award className="w-3 h-3" />
+                  Chức vụ: {chucVu}
+                </span>
+                {matchedStandard && (
+                  <span className="ml-auto text-[11px] text-emerald-700 bg-emerald-100 font-bold px-2 py-0.5 rounded">
+                    Khớp chuẩn: {formatVND(matchedStandard.luongCoBan)} đ
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Trường chọn Cơ Cấu Tổ Chức */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wide block">
+                1. Lựa Chọn Phòng Ban &amp; Đơn Vị Công Tác
+              </span>
+              {!isCustomOrg ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Cấp Khối <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={khoi}
+                      onChange={(e) => handleKhoiChange(e.target.value)}
+                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium"
+                    >
+                      {DEFAULT_ORGANIZATION_HIERARCHY.map((k) => (
+                        <option key={k.id} value={k.name}>
+                          {k.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Cấp Ban <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={ban}
+                      onChange={(e) => handleBanChange(e.target.value)}
+                      disabled={!khoi}
+                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium disabled:bg-slate-100"
+                    >
+                      {DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === khoi)?.bans.map((b) => (
+                        <option key={b.id} value={b.name}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Cấp Phòng <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={phong}
+                      onChange={(e) => setPhong(e.target.value)}
+                      disabled={!ban}
+                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium disabled:bg-slate-100"
+                    >
+                      {DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === khoi)
+                        ?.bans.find((b) => b.name === ban)
+                        ?.phongs.map((p) => (
+                          <option key={p.id} value={p.name}>
+                            {p.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <input
+                    type="text"
+                    placeholder="Tên Khối"
+                    value={khoi}
+                    onChange={(e) => setKhoi(e.target.value)}
+                    className="text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Tên Ban"
+                    value={ban}
+                    onChange={(e) => setBan(e.target.value)}
+                    className="text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Tên Phòng"
+                    value={phong}
+                    onChange={(e) => setPhong(e.target.value)}
+                    className="text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Trường chọn Công Việc & Chức Vụ */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wide block">
+                2. Lựa Chọn Công Việc &amp; Chức Vụ
+              </span>
+              {!isCustomJob ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Nhóm Công Việc <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={congViecDuKien}
+                      onChange={(e) => handleJobChange(e.target.value)}
+                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium"
+                    >
+                      {DEFAULT_JOB_POSITIONS.map((job) => (
+                        <option key={job.id} value={job.name}>
+                          {job.name} ({job.chucVus.length} chức vụ)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Chức Vụ Tương Ứng <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={chucVu}
+                      onChange={(e) => setChucVu(e.target.value)}
+                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-bold text-indigo-900"
+                    >
+                      {DEFAULT_JOB_POSITIONS.find((j) => j.name === congViecDuKien)?.chucVus.map((pos) => {
+                        const std = DEFAULT_TIEU_CHUAN_LUONG.find((t) => t.chucVu === pos && t.congViec === congViecDuKien);
+                        return (
+                          <option key={pos} value={pos}>
+                            {pos} {std ? `[Lương CB: ${formatVND(std.luongCoBan)} đ]` : ''}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <input
+                    type="text"
+                    placeholder="Nhập tên công việc..."
+                    value={congViecDuKien}
+                    onChange={(e) => setCongViecDuKien(e.target.value)}
+                    className="text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Nhập tên chức vụ..."
+                    value={chucVu}
+                    onChange={(e) => setChucVu(e.target.value)}
+                    className="text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg font-bold text-indigo-900"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* 3. Điểm làm việc & Loại hợp đồng */}
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+              <span className="text-xs font-bold text-slate-700 uppercase tracking-wide block">
+                3. Điểm Làm Việc &amp; Loại Hợp Đồng Lao Động (Cột 19 - 20)
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Điểm / Văn Phòng Làm Việc <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={diemLamViec}
+                    onChange={(e) => setDiemLamViec(e.target.value)}
+                    placeholder="Ví dụ: Hà Nội - FPT Tower, Tòa nhà F-Ville..."
+                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Loại Hợp Đồng Lao Động <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={loaiHopDong}
+                    onChange={(e) => setLoaiHopDong(e.target.value)}
+                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 font-medium"
+                  >
+                    <option value="Toàn thời gian (Chính thức)">Toàn thời gian (Chính thức)</option>
+                    <option value="Hợp đồng thử việc (60 ngày)">Hợp đồng thử việc (60 ngày)</option>
+                    <option value="Hợp đồng xác định thời hạn (12 tháng)">Hợp đồng xác định thời hạn (12 tháng)</option>
+                    <option value="Hợp đồng không xác định thời hạn">Hợp đồng không xác định thời hạn</option>
+                    <option value="Bán thời gian (Part-time)">Bán thời gian (Part-time)</option>
+                    <option value="Thời vụ / Khoán việc">Thời vụ / Khoán việc</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Điều hướng Bước 3 */}
+            {activeTabStep === 3 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => handleSelectStep(2)}
+                  className="w-full sm:w-auto px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Quay Lại Bước 2 (Thông tin cá nhân &amp; VNeID)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!chucVu.trim() || !congViecDuKien.trim()) {
+                      setValidationError('Vui lòng chọn Công việc và Chức vụ trước khi sang Bước 4.');
+                      return;
+                    }
+                    setValidationError(null);
+                    handleSelectStep(4);
+                  }}
+                  className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
+                >
+                  <span>Xác Nhận Bước 3 &amp; Sang Bước 4 (Lương &amp; Xuất File)</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* BƯỚC 4: 12 KHOẢN LƯƠNG & PHỤ CẤP (ĐIỀN TAY) + LƯU SHEET + XUẤT EXCEL 43 CỘT */}
+        {/* ========================================================================= */}
+        {activeTabStep === 4 && (
+          <div className="space-y-5 rounded-xl border border-indigo-200 bg-indigo-50/20 p-4 sm:p-5">
+            {/* Header Bước 4 */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100 pb-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="bg-indigo-600 text-white text-xs font-black px-2 py-0.5 rounded">
+                    BƯỚC 4 (SOP)
+                  </span>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Bảng 12 Khoản Lương &amp; Phụ Cấp (HR Điền Tay / Hiệu Chỉnh) &amp; Xuất File Excel
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  HR tự do điều chỉnh hoặc điền tay trực tiếp từng khoản lương và phụ cấp theo thỏa thuận, sau đó vừa lưu vào Google Sheets vừa có thể bấm xuất file Excel chuẩn 43 cột.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[11px] bg-amber-100 text-amber-900 border border-amber-300 font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
+                  <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Chế độ: HR Điền tay trực tiếp</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Khối Tổng Hợp Tài Chính Tổng Quan */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-xs text-slate-500 font-medium block mb-1">1. Lương Cơ Bản</span>
+                <div className="flex items-baseline gap-1">
+                  <input
+                    type="number"
+                    step="50000"
+                    value={luongCoBan}
+                    onChange={(e) => {
+                      const val = Number(e.target.value) || 0;
+                      setLuongCoBan(val);
+                      setLuongDongBHXH(val + Number(phuCapChucVu || 0));
+                    }}
+                    className="w-full text-lg font-black text-slate-900 font-mono border-b-2 border-indigo-500 bg-indigo-50/40 px-1 py-0.5 rounded-t"
+                  />
+                  <span className="text-xs font-bold text-slate-500">đ</span>
+                </div>
+                <span className="text-[10px] text-slate-400 block mt-1">Lương ký HĐLĐ</span>
+              </div>
+
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-xs text-slate-500 font-medium block mb-1">2. Tổng Phụ Cấp (12+ khoản)</span>
+                <span className="text-lg font-black text-amber-700 font-mono block">
+                  {formatVND(tongPhuCap)} đ
+                </span>
+                <span className="text-[10px] text-slate-400 block mt-1">Gồm cố định &amp; biến động</span>
+              </div>
+
+              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-xs text-slate-500 font-medium block mb-1">3. Mức Lương Đóng BHXH</span>
+                <div className="flex items-baseline gap-1">
+                  <input
+                    type="number"
+                    step="50000"
+                    value={luongDongBHXH}
+                    onChange={(e) => setLuongDongBHXH(Number(e.target.value) || 0)}
+                    className="w-full text-lg font-bold text-slate-800 font-mono border-b-2 border-emerald-500 bg-emerald-50/40 px-1 py-0.5 rounded-t"
+                  />
+                  <span className="text-xs font-bold text-slate-500">đ</span>
+                </div>
+                <span className="text-[10px] text-slate-400 block mt-1">Lương CB + PC Chức vụ</span>
+              </div>
+
+              <div className="p-3.5 bg-gradient-to-br from-indigo-700 to-indigo-900 text-white rounded-xl shadow-md flex flex-col justify-between">
+                <span className="text-xs text-indigo-200 font-bold uppercase tracking-wider block">
+                  TỔNG THU NHẬP DỰ KIẾN
+                </span>
+                <div className="my-1">
+                  <span className="text-xl sm:text-2xl font-black font-mono tracking-tight text-yellow-300">
+                    {formatVND(tongThuNhapDuKien)} đ
+                  </span>
+                </div>
+                <span className="text-[10px] text-indigo-200 block">
+                  Lương CB + Toàn bộ 12+ khoản phụ cấp
+                </span>
+              </div>
+            </div>
+
+            {/* Form Điền Tay 12+ Khoản Lương & Phụ Cấp Chia Thành 3 Nhóm Rõ Ràng */}
+            <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs space-y-5">
+              {/* Nhóm A: Các khoản lương & phụ cấp cố định theo chức danh */}
+              <div>
+                <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-950 uppercase tracking-wide">
+                    <Award className="w-4 h-4 text-indigo-600" />
+                    <span>A. Các Khoản Lương &amp; Phụ Cấp Cố Định (Theo Tiêu Chuẩn &amp; Chức Danh)</span>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                    Tổng: {formatVND(phuCapCoDinh)} đ
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Chức vụ</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={phuCapChucVu}
+                      onChange={(e) => {
+                        const val = Number(e.target.value) || 0;
+                        setPhuCapChucVu(val);
+                        setLuongDongBHXH(luongCoBan + val);
+                      }}
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Điện thoại</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={phuCapDienThoai}
+                      onChange={(e) => setPhuCapDienThoai(Number(e.target.value) || 0)}
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">TC Tay nghề</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={troCapTayNghe}
+                      onChange={(e) => setTroCapTayNghe(Number(e.target.value) || 0)}
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">TC Gia đình</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={troCapGiaDinh}
+                      onChange={(e) => setTroCapGiaDinh(Number(e.target.value) || 0)}
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">Thưởng Chuyên cần</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={thuongChuyenCan}
+                      onChange={(e) => setThuongChuyenCan(Number(e.target.value) || 0)}
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">Thưởng Sáng kiến</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={thuongSangKien}
+                      onChange={(e) => setThuongSangKien(Number(e.target.value) || 0)}
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Nhóm B: Phụ cấp điều kiện làm việc & công việc */}
+              <div>
+                <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950 uppercase tracking-wide">
+                    <Coins className="w-4 h-4 text-emerald-600" />
+                    <span>B. Phụ Cấp Môi Trường &amp; Điều Kiện Công Việc (HR Điền Tay)</span>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                    Tổng: {formatVND(
+                      (Number(phuCapXangXe) || 0) +
+                      (Number(phuCapMoiTruong) || 0) +
+                      (Number(anToanVeSinhVien) || 0) +
+                      (Number(phuCapKinhDoanh) || 0) +
+                      (Number(phuCapNangNhoc) || 0)
+                    )} đ
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Xăng xe</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={phuCapXangXe}
+                      onChange={(e) => setPhuCapXangXe(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Môi trường</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={phuCapMoiTruong}
+                      onChange={(e) => setPhuCapMoiTruong(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">ATVSV</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={anToanVeSinhVien}
+                      onChange={(e) => setAnToanVeSinhVien(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Kinh doanh</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={phuCapKinhDoanh}
+                      onChange={(e) => setPhuCapKinhDoanh(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
+                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Nặng nhọc / Độc hại</label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={phuCapNangNhoc}
+                      onChange={(e) => setPhuCapNangNhoc(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Nhóm C: Các khoản biến động điền tay đặc thù (FPT / AM / Lưu động / Phát sinh) */}
+              <div>
+                <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-950 uppercase tracking-wide">
+                    <Sparkles className="w-4 h-4 text-amber-600" />
+                    <span>C. Các Khoản Biến Động Điền Tay Đặc Thù (FPT / AM / Lưu Động / Phát Sinh)</span>
+                  </div>
+                  <span className="text-[11px] font-mono font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded">
+                    Tổng: {formatVND(
+                      (Number(troCapDacThuFPT) || 0) +
+                      (Number(thuongNangLucAM) || 0) +
+                      (Number(phuCapLuuDong) || 0) +
+                      (Number(phuCapPhatSinh) || 0)
+                    )} đ
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-2.5 bg-amber-50/60 rounded-lg border border-amber-200">
+                    <label className="text-[10px] text-amber-900 font-bold block mb-1">
+                      Trợ cấp đặc thù (FPT)
+                    </label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={troCapDacThuFPT}
+                      onChange={(e) => setTroCapDacThuFPT(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-amber-900 bg-white border border-amber-300 rounded px-2 py-1"
+                    />
+                    <span className="text-[9px] text-amber-700 mt-1 block">Khoản HR tự điền</span>
+                  </div>
+
+                  <div className="p-2.5 bg-amber-50/60 rounded-lg border border-amber-200">
+                    <label className="text-[10px] text-amber-900 font-bold block mb-1">
+                      Thưởng năng lực AM
+                    </label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={thuongNangLucAM}
+                      onChange={(e) => setThuongNangLucAM(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-amber-900 bg-white border border-amber-300 rounded px-2 py-1"
+                    />
+                    <span className="text-[9px] text-amber-700 mt-1 block">Đánh giá AM thực tế</span>
+                  </div>
+
+                  <div className="p-2.5 bg-amber-50/60 rounded-lg border border-amber-200">
+                    <label className="text-[10px] text-amber-900 font-bold block mb-1">
+                      Phụ cấp lưu động
+                    </label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={phuCapLuuDong}
+                      onChange={(e) => setPhuCapLuuDong(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-amber-900 bg-white border border-amber-300 rounded px-2 py-1"
+                    />
+                    <span className="text-[9px] text-amber-700 mt-1 block">Di chuyển nhiều điểm</span>
+                  </div>
+
+                  <div className="p-2.5 bg-amber-50/60 rounded-lg border border-amber-200">
+                    <label className="text-[10px] text-amber-900 font-bold block mb-1">
+                      Phụ cấp phát sinh khác
+                    </label>
+                    <input
+                      type="number"
+                      step="50000"
+                      value={phuCapPhatSinh}
+                      onChange={(e) => setPhuCapPhatSinh(Number(e.target.value) || 0)}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-amber-900 bg-white border border-amber-300 rounded px-2 py-1"
+                    />
+                    <span className="text-[9px] text-amber-700 mt-1 block">Khoản thỏa thuận riêng</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* BẢNG DỮ LIỆU ĐẦY ĐỦ CHUẨN 43 CỘT (MASTER HR SPREADSHEET 43 COLUMNS - 4 MÀU HEADER) */}
+            <div className="bg-white rounded-xl border-2 border-indigo-400 shadow-md overflow-hidden">
+              <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 p-4 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet className="w-5 h-5 text-indigo-400" />
+                    <h4 className="font-bold text-sm sm:text-base">
+                      BẢNG TỔNG HỢP HỒ SƠ NHÂN SỰ CHUẨN 43 CỘT (HR MASTER RECORD)
+                    </h4>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-0.5">
+                    Hệ thống đã tự động gom nhóm 43 cột theo 4 dải màu chuẩn: Navy Blue (Cá nhân) • Light Blue (Tổ chức) • Olive Green (Lương) • Vàng Chanh FPT (Hệ thống).
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={handleExportSingleExcel}
+                    disabled={isExportingExcel}
+                    className="px-3.5 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-slate-900 rounded-lg text-xs font-bold shadow transition flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>{isExportingExcel ? 'Đang xuất Excel...' : 'Tải File Excel 43 Cột (.xlsx)'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Dải 4 màu Header Indicator */}
+              <div className="grid grid-cols-4 text-center text-[10px] font-bold py-1.5 text-white">
+                <div className="bg-[#1E3A8A] py-1 px-2 border-r border-white/20">
+                  NHÓM 1: CỘT 1 - 13 (NAVY BLUE)<br /><span className="font-normal opacity-90">Thông Tin Cá Nhân &amp; VNeID/CCCD</span>
+                </div>
+                <div className="bg-[#0284C7] py-1 px-2 border-r border-white/20">
+                  NHÓM 2: CỘT 14 - 20 (LIGHT BLUE)<br /><span className="font-normal opacity-90">Tổ Chức, Chức Danh &amp; HĐLĐ</span>
+                </div>
+                <div className="bg-[#4D7C0F] py-1 px-2 border-r border-white/20">
+                  NHÓM 3: CỘT 21 - 36 (OLIVE GREEN)<br /><span className="font-normal opacity-90">12 Khoản Lương &amp; Phụ Cấp</span>
+                </div>
+                <div className="bg-[#FACC15] py-1 px-2 text-slate-900 font-black">
+                  NHÓM 4: CỘT 37 - 43 (VÀNG CHANH FPT)<br /><span className="font-normal text-slate-800">Gia Đình &amp; Trạng Thái Hệ Thống</span>
+                </div>
+              </div>
+
+              {/* Master Summary Grid */}
+              <div className="p-4 sm:p-5 space-y-4 text-xs">
+                {/* Phần 1: Thông tin cá nhân & VNeID */}
+                <div>
+                  <div className="text-[11px] font-bold text-[#1E3A8A] uppercase tracking-wider mb-2 flex items-center justify-between border-b border-blue-100 pb-1">
+                    <span className="flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-blue-700" />
+                      1. Thông Tin Cá Nhân &amp; Giấy Tờ (Cột 1 - 13: Navy Blue)
+                    </span>
+                    <span className="text-[10px] bg-blue-100 text-blue-900 px-2 py-0.2 rounded font-mono font-bold">
+                      Nguồn: {nguonDiaChi} {nguonDiaChi === 'VNeID' ? '⭐ Ưu tiên' : ''}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-blue-50/40 p-3 rounded-lg border border-blue-200">
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Cột 4 - Họ và tên:</span>
+                      <strong className="text-slate-900 text-sm font-black">{hoVaTen || '---'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Cột 7 - Số CCCD (12 số):</span>
+                      <strong className="font-mono text-slate-800">{soCCCD || '---'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Cột 5 &amp; 6 - Ngày sinh &amp; Phái:</span>
+                      <span className="text-slate-800 font-medium">{ngaySinh || '---'} ({gioiTinh})</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Cột 12 - Số điện thoại:</span>
+                      <span className="font-mono text-slate-800 font-medium">{soDienThoai || '---'}</span>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <span className="text-slate-400 block text-[10px]">Cột 10 - Quê quán:</span>
+                      <span className="text-slate-700">{queQuan || '---'}</span>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <span className="text-slate-400 block text-[10px]">Cột 11 - Địa chỉ thường trú ({nguonDiaChi}):</span>
+                      <span className="text-slate-700">{diaChiThuongTru || '---'}</span>
+                    </div>
+                    {ghiChuSapNhap && (
+                      <div className="sm:col-span-4 bg-white p-2 rounded border border-blue-200 text-slate-600">
+                        <span className="text-[10px] text-blue-700 font-bold block">Cột 13 - Ghi chú sáp nhập:</span>
+                        <span>{ghiChuSapNhap}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Phần 2: Vị trí & Phòng ban */}
+                <div>
+                  <div className="text-[11px] font-bold text-[#0284C7] uppercase tracking-wider mb-2 flex items-center gap-1.5 border-b border-sky-100 pb-1">
+                    <Building className="w-3.5 h-3.5 text-sky-600" />
+                    <span>2. Cơ Cấu Tổ Chức, Chức Vụ &amp; HĐLĐ (Cột 14 - 20: Light Blue)</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-sky-50/40 p-3 rounded-lg border border-sky-200">
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Cột 14 - Cấp Khối:</span>
+                      <strong className="text-slate-800">{khoi}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Cột 15 &amp; 16 - Ban / Phòng:</span>
+                      <span className="text-slate-800 font-medium">{ban} / {phong}</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Cột 17 &amp; 18 - Công việc &amp; Chức vụ:</span>
+                      <strong className="text-indigo-900 font-bold">{chucVu}</strong>
+                      <span className="block text-[10px] text-slate-500">({congViecDuKien})</span>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 block text-[10px]">Cột 19 &amp; 20 - Địa điểm &amp; Loại HĐ:</span>
+                      <span className="text-slate-800 font-medium block">{diemLamViec}</span>
+                      <span className="text-[10px] text-slate-500">{loaiHopDong}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Phần 3: Chế độ Lương & Phụ cấp */}
+                <div>
+                  <div className="text-[11px] font-bold text-[#4D7C0F] uppercase tracking-wider mb-2 flex items-center gap-1.5 border-b border-lime-100 pb-1">
+                    <DollarSign className="w-3.5 h-3.5 text-lime-700" />
+                    <span>3. Định Mức Lương &amp; 12+ Khoản Phụ Cấp (Cột 21 - 36: Olive Green)</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-lime-50/30 p-3 rounded-lg border border-lime-300">
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Cột 21 - Lương cơ bản:</span>
+                      <strong className="text-slate-900 font-mono text-sm">{formatVND(luongCoBan)} đ</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Cột 33 - Tổng phụ cấp:</span>
+                      <strong className="text-slate-900 font-mono text-sm">{formatVND(tongPhuCap)} đ</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block text-[10px]">Cột 35 - Lương đóng BHXH:</span>
+                      <span className="text-slate-800 font-mono font-bold">{formatVND(luongDongBHXH)} đ</span>
+                    </div>
+                    <div className="bg-[#4D7C0F] text-white p-2.5 rounded-lg text-center flex flex-col justify-center">
+                      <span className="text-[10px] uppercase font-semibold text-lime-100">Cột 34 - Tổng thu nhập:</span>
+                      <strong className="text-base font-black font-mono text-yellow-300">
+                        {formatVND(tongThuNhapDuKien)} đ
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Phần 4: Thành viên gia đình & Ghi chú */}
+                <div>
+                  <div className="text-[11px] font-bold text-amber-700 uppercase tracking-wider mb-2 flex items-center gap-1.5 border-b border-amber-100 pb-1">
+                    <FileText className="w-3.5 h-3.5 text-amber-600" />
+                    <span>4. Thành Viên Gia Đình, Ghi Chú &amp; Hồ Sơ (Cột 37 - 43: Vàng Chanh FPT)</span>
+                  </div>
+                  <div className="bg-amber-50/40 p-3 rounded-lg border border-amber-300 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] text-slate-600 font-semibold">Cột 37 - Người thân (SYLL):</span>
+                      {thongTinGiaDinh.length === 0 ? (
+                        <span className="text-slate-400 italic">Không có</span>
+                      ) : (
+                        thongTinGiaDinh.map((m, i) => (
+                          <span key={i} className="bg-white border border-amber-200 px-2 py-0.5 rounded text-[11px] text-slate-700">
+                            {m.quanHe}: {m.hoTen || '---'} {m.namSinh ? `(${m.namSinh})` : ''}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Cột 38 - Ghi chú bổ sung (Kinh nghiệm, ghi chú tuyển dụng...)
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={ghiChu}
+                        onChange={(e) => setGhiChu(e.target.value)}
+                        placeholder="Nhập ghi chú thêm cho hồ sơ này..."
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Điều hướng & Nút Lưu Dữ Liệu Vào Sheet + Nút Xuất File Excel */}
+            <div className="pt-3 border-t border-slate-200 flex flex-col lg:flex-row items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSelectStep(3)}
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span>Quay Lại Bước 3 (Chức vụ &amp; Phòng ban)</span>
+                </button>
+                {onResetNewRecord && (
+                  <button
+                    type="button"
+                    onClick={onResetNewRecord}
+                    className="px-3.5 py-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold transition flex items-center gap-1"
+                  >
+                    <span>+ Tiếp nhận hồ sơ mới</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+                {/* NÚT XUẤT FILE EXCEL (.XLSX) */}
+                <button
+                  type="button"
+                  onClick={handleExportSingleExcel}
+                  disabled={isExportingExcel}
+                  className="w-full sm:w-auto px-5 py-3 bg-white hover:bg-amber-50 text-amber-900 border-2 border-amber-400 rounded-xl text-xs sm:text-sm font-bold shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-amber-600" />
+                  <span>
+                    {isExportingExcel
+                      ? 'Đang tạo File Excel...'
+                      : batchList.length > 1
+                      ? `Xuất File Excel (.xlsx) [${batchList.length} Nhân Viên - 43 Cột & 4 Màu]`
+                      : 'Xuất File Excel (.xlsx) [43 Cột - 4 Màu Header]'}
+                  </span>
+                </button>
+
+                {/* NÚT LƯU VÀO GOOGLE SHEETS */}
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {isSaving ? (
+                    <span>Đang lưu vào Sheet &amp; gửi email...</span>
+                  ) : (
+                    <>
+                      <FileCheck2 className="w-4 h-4" />
+                      <span>
+                        {batchList.length > 1
+                          ? `Lưu ${batchList.length} Dòng Dữ Liệu Vào Google Sheets (Chuẩn 43 Cột)`
+                          : 'Lưu Dòng Dữ Liệu Vào Google Sheets (Chuẩn 43 Cột)'}
+                      </span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </form>
+    </div>
+  );
+};

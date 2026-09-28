@@ -1,0 +1,6 @@
+{
+  "name": "HR Document AI - Google Sheets Web App",
+  "description": "Ứng dụng tự động hóa nhập liệu hồ sơ nhân sự bằng Gemini AI Vision tích hợp Google Sheets với tối ưu hóa kích thước ảnh và phân quyền tài khoản Google.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
