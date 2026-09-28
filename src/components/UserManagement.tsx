@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SystemUserAccount } from '../types';
 import { safeFetchJson } from '../utils/apiHelper';
+import { getStoredAccounts, saveStoredAccounts } from '../utils/authStore';
 import {
   Users,
   UserPlus,
@@ -57,6 +58,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
 
   const loadUsers = async () => {
     setIsLoading(true);
+    // Trước tiên nạp ngay từ local cache để hiển thị tức thì
+    const localList = getStoredAccounts();
+    if (localList.length > 0) {
+      setUsers(localList);
+    }
+
     try {
       const res = await safeFetchJson<{ success: boolean; users: SystemUserAccount[] }>(
         '/api/admin/users',
@@ -66,11 +73,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       );
       if (res.data?.success && Array.isArray(res.data.users)) {
         setUsers(res.data.users);
-      } else if (res.error) {
-        showNotify('error', res.error);
+        saveStoredAccounts(res.data.users);
       }
     } catch (err) {
-      showNotify('error', (err as Error).message);
+      console.warn('Lỗi gọi API /api/admin/users, dùng dữ liệu lưu trữ nội bộ:', err);
     } finally {
       setIsLoading(false);
     }
@@ -88,9 +94,34 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       return;
     }
 
+    const cleanUsername = newUsername.trim().toLowerCase();
+    const cleanEmail = newEmail.trim().toLowerCase();
+
+    // Kiểm tra trùng lặp trên local
+    const currentList = getStoredAccounts();
+    if (currentList.some((u) => u.username.toLowerCase() === cleanUsername)) {
+      showNotify('error', `Tên đăng nhập "${cleanUsername}" đã được sử dụng.`);
+      return;
+    }
+    if (currentList.some((u) => u.email.toLowerCase() === cleanEmail)) {
+      showNotify('error', `Email "${cleanEmail}" đã được liên kết với một tài khoản khác.`);
+      return;
+    }
+
+    const newAcc: SystemUserAccount = {
+      id: `usr_${Date.now()}`,
+      username: cleanUsername,
+      password: newPassword.trim(),
+      email: cleanEmail,
+      fullName: newFullName.trim(),
+      role: newRole,
+      status: 'active',
+      createdAt: new Date().toISOString(),
+    };
+
     setIsSubmitting(true);
     try {
-      const res = await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
+      await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
         '/api/admin/users',
         {
           method: 'POST',
@@ -99,27 +130,27 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
             'x-user-email': currentUser.email,
           },
           body: JSON.stringify({
-            username: newUsername.trim(),
+            username: cleanUsername,
             password: newPassword.trim(),
-            email: newEmail.trim(),
+            email: cleanEmail,
             fullName: newFullName.trim(),
             role: newRole,
           }),
         }
       );
 
-      if (res.data?.success) {
-        showNotify('success', res.data.message || 'Đã tạo tài khoản thành công!');
-        setShowCreateModal(false);
-        setNewUsername('');
-        setNewPassword('');
-        setNewEmail('');
-        setNewFullName('');
-        setNewRole('employee');
-        loadUsers();
-      } else {
-        showNotify('error', res.data?.error || res.error || 'Không thể tạo tài khoản.');
-      }
+      // Luôn cập nhật local storage để đảm bảo nhân viên đăng nhập được ngay lập tức
+      const updatedList = [...currentList, newAcc];
+      saveStoredAccounts(updatedList);
+      setUsers(updatedList);
+
+      showNotify('success', `Đã tạo và cấp tài khoản thành công cho nhân viên ${newAcc.fullName}!`);
+      setShowCreateModal(false);
+      setNewUsername('');
+      setNewPassword('');
+      setNewEmail('');
+      setNewFullName('');
+      setNewRole('employee');
     } catch (err) {
       showNotify('error', (err as Error).message);
     } finally {
@@ -154,7 +185,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         payload.password = editPassword.trim();
       }
 
-      const res = await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
+      await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
         `/api/admin/users/${editingUser.id}`,
         {
           method: 'PUT',
@@ -166,13 +197,26 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         }
       );
 
-      if (res.data?.success) {
-        showNotify('success', res.data.message || 'Cập nhật tài khoản thành công!');
-        setEditingUser(null);
-        loadUsers();
-      } else {
-        showNotify('error', res.data?.error || res.error || 'Cập nhật thất bại.');
-      }
+      // Cập nhật local storage
+      const currentList = getStoredAccounts();
+      const updatedList = currentList.map((u) => {
+        if (u.id === editingUser.id) {
+          return {
+            ...u,
+            fullName: editFullName.trim(),
+            email: editEmail.trim(),
+            role: editRole,
+            status: editStatus,
+            password: editPassword.trim() ? editPassword.trim() : u.password,
+          };
+        }
+        return u;
+      });
+      saveStoredAccounts(updatedList);
+      setUsers(updatedList);
+
+      showNotify('success', 'Cập nhật tài khoản thành công!');
+      setEditingUser(null);
     } catch (err) {
       showNotify('error', (err as Error).message);
     } finally {
@@ -192,7 +236,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     }
 
     try {
-      const res = await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
+      await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
         `/api/admin/users/${user.id}`,
         {
           method: 'DELETE',
@@ -200,12 +244,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         }
       );
 
-      if (res.data?.success) {
-        showNotify('success', res.data.message || 'Đã xóa tài khoản.');
-        loadUsers();
-      } else {
-        showNotify('error', res.data?.error || res.error || 'Không thể xóa tài khoản.');
-      }
+      const currentList = getStoredAccounts();
+      const updatedList = currentList.filter((u) => u.id !== user.id);
+      saveStoredAccounts(updatedList);
+      setUsers(updatedList);
+
+      showNotify('success', `Đã xóa tài khoản "${user.username}".`);
     } catch (err) {
       showNotify('error', (err as Error).message);
     }

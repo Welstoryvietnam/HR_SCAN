@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserProfile } from '../types';
-import { safeFetchJson } from '../utils/apiHelper';
+import { authenticateUser, requestPasswordReset, confirmPasswordReset } from '../utils/authStore';
 import {
   ShieldCheck,
   UserCheck,
@@ -59,28 +59,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setSuccessMessage('');
 
     try {
-      const res = await safeFetchJson<{
-        success: boolean;
-        message?: string;
-        user?: UserProfile;
-        error?: string;
-      }>('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: username.trim(),
-          password,
-        }),
-      });
+      const res = await authenticateUser(username.trim(), password);
 
-      if (res.data?.success && res.data.user) {
-        onLoginSuccess(res.data.user);
+      if (res.success && res.user) {
+        onLoginSuccess(res.user);
       } else {
-        const errorMsg =
-          res.data?.error ||
+        setErrorMessage(
           res.error ||
-          'Tên đăng nhập hoặc mật khẩu không chính xác. Vui lòng liên hệ Admin để được cấp tài khoản.';
-        setErrorMessage(errorMsg);
+          'Tên đăng nhập hoặc mật khẩu không chính xác. Vui lòng liên hệ Admin để được cấp tài khoản.'
+        );
       }
     } catch (err) {
       setErrorMessage((err as Error).message || 'Không thể kết nối đến máy chủ xác thực.');
@@ -109,26 +96,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setForgotSuccess('');
 
     try {
-      const res = await safeFetchJson<{
-        success: boolean;
-        message?: string;
-        simulatedCode?: string;
-        error?: string;
-      }>('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: forgotEmail.trim() }),
-      });
+      const res = await requestPasswordReset(forgotEmail.trim());
 
-      if (res.data?.success) {
-        setForgotSuccess(res.data.message || 'Mã xác nhận đã được gửi đến email của bạn.');
-        if (res.data.simulatedCode) {
-          setHintCode(res.data.simulatedCode);
-          setResetCode(res.data.simulatedCode); // tự động điền để test thuận tiện
+      if (res.success) {
+        setForgotSuccess(res.message);
+        if (res.simulatedCode) {
+          setHintCode(res.simulatedCode);
+          setResetCode(res.simulatedCode); // tự động điền để test thuận tiện
         }
         setForgotStep(2);
       } else {
-        setForgotError(res.data?.error || res.error || 'Không tìm thấy tài khoản với email này.');
+        setForgotError(res.error || 'Không tìm thấy tài khoản với email này.');
       }
     } catch (err) {
       setForgotError((err as Error).message);
@@ -157,23 +135,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     setForgotError('');
 
     try {
-      const res = await safeFetchJson<{
-        success: boolean;
-        message?: string;
-        error?: string;
-      }>('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: forgotEmail.trim(),
-          code: resetCode.trim(),
-          newPassword,
-        }),
-      });
+      const res = await confirmPasswordReset(forgotEmail.trim(), resetCode.trim(), newPassword);
 
-      if (res.data?.success) {
+      if (res.success) {
         setSuccessMessage(
-          res.data.message || 'Đổi mật khẩu thành công! Bạn có thể đăng nhập ngay với mật khẩu mới.'
+          res.message || 'Đổi mật khẩu thành công! Bạn có thể đăng nhập ngay với mật khẩu mới.'
         );
         setShowForgotModal(false);
         setPassword(newPassword);
@@ -184,7 +150,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         setConfirmPassword('');
         setHintCode('');
       } else {
-        setForgotError(res.data?.error || res.error || 'Không thể đổi mật khẩu.');
+        setForgotError(res.error || 'Không thể đổi mật khẩu.');
       }
     } catch (err) {
       setForgotError((err as Error).message);
