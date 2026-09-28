@@ -40,6 +40,56 @@ const adminEmails = new Set<string>([
   "hr.manager@workspace.vn",
 ]);
 
+// Cấu trúc tài khoản hệ thống (Admin & Nhân viên tuyển dụng)
+interface SystemAccount {
+  id: string;
+  username: string;
+  password: string;
+  email: string;
+  fullName: string;
+  role: "admin" | "employee";
+  status: "active" | "locked";
+  createdAt: string;
+  lastLogin?: string;
+}
+
+// Cơ sở dữ liệu tài khoản người dùng được khởi tạo và lưu trữ trên hệ thống
+let userAccounts: SystemAccount[] = [
+  {
+    id: "usr_admin_01",
+    username: "admin",
+    password: "admin123",
+    email: "Happyendpu@gmail.com".toLowerCase(),
+    fullName: "Quản Trị Viên Hệ Thống",
+    role: "admin",
+    status: "active",
+    createdAt: "2026-09-01T08:00:00.000Z",
+  },
+  {
+    id: "usr_recruiter_01",
+    username: "tuyendung",
+    password: "tuyendung123",
+    email: "tuyendung@congty.com".toLowerCase(),
+    fullName: "Nguyễn Thu Hà (Tuyển Dụng)",
+    role: "employee",
+    status: "active",
+    createdAt: "2026-09-10T08:00:00.000Z",
+  },
+  {
+    id: "usr_recruiter_02",
+    username: "hr_mai",
+    password: "123456",
+    email: "mai.tran@congty.com".toLowerCase(),
+    fullName: "Trần Thị Mai (Chuyên viên Nhân sự)",
+    role: "employee",
+    status: "active",
+    createdAt: "2026-09-15T08:00:00.000Z",
+  },
+];
+
+// Bộ nhớ đệm lưu mã đặt lại mật khẩu gửi qua email: email -> { code, expires }
+const resetPasswordTokens = new Map<string, { code: string; expires: number }>();
+
 // Danh mục chuẩn Công việc và Chức vụ theo dữ liệu hình ảnh
 const jobPositionsHierarchy = [
   {
@@ -891,32 +941,71 @@ function timLuongTheoChucVu(chucVu: string, congViec?: string) {
 // Kiểm tra thông tin người dùng và phân quyền
 app.get("/api/auth/me", (req, res) => {
   const clientEmail = ((req.headers["x-user-email"] as string) || "Happyendpu@gmail.com").toLowerCase().trim();
-  const isAdmin = adminEmails.has(clientEmail);
+  const matchedUser = userAccounts.find(
+    (u) => u.email.toLowerCase() === clientEmail || u.username.toLowerCase() === clientEmail
+  );
+
+  const isAdmin = matchedUser ? matchedUser.role === "admin" : adminEmails.has(clientEmail);
 
   res.json({
-    email: clientEmail,
-    name: clientEmail.split("@")[0].toUpperCase(),
+    id: matchedUser?.id || "usr_default",
+    username: matchedUser?.username || clientEmail.split("@")[0],
+    email: matchedUser?.email || clientEmail,
+    name: matchedUser?.fullName || clientEmail.split("@")[0].toUpperCase(),
     role: isAdmin ? "admin" : "employee",
     displayName: isAdmin ? "Quản trị viên (Toàn quyền)" : "Nhân viên tuyển dụng",
     isAdmin,
   });
 });
 
-// Đăng nhập hệ thống (Hỗ trợ xác thực Admin & Nhân viên tuyển dụng)
+// Đăng nhập hệ thống bằng Tên Đăng Nhập hoặc Email và Mật Khẩu
 app.post("/api/auth/login", (req, res) => {
   try {
-    const { email } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: "Vui lòng nhập địa chỉ Email hoặc Tên đăng nhập." });
+    const { username, email, password } = req.body;
+    const loginIdentifier = (username || email || "").toString().trim().toLowerCase();
+
+    if (!loginIdentifier) {
+      return res.status(400).json({ error: "Vui lòng nhập Tên đăng nhập hoặc Email." });
+    }
+    if (!password) {
+      return res.status(400).json({ error: "Vui lòng nhập Mật khẩu đã được cấp." });
     }
 
-    const clientEmail = String(email).toLowerCase().trim();
-    const isAdmin = adminEmails.has(clientEmail);
+    // Tra cứu tài khoản theo username hoặc email
+    const account = userAccounts.find(
+      (u) =>
+        u.username.toLowerCase() === loginIdentifier ||
+        u.email.toLowerCase() === loginIdentifier
+    );
+
+    if (!account) {
+      return res.status(401).json({
+        error: `Tài khoản "${loginIdentifier}" không tồn tại. Vui lòng liên hệ Quản trị viên (Admin) để được tạo và cấp quyền tài khoản.`,
+      });
+    }
+
+    if (account.status === "locked") {
+      return res.status(403).json({
+        error: "Tài khoản này đang bị khóa tạm thời. Vui lòng liên hệ Quản trị viên để mở khóa.",
+      });
+    }
+
+    if (account.password !== String(password)) {
+      return res.status(401).json({
+        error: "Mật khẩu không chính xác. Nếu quên mật khẩu, vui lòng sử dụng chức năng 'Quên mật khẩu' để đổi mật khẩu qua email.",
+      });
+    }
+
+    // Đăng nhập thành công -> Cập nhật thời điểm đăng nhập gần nhất
+    account.lastLogin = new Date().toISOString();
+    const isAdmin = account.role === "admin" || adminEmails.has(account.email.toLowerCase());
 
     const user = {
-      email: clientEmail,
-      name: clientEmail.split("@")[0].toUpperCase(),
-      role: isAdmin ? "admin" : "employee",
+      id: account.id,
+      username: account.username,
+      email: account.email,
+      name: account.fullName,
+      role: account.role,
       displayName: isAdmin ? "Quản trị viên (Toàn quyền)" : "Nhân viên tuyển dụng",
     };
 
@@ -924,6 +1013,326 @@ app.post("/api/auth/login", (req, res) => {
       success: true,
       message: `Đăng nhập thành công với vai trò ${user.displayName}`,
       user,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Yêu cầu đặt lại mật khẩu khi quên mật khẩu qua Email (Mô phỏng gửi qua MailApp)
+app.post("/api/auth/forgot-password", (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "Vui lòng nhập địa chỉ Email đăng ký tài khoản." });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const account = userAccounts.find((u) => u.email.toLowerCase() === cleanEmail);
+
+    if (!account) {
+      return res.status(404).json({
+        error: `Không tìm thấy tài khoản nhân viên nào liên kết với email "${cleanEmail}". Vui lòng kiểm tra lại hoặc liên hệ Quản trị viên.`,
+      });
+    }
+
+    // Tạo mã xác nhận 6 số ngẫu nhiên
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    resetPasswordTokens.set(cleanEmail, {
+      code: resetCode,
+      expires: Date.now() + 15 * 60 * 1000, // Hiệu lực 15 phút
+    });
+
+    // Tạo bản ghi email trong hộp thư MailApp
+    const timestamp = new Date().toISOString();
+    const subject = `[HR Automator] Mã xác nhận đặt lại mật khẩu cho tài khoản ${account.username}`;
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; color: #1e293b; max-width: 600px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h3 style="color: #1e3a8a; margin-top: 0;">YÊU CẦU ĐẶT LẠI MẬT KHẨU TÀI KHOẢN</h3>
+        <p>Kính gửi <strong>${account.fullName}</strong>,</p>
+        <p>Bạn (hoặc ai đó) vừa yêu cầu cấp lại mật khẩu cho tài khoản có Tên đăng nhập: <strong>${account.username}</strong>.</p>
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 16px; text-align: center; margin: 16px 0;">
+          <p style="margin: 0; font-size: 13px; color: #64748b;">MÃ XÁC NHẬN BẢO MẬT (6 CHỮ SỐ):</p>
+          <p style="margin: 8px 0; font-size: 28px; font-weight: bold; letter-spacing: 6px; color: #2563eb;">${resetCode}</p>
+          <p style="margin: 0; font-size: 11px; color: #94a3b8;">Mã có hiệu lực trong 15 phút. Tuyệt đối không cung cấp mã này cho người khác.</p>
+        </div>
+        <p style="font-size: 12px; color: #64748b;">Nếu bạn không yêu cầu hành động này, vui lòng bỏ qua email.</p>
+      </div>
+    `;
+
+    emailLogs.unshift({
+      id: `mail_reset_${Date.now()}`,
+      timestamp,
+      toEmail: cleanEmail,
+      subject,
+      htmlContent,
+      status: "Thành công",
+    });
+
+    res.json({
+      success: true,
+      message: `Đã gửi mã xác nhận 6 số đến email ${cleanEmail}. Vui lòng kiểm tra hộp thư email để lấy mã xác nhận.`,
+      simulatedCode: resetCode, // Tiện ích hỗ trợ người dùng test ngay nếu không mở hòm thư
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Xác nhận đặt lại mật khẩu mới
+app.post("/api/auth/reset-password", (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ error: "Vui lòng nhập đầy đủ Email, Mã xác nhận và Mật khẩu mới." });
+    }
+
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ error: "Mật khẩu mới phải có độ dài tối thiểu từ 6 ký tự." });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const tokenInfo = resetPasswordTokens.get(cleanEmail);
+
+    if (!tokenInfo) {
+      return res.status(400).json({ error: "Chưa có yêu cầu đặt lại mật khẩu cho email này, hoặc mã đã hết hạn. Vui lòng yêu cầu lại." });
+    }
+
+    if (Date.now() > tokenInfo.expires) {
+      resetPasswordTokens.delete(cleanEmail);
+      return res.status(400).json({ error: "Mã xác nhận đã hết hạn (quá 15 phút). Vui lòng gửi lại yêu cầu mới." });
+    }
+
+    if (tokenInfo.code !== String(code).trim()) {
+      return res.status(400).json({ error: "Mã xác nhận không chính xác. Vui lòng kiểm tra lại trong email." });
+    }
+
+    const account = userAccounts.find((u) => u.email.toLowerCase() === cleanEmail);
+    if (!account) {
+      return res.status(404).json({ error: "Không tìm thấy tài khoản nhân viên tương ứng." });
+    }
+
+    account.password = String(newPassword);
+    resetPasswordTokens.delete(cleanEmail);
+
+    res.json({
+      success: true,
+      message: `Đặt lại mật khẩu thành công cho tài khoản "${account.username}"! Bạn có thể dùng mật khẩu mới để đăng nhập ngay bây giờ.`,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// -------------------------------------------------------------
+// QUẢN LÝ TÀI KHOẢN NGƯỜI DÙNG BỞI QUẢN TRỊ VIÊN (ADMIN)
+// -------------------------------------------------------------
+
+// Lấy danh sách toàn bộ tài khoản hệ thống (Dành cho Admin)
+app.get("/api/admin/users", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
+    if (!adminEmails.has(userEmail)) {
+      return res.status(403).json({ error: "Từ chối truy cập: Chỉ Quản trị viên mới có quyền xem danh sách tài khoản." });
+    }
+
+    // Trả về danh sách tài khoản với mật khẩu hiển thị tiện cho Admin quản trị
+    const safeAccounts = userAccounts.map((u) => ({
+      id: u.id,
+      username: u.username,
+      password: u.password,
+      email: u.email,
+      fullName: u.fullName,
+      role: u.role,
+      status: u.status,
+      createdAt: u.createdAt,
+      lastLogin: u.lastLogin,
+    }));
+
+    res.json({ success: true, users: safeAccounts });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Quản trị viên tạo tài khoản mới cho nhân viên
+app.post("/api/admin/users", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
+    if (!adminEmails.has(userEmail)) {
+      return res.status(403).json({ error: "Từ chối truy cập: Chỉ Quản trị viên mới có quyền tạo tài khoản cho nhân viên." });
+    }
+
+    const { username, password, email, fullName, role = "employee" } = req.body;
+
+    if (!username || !password || !email || !fullName) {
+      return res.status(400).json({ error: "Vui lòng điền đầy đủ: Tên đăng nhập, Mật khẩu, Email và Họ tên nhân viên." });
+    }
+
+    const cleanUsername = String(username).trim().toLowerCase();
+    const cleanEmail = String(email).trim().toLowerCase();
+
+    if (cleanUsername.length < 3) {
+      return res.status(400).json({ error: "Tên đăng nhập phải có ít nhất 3 ký tự." });
+    }
+
+    if (String(password).length < 6) {
+      return res.status(400).json({ error: "Mật khẩu phải có ít nhất 6 ký tự." });
+    }
+
+    if (!cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+      return res.status(400).json({ error: "Địa chỉ Email không đúng định dạng." });
+    }
+
+    // Kiểm tra trùng lặp Tên đăng nhập
+    if (userAccounts.some((u) => u.username.toLowerCase() === cleanUsername)) {
+      return res.status(400).json({ error: `Tên đăng nhập "${cleanUsername}" đã được sử dụng. Vui lòng chọn tên khác.` });
+    }
+
+    // Kiểm tra trùng lặp Email
+    if (userAccounts.some((u) => u.email.toLowerCase() === cleanEmail)) {
+      return res.status(400).json({ error: `Email "${cleanEmail}" đã được liên kết với một tài khoản khác.` });
+    }
+
+    const newAccount: SystemAccount = {
+      id: `usr_${Date.now()}`,
+      username: cleanUsername,
+      password: String(password),
+      email: cleanEmail,
+      fullName: String(fullName).trim(),
+      role: role === "admin" ? "admin" : "employee",
+      status: "active",
+      createdAt: new Date().toISOString(),
+    };
+
+    userAccounts.push(newAccount);
+
+    if (newAccount.role === "admin") {
+      adminEmails.add(cleanEmail);
+    }
+
+    // Gửi email thông báo cấp tài khoản qua MailApp
+    const emailSubject = `[HR Document AI] Bạn đã được cấp tài khoản hệ thống`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; color: #1e293b; max-width: 600px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h3 style="color: #1e3a8a; margin-top: 0;">THÔNG BÁO CẤP TÀI KHOẢN NHÂN SỰ</h3>
+        <p>Kính gửi <strong>${newAccount.fullName}</strong>,</p>
+        <p>Quản trị viên đã phê duyệt và cấp phát tài khoản sử dụng Hệ thống Tự động hóa Tuyển dụng & Quản trị Nhân sự AI:</p>
+        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 16px; margin: 16px 0;">
+          <p style="margin: 4px 0;">Tên đăng nhập: <strong style="color: #1e40af;">${newAccount.username}</strong></p>
+          <p style="margin: 4px 0;">Mật khẩu khởi tạo: <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px;">${newAccount.password}</code></p>
+          <p style="margin: 4px 0;">Email đăng ký: <strong>${newAccount.email}</strong></p>
+          <p style="margin: 4px 0;">Vai trò: <strong>${newAccount.role === "admin" ? "Quản trị viên" : "Nhân viên tuyển dụng"}</strong></p>
+        </div>
+        <p style="font-size: 13px; color: #64748b;">Bạn có thể dùng Tên đăng nhập và Mật khẩu này để đăng nhập vào hệ thống. Trong trường hợp quên mật khẩu, bạn có thể tự đổi mật khẩu qua Email đăng ký.</p>
+      </div>
+    `;
+
+    emailLogs.unshift({
+      id: `mail_acc_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      toEmail: cleanEmail,
+      subject: emailSubject,
+      htmlContent: emailHtml,
+      status: "Thành công",
+    });
+
+    res.json({
+      success: true,
+      message: `Đã tạo và cấp tài khoản thành công cho nhân viên ${newAccount.fullName}.`,
+      user: newAccount,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Quản trị viên cập nhật tài khoản (sửa mật khẩu, vai trò, trạng thái khóa)
+app.put("/api/admin/users/:id", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
+    if (!adminEmails.has(userEmail)) {
+      return res.status(403).json({ error: "Từ chối truy cập: Chỉ Quản trị viên mới có quyền chỉnh sửa tài khoản." });
+    }
+
+    const { id } = req.params;
+    const account = userAccounts.find((u) => u.id === id);
+
+    if (!account) {
+      return res.status(404).json({ error: `Không tìm thấy tài khoản với mã: ${id}` });
+    }
+
+    const { fullName, email, password, role, status } = req.body;
+
+    if (fullName) account.fullName = String(fullName).trim();
+    if (email) {
+      const cleanEmail = String(email).trim().toLowerCase();
+      // Kiểm tra trùng email với tài khoản khác
+      if (userAccounts.some((u) => u.id !== id && u.email.toLowerCase() === cleanEmail)) {
+        return res.status(400).json({ error: `Email "${cleanEmail}" đã được sử dụng bởi tài khoản khác.` });
+      }
+      account.email = cleanEmail;
+    }
+
+    if (password && String(password).length >= 6) {
+      account.password = String(password);
+    }
+
+    if (role === "admin" || role === "employee") {
+      account.role = role;
+      if (role === "admin") {
+        adminEmails.add(account.email.toLowerCase());
+      } else {
+        // Chỉ xóa khỏi adminEmails nếu không phải email cố định
+        if (account.email.toLowerCase() !== "happyendpu@gmail.com") {
+          adminEmails.delete(account.email.toLowerCase());
+        }
+      }
+    }
+
+    if (status === "active" || status === "locked") {
+      account.status = status;
+    }
+
+    res.json({
+      success: true,
+      message: `Cập nhật tài khoản "${account.username}" thành công.`,
+      user: account,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Quản trị viên xóa tài khoản
+app.delete("/api/admin/users/:id", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
+    if (!adminEmails.has(userEmail)) {
+      return res.status(403).json({ error: "Từ chối truy cập: Chỉ Quản trị viên mới có quyền xóa tài khoản." });
+    }
+
+    const { id } = req.params;
+    const account = userAccounts.find((u) => u.id === id);
+
+    if (!account) {
+      return res.status(404).json({ error: `Không tìm thấy tài khoản với mã: ${id}` });
+    }
+
+    // Không cho phép xóa tài khoản của chính mình đang đăng nhập
+    if (account.email.toLowerCase() === userEmail) {
+      return res.status(400).json({ error: "Không thể tự xóa tài khoản của chính bạn đang đăng nhập." });
+    }
+
+    userAccounts = userAccounts.filter((u) => u.id !== id);
+    if (account.role === "admin") {
+      adminEmails.delete(account.email.toLowerCase());
+    }
+
+    res.json({
+      success: true,
+      message: `Đã xóa tài khoản "${account.username}" thành công.`,
+      remaining: userAccounts.length,
     });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });

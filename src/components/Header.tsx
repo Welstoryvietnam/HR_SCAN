@@ -8,10 +8,11 @@ import {
   Mail,
   Users,
   UploadCloud,
-  LayoutDashboard
+  LayoutDashboard,
+  UserCog
 } from 'lucide-react';
 
-export type AppTab = 'upload' | 'records' | 'dashboard' | 'salary' | 'emails';
+export type AppTab = 'upload' | 'records' | 'dashboard' | 'salary' | 'emails' | 'users';
 
 interface HeaderProps {
   currentUser: UserProfile;
@@ -196,6 +197,22 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <Mail className="w-4 h-4" />
                 <span>Hộp Thư MailApp</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onTabChange('users')}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-medium rounded-lg transition whitespace-nowrap cursor-pointer ${
+                  activeTab === 'users'
+                    ? 'bg-blue-50 text-blue-700 shadow-2xs font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <UserCog className="w-4 h-4" />
+                <span>Quản Lý Tài Khoản</span>
+                <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-1.5 py-0.2 rounded">
+                  Admin
+                </span>
               </button>
             </>
           )}

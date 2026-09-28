@@ -16,7 +16,9 @@ import { NhanSuTable } from './components/NhanSuTable';
 import { TieuChuanLuongManager } from './components/TieuChuanLuongManager';
 import { EmailViewer } from './components/EmailViewerModal';
 import { Dashboard } from './components/Dashboard';
+import { UserManagement } from './components/UserManagement';
 import { SopProgressHeader } from './components/SopProgressHeader';
+import { safeFetchJson } from './utils/apiHelper';
 import {
   Sparkles,
   CheckCircle2,
@@ -70,43 +72,45 @@ export default function App() {
   // Tải dữ liệu Tiêu chuẩn lương (Sheet "TieuChuanLuong")
   const loadTieuChuanLuong = async () => {
     try {
-      const res = await fetch('/api/sheets/tieu-chuan-luong');
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setTieuChuanLuong(data.data);
+      const res = await safeFetchJson<{ success: boolean; data: TieuChuanLuongItem[] }>(
+        '/api/sheets/tieu-chuan-luong'
+      );
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        setTieuChuanLuong(res.data.data);
       }
     } catch (err) {
-      console.error('Lỗi tải tiêu chuẩn lương:', err);
+      console.warn('Lỗi tải tiêu chuẩn lương:', err);
     }
   };
 
   // Lấy dữ liệu hồ sơ nhân sự (Sheet "DanhSachNhanSu") có phân quyền theo email
   const loadRecords = async (email: string) => {
     try {
-      const res = await fetch('/api/sheets/danh-sach-nhan-su', {
-        headers: { 'x-user-email': email },
-      });
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setRecords(data.data);
+      const res = await safeFetchJson<{ success: boolean; data: NhanSuRecord[] }>(
+        '/api/sheets/danh-sach-nhan-su',
+        {
+          headers: { 'x-user-email': email },
+        }
+      );
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        setRecords(res.data.data);
       }
     } catch (err) {
-      console.error('Lỗi tải danh sách hồ sơ:', err);
+      console.warn('Lỗi tải danh sách hồ sơ:', err);
     }
   };
 
   // Lấy lịch sử email MailApp
   const loadEmailLogs = async (email: string) => {
     try {
-      const res = await fetch('/api/email-logs', {
+      const res = await safeFetchJson<{ logs: EmailLogItem[] }>('/api/email-logs', {
         headers: { 'x-user-email': email },
       });
-      const data = await res.json();
-      if (Array.isArray(data.logs)) {
-        setEmailLogs(data.logs);
+      if (Array.isArray(res.data?.logs)) {
+        setEmailLogs(res.data.logs);
       }
     } catch (err) {
-      console.error('Lỗi tải email logs:', err);
+      console.warn('Lỗi tải email logs:', err);
     }
   };
 
@@ -146,7 +150,7 @@ export default function App() {
   // Bảo vệ tab theo phân quyền: Nếu không phải Admin thì chỉ được ở tab upload hoặc records
   useEffect(() => {
     if (currentUser && currentUser.role !== 'admin') {
-      if (activeTab === 'dashboard' || activeTab === 'salary' || activeTab === 'emails') {
+      if (activeTab === 'dashboard' || activeTab === 'salary' || activeTab === 'emails' || activeTab === 'users') {
         setActiveTab('upload');
       }
     }
@@ -215,19 +219,20 @@ export default function App() {
         soTaiLieuDinhKem: images.length,
       };
 
-      const res = await fetch('/api/sheets/danh-sach-nhan-su', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-email': currentUser.email,
-        },
-        body: JSON.stringify(payload),
-      });
+      const res = await safeFetchJson<{ success: boolean; error?: string }>(
+        '/api/sheets/danh-sach-nhan-su',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-email': currentUser.email,
+          },
+          body: JSON.stringify(payload),
+        }
+      );
 
-      const result = await res.json();
-
-      if (!res.ok || !result.success) {
-        throw new Error(result.error || 'Không thể lưu hồ sơ vào Sheet.');
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.error || res.data?.error || 'Không thể lưu hồ sơ vào Sheet.');
       }
 
       showNotification(
@@ -255,22 +260,23 @@ export default function App() {
     if (!currentUser) return false;
     setIsSaving(true);
     try {
-      const res = await fetch('/api/sheets/danh-sach-nhan-su/batch', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-email': currentUser.email,
-        },
-        body: JSON.stringify({
-          employees: batchList,
-          userEmail: currentUser.email,
-        }),
-      });
+      const res = await safeFetchJson<{ success: boolean; error?: string }>(
+        '/api/sheets/danh-sach-nhan-su/batch',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-email': currentUser.email,
+          },
+          body: JSON.stringify({
+            employees: batchList,
+            userEmail: currentUser.email,
+          }),
+        }
+      );
 
-      const result = await res.json();
-
-      if (!res.ok || !result.success) {
-        throw new Error(result.error || 'Không thể lưu danh sách hồ sơ hàng loạt.');
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.error || res.data?.error || 'Không thể lưu danh sách hồ sơ hàng loạt.');
       }
 
       showNotification(
@@ -297,18 +303,20 @@ export default function App() {
   const handleEditRecord = async (updatedRecord: NhanSuRecord): Promise<boolean> => {
     if (!currentUser) return false;
     try {
-      const res = await fetch(`/api/sheets/danh-sach-nhan-su/${updatedRecord.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-email': currentUser.email,
-        },
-        body: JSON.stringify(updatedRecord),
-      });
+      const res = await safeFetchJson<{ success: boolean; error?: string }>(
+        `/api/sheets/danh-sach-nhan-su/${updatedRecord.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-email': currentUser.email,
+          },
+          body: JSON.stringify(updatedRecord),
+        }
+      );
 
-      const result = await res.json();
-      if (!res.ok || !result.success) {
-        throw new Error(result.error || 'Không thể cập nhật hồ sơ.');
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.error || res.data?.error || 'Không thể cập nhật hồ sơ.');
       }
 
       showNotification(
@@ -327,18 +335,20 @@ export default function App() {
   const handleSaveStandard = async (item: Partial<TieuChuanLuongItem>) => {
     if (!currentUser) return;
     try {
-      const res = await fetch('/api/sheets/tieu-chuan-luong', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-email': currentUser.email,
-        },
-        body: JSON.stringify(item),
-      });
+      const res = await safeFetchJson<{ success: boolean; error?: string }>(
+        '/api/sheets/tieu-chuan-luong',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-email': currentUser.email,
+          },
+          body: JSON.stringify(item),
+        }
+      );
 
-      const result = await res.json();
-      if (!res.ok || !result.success) {
-        throw new Error(result.error || 'Không thể lưu tiêu chuẩn lương.');
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.error || res.data?.error || 'Không thể lưu tiêu chuẩn lương.');
       }
 
       showNotification('success', 'Đã cập nhật Sheet "TieuChuanLuong" thành công!');
@@ -353,13 +363,15 @@ export default function App() {
   const handleDeleteStandard = async (id: string) => {
     if (!currentUser) return;
     try {
-      const res = await fetch(`/api/sheets/tieu-chuan-luong/${id}`, {
-        method: 'DELETE',
-        headers: { 'x-user-email': currentUser.email },
-      });
-      const result = await res.json();
-      if (!res.ok || !result.success) {
-        throw new Error(result.error || 'Không thể xóa tiêu chuẩn lương.');
+      const res = await safeFetchJson<{ success: boolean; error?: string }>(
+        `/api/sheets/tieu-chuan-luong/${id}`,
+        {
+          method: 'DELETE',
+          headers: { 'x-user-email': currentUser.email },
+        }
+      );
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.error || res.data?.error || 'Không thể xóa tiêu chuẩn lương.');
       }
       showNotification('success', 'Đã xóa chức vụ khỏi Sheet "TieuChuanLuong".');
       loadTieuChuanLuong();
@@ -372,13 +384,15 @@ export default function App() {
   const handleDeleteRecord = async (id: string) => {
     if (!currentUser) return;
     try {
-      const res = await fetch(`/api/sheets/danh-sach-nhan-su/${id}`, {
-        method: 'DELETE',
-        headers: { 'x-user-email': currentUser.email },
-      });
-      const result = await res.json();
-      if (!res.ok || !result.success) {
-        throw new Error(result.error || 'Không thể xóa hồ sơ.');
+      const res = await safeFetchJson<{ success: boolean; error?: string }>(
+        `/api/sheets/danh-sach-nhan-su/${id}`,
+        {
+          method: 'DELETE',
+          headers: { 'x-user-email': currentUser.email },
+        }
+      );
+      if (!res.ok || !res.data?.success) {
+        throw new Error(res.error || res.data?.error || 'Không thể xóa hồ sơ.');
       }
       showNotification('success', 'Đã xóa hồ sơ khỏi Sheet "DanhSachNhanSu".');
       loadRecords(currentUser.email);
@@ -635,6 +649,10 @@ export default function App() {
             userEmail={currentUser.email}
             isAdmin={true}
           />
+        )}
+
+        {isAdmin && activeTab === 'users' && (
+          <UserManagement currentUser={currentUser} />
         )}
       </main>
 

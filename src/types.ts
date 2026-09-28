@@ -1,10 +1,25 @@
 export type UserRole = 'admin' | 'employee';
 
 export interface UserProfile {
+  id?: string;
+  username?: string;
   email: string;
   name: string;
   role: UserRole;
   avatar?: string;
+  displayName?: string;
+}
+
+export interface SystemUserAccount {
+  id: string;
+  username: string;
+  password?: string;
+  email: string;
+  fullName: string;
+  role: UserRole;
+  status: 'active' | 'locked';
+  createdAt: string;
+  lastLogin?: string;
 }
 
 export interface TieuChuanLuongItem {
