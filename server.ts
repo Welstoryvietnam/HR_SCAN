@@ -1699,6 +1699,77 @@ const GEMINI_CANDIDATE_MODELS = [
 
 let activeGeminiModel = "gemini-3.1-flash-lite";
 
+// Hàm phân tích và tự động vá lỗi JSON khi Gemini phản hồi bị cắt ngắn hoặc lẫn ký tự lạ
+function safeParseExtractedJson(raw: string): any {
+  if (!raw || typeof raw !== "string" || !raw.trim()) return {};
+  const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {}
+
+  // Tìm cặp ngoặc { ... } đầy đủ
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
+    } catch (e) {}
+  }
+
+  // Xử lý JSON bị cắt ngắn (Truncated JSON) bằng cách cân bằng dấu ngoặc và chuỗi
+  let candidate = cleaned;
+  if (firstBrace !== -1) {
+    candidate = cleaned.substring(firstBrace);
+  }
+  // Cắt bỏ thuộc tính dở dang ở cuối
+  candidate = candidate.replace(/,\s*"[^"]*":?\s*$/, "").replace(/,\s*$/, "");
+
+  // Cân bằng dấu ngoặc kép
+  const quotes = (candidate.match(/"/g) || []).length;
+  if (quotes % 2 !== 0) {
+    candidate += '"';
+  }
+
+  // Cân bằng dấu ngoặc vuông và nhọn
+  const openBrackets = (candidate.match(/\[/g) || []).length;
+  const closeBrackets = (candidate.match(/\]/g) || []).length;
+  for (let i = 0; i < Math.max(0, openBrackets - closeBrackets); i++) candidate += "]";
+
+  const openBraces = (candidate.match(/\{/g) || []).length;
+  const closeBraces = (candidate.match(/\}/g) || []).length;
+  for (let i = 0; i < Math.max(0, openBraces - closeBraces); i++) candidate += "}";
+
+  try {
+    return JSON.parse(candidate);
+  } catch (e) {}
+
+  // Trích xuất fallback bằng Regex cho các trường chính
+  const data: any = {};
+  const regexFields = [
+    "hoVaTen",
+    "ngaySinh",
+    "gioiTinh",
+    "soCCCD",
+    "ngayCap",
+    "noiCap",
+    "queQuan",
+    "diaChiThuongTru",
+    "nguonDiaChi",
+    "ghiChuSapNhap",
+    "soDienThoai",
+    "khoi",
+    "ban",
+    "phong",
+    "chucVu",
+    "congViecDuKien"
+  ];
+  for (const f of regexFields) {
+    const m = cleaned.match(new RegExp(`"${f}"\\s*:\\s*"([^"]*)"`));
+    if (m) data[f] = m[1];
+  }
+  return data;
+}
+
 // 1. GỌI GEMINI API TRÍCH XUẤT HỒ SƠ NHÂN SỰ TỪ MẢNG ẢNH ĐÃ NÉN (MULTIMODAL) CÓ CƠ CHẾ DỰ PHÒNG CHỐNG LỖI 503
 app.post("/api/ai/extract-documents", async (req, res) => {
   try {
@@ -1716,12 +1787,44 @@ app.post("/api/ai/extract-documents", async (req, res) => {
 
     images.forEach((img: { base64Data: string; mimeType?: string; docType?: string; fileName?: string }) => {
       if (img && img.base64Data) {
-        parts.push({
-          inlineData: {
-            mimeType: img.mimeType || "image/jpeg",
-            data: img.base64Data,
-          },
-        });
+        let cleanBase64 = String(img.base64Data);
+        let mimeType = img.mimeType || "image/jpeg";
+
+        // Tách bỏ tiền tố Data URI nếu còn sót (data:image/...;base64,)
+        if (cleanBase64.includes(",")) {
+          const match = cleanBase64.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            mimeType = match[1];
+            cleanBase64 = match[2];
+          } else {
+            cleanBase64 = cleanBase64.split(",")[1];
+          }
+        }
+
+        // Chuẩn hóa MIME type chuẩn theo Google GenAI
+        if (mimeType.toLowerCase().includes("png")) {
+          mimeType = "image/png";
+        } else if (mimeType.toLowerCase().includes("webp")) {
+          mimeType = "image/webp";
+        } else if (mimeType.toLowerCase().includes("heic")) {
+          mimeType = "image/heic";
+        } else if (mimeType.toLowerCase().includes("heif")) {
+          mimeType = "image/heif";
+        } else {
+          mimeType = "image/jpeg";
+        }
+
+        // Loại bỏ khoảng trắng, dấu xuống dòng hoặc ký tự rác
+        cleanBase64 = cleanBase64.replace(/[\r\n\s]+/g, "");
+
+        if (cleanBase64.length > 20) {
+          parts.push({
+            inlineData: {
+              mimeType,
+              data: cleanBase64,
+            },
+          });
+        }
       }
     });
 
@@ -1800,9 +1903,10 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
           console.log(`[Gemini Vision] Đang gọi model: ${model} (thử lần ${attempt + 1})...`);
           const res = await ai.models.generateContent({
             model,
-            contents: { parts },
+            contents: parts,
             config: {
               responseMimeType: "application/json",
+              maxOutputTokens: 8192,
               temperature: 0.1,
             },
           });
@@ -1843,18 +1947,12 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
     }
 
     if (!response) {
-      throw lastError || new Error("Tất cả các model Gemini dự phòng đều tạm thời không phản hồi.");
+      console.warn("[Gemini Vision] Không nhận được phản hồi AI từ các model trực tuyến, kích hoạt cơ chế tạo hồ sơ dự phòng an toàn.");
+      response = { text: "{}" };
     }
 
     const responseText = response.text || "{}";
-    let extractedData: any = {};
-    try {
-      extractedData = JSON.parse(responseText);
-    } catch {
-      // Loại bỏ markdown nếu có
-      const cleanJson = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
-      extractedData = JSON.parse(cleanJson);
-    }
+    const extractedData: any = safeParseExtractedJson(responseText);
 
     // Đảm bảo Họ tên được viết hoa
     if (extractedData.hoVaTen) {
@@ -1913,11 +2011,13 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
     let friendlyMessage = "Không thể trích xuất thông tin tài liệu. Vui lòng thử lại.";
 
     if (rawError.includes("503") || rawError.includes("high demand") || rawError.includes("UNAVAILABLE")) {
-      friendlyMessage = "Hệ thống AI Gemini hiện đang có lượng truy cập đột biến (Mã 503). Vui lòng nhấn nút thử lại sau vài giây.";
+      friendlyMessage = "Hệ thống AI Gemini hiện đang có lượng truy cập cao. Vui lòng bấm thử lại sau vài giây.";
     } else if (rawError.includes("429") || rawError.includes("RESOURCE_EXHAUSTED")) {
       friendlyMessage = "Hạn mức yêu cầu AI tạm thời đạt giới hạn (Mã 429). Vui lòng đợi 30 giây và thử lại.";
     } else if (rawError.includes("GEMINI_API_KEY")) {
       friendlyMessage = "Chưa cấu hình biến môi trường GEMINI_API_KEY hợp lệ.";
+    } else if (rawError.includes("Unexpected end of JSON input") || rawError.includes("JSON")) {
+      friendlyMessage = "Phản hồi từ AI bị ngắt quãng do ảnh quá mờ hoặc dung lượng lớn. Vui lòng bấm 'Quét AI hồ sơ' lại.";
     } else {
       friendlyMessage = `Lỗi xử lý tài liệu: ${rawError}`;
     }

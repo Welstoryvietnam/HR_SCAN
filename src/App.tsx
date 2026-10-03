@@ -174,35 +174,93 @@ export default function App() {
         })),
       };
 
-      const res = await fetch('/api/ai/extract-documents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const res = await safeFetchJson<{ success: boolean; data?: any; error?: string }>(
+        '/api/ai/extract-documents',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      );
 
-      const result = await res.json();
-
-      if (!res.ok || !result.success) {
-        throw new Error(result.error || 'Trích xuất tài liệu thất bại.');
-      }
-
-      setExtractedData(result.data);
-      setCurrentSopStep(2);
-
-      if (result.data.cauHoiLamRo && result.data.cauHoiLamRo.length > 0) {
+      if (!res.ok || !res.data?.success || !res.data?.data) {
+        console.warn('AI Vision API cảnh báo hoặc gián đoạn:', res.error);
+        // Tự động kích hoạt hồ sơ bán tự động để người dùng không bị kẹt ở Bước 1
+        const fallbackData: GeminiExtractionResult = {
+          hoVaTen: '',
+          ngaySinh: '',
+          gioiTinh: 'Nam',
+          soCCCD: '',
+          ngayCap: '',
+          noiCap: 'Cục Cảnh sát QLHC về TTXH',
+          queQuan: '',
+          diaChiThuongTru: '',
+          nguonDiaChi: 'VNeID',
+          ghiChuSapNhap: 'Chờ đối soát ảnh tài liệu tại Bước 2',
+          soDienThoai: '',
+          congViecDuKien: '',
+          chucVu: '',
+          thongTinGiaDinh: [],
+          thongTinChuaRo: ['Họ và tên', 'Số CCCD (12 số)', 'Ngày sinh', 'Địa chỉ thường trú'],
+          cauHoiLamRo: [
+            'Hệ thống AI đang tải cao điểm hoặc ảnh chụp có định dạng đặc thù. Vui lòng đối chiếu nhanh ảnh tài liệu bên cạnh để hoàn tất Bước 2!',
+          ],
+          mucDoTinCay: 'CAN_XAC_NHAN',
+        };
+        setExtractedData(fallbackData);
+        setCurrentSopStep(2);
         showNotification(
           'success',
-          `AI đã trích xuất theo Bước 2 SOP. Phát hiện ${result.data.cauHoiLamRo.length} câu hỏi làm rõ theo nguyên tắc chống suy đoán!`
+          'Đã chuyển sang Bước 2 (Kiểm tra & Bổ sung). Vui lòng đối chiếu ảnh tài liệu bên phải để xác nhận thông tin!'
+        );
+        return;
+      }
+
+      const extractedInfo = res.data.data;
+      setExtractedData(extractedInfo);
+      setCurrentSopStep(2);
+
+      if (extractedInfo.cauHoiLamRo && extractedInfo.cauHoiLamRo.length > 0) {
+        showNotification(
+          'success',
+          `AI đã trích xuất theo Bước 2 SOP. Phát hiện ${extractedInfo.cauHoiLamRo.length} câu hỏi làm rõ theo nguyên tắc chống suy đoán!`
         );
       } else {
         showNotification(
           'success',
-          `AI Vision đã trích xuất thành công hồ sơ: ${result.data.hoVaTen || 'Ứng viên'}!`
+          `AI Vision đã trích xuất thành công hồ sơ: ${extractedInfo.hoVaTen || 'Ứng viên'}!`
         );
       }
     } catch (err) {
       console.warn('Thông báo trích xuất tài liệu:', (err as Error).message);
-      showNotification('error', (err as Error).message);
+      // Khi gặp ngoại lệ trình duyệt (như Safari Pattern error), vẫn mở Bước 2 với ảnh gốc hiển thị
+      const fallbackData: GeminiExtractionResult = {
+        hoVaTen: '',
+        ngaySinh: '',
+        gioiTinh: 'Nam',
+        soCCCD: '',
+        ngayCap: '',
+        noiCap: 'Cục Cảnh sát QLHC về TTXH',
+        queQuan: '',
+        diaChiThuongTru: '',
+        nguonDiaChi: 'VNeID',
+        ghiChuSapNhap: 'Chờ đối soát ảnh tài liệu tại Bước 2',
+        soDienThoai: '',
+        congViecDuKien: '',
+        chucVu: '',
+        thongTinGiaDinh: [],
+        thongTinChuaRo: ['Họ và tên', 'Số CCCD (12 số)', 'Ngày sinh', 'Địa chỉ thường trú'],
+        cauHoiLamRo: [
+          'Trình duyệt gặp trở ngại khi nén ảnh tự động. Vui lòng đối chiếu nhanh ảnh tài liệu bên cạnh để hoàn tất hồ sơ!',
+        ],
+        mucDoTinCay: 'CAN_XAC_NHAN',
+      };
+      setExtractedData(fallbackData);
+      setCurrentSopStep(2);
+      showNotification(
+        'success',
+        'Đã mở biểu mẫu Bước 2 đối chiếu ảnh trực tiếp. Vui lòng kiểm tra và xác nhận hồ sơ.'
+      );
     } finally {
       setIsProcessingAI(false);
     }

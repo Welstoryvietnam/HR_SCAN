@@ -59,7 +59,9 @@ export async function optimizeImageFile(
 
             // Xuất ra định dạng JPEG chất lượng 0.8
             const dataUrl = canvas.toDataURL('image/jpeg', quality);
-            const base64Data = dataUrl.replace(/^data:image\/jpeg;base64,/, '');
+            // Tách phần Base64 thuần túy an toàn trên mọi trình duyệt (Safari/Chrome/Firefox)
+            const rawBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+            const base64Data = rawBase64.replace(/[\r\n\s]+/g, '');
 
             // Tính dung lượng sau nén (ước lượng xấp xỉ từ độ dài base64)
             const compressedSize = Math.round((base64Data.length * 3) / 4);

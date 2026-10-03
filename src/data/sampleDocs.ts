@@ -114,10 +114,11 @@ export function createSyntheticDocument(type: 'cccd_truoc' | 'cccd_sau' | 'so_ye
     ctx.fillText('Ưu tiên sử dụng thông tin cư trú VNeID trong thủ tục nhân sự', 80, 965);
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    const rawBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
     return {
       fileName: 'VNeID_ManHinhCuTru_NguyenVanAn.jpg',
       dataUrl,
-      base64Data: dataUrl.replace(/^data:image\/jpeg;base64,/, ''),
+      base64Data: rawBase64.replace(/[\r\n\s]+/g, ''),
     };
   } else if (type === 'cccd_truoc') {
     // Mặt trước CCCD
@@ -170,10 +171,11 @@ export function createSyntheticDocument(type: 'cccd_truoc' | 'cccd_sau' | 'so_ye
     ctx.fillText('CHIP', 330, 545);
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    const rawBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
     return {
       fileName: 'CCCD_MatTruoc_NguyenVanAn.jpg',
       dataUrl,
-      base64Data: dataUrl.replace(/^data:image\/jpeg;base64,/, ''),
+      base64Data: rawBase64.replace(/[\r\n\s]+/g, ''),
     };
   } else if (type === 'cccd_sau') {
     // Mặt sau CCCD
@@ -204,10 +206,11 @@ export function createSyntheticDocument(type: 'cccd_truoc' | 'cccd_sau' | 'so_ye
     ctx.fillText('NGUYEN<<VAN<AN<<<<<<<<<<<<<<<<<<', 60, 580);
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    const rawBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
     return {
       fileName: 'CCCD_MatSau_NguyenVanAn.jpg',
       dataUrl,
-      base64Data: dataUrl.replace(/^data:image\/jpeg;base64,/, ''),
+      base64Data: rawBase64.replace(/[\r\n\s]+/g, ''),
     };
   } else {
     // Sơ yếu lý lịch
@@ -243,10 +246,11 @@ export function createSyntheticDocument(type: 'cccd_truoc' | 'cccd_sau' | 'so_ye
     ctx.fillText('Người khai: NGUYỄN VĂN AN (Đã ký)', 450, 600);
 
     const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    const rawBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
     return {
       fileName: 'SoYeuLyLich_NguyenVanAn.jpg',
       dataUrl,
-      base64Data: dataUrl.replace(/^data:image\/jpeg;base64,/, ''),
+      base64Data: rawBase64.replace(/[\r\n\s]+/g, ''),
     };
   }
 }

@@ -305,7 +305,8 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
 
     ctx.drawImage(video, 0, 0, width, height);
     const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-    const base64Data = dataUrl.replace(/^data:image\/jpeg;base64,/, '');
+    const rawBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+    const base64Data = rawBase64.replace(/[\r\n\s]+/g, '');
     const compressedSize = Math.round((base64Data.length * 3) / 4);
 
     const capturedItem: OptimizedImageFile = {
