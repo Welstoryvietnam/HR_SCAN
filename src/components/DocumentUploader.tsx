@@ -34,6 +34,7 @@ interface DocumentUploaderProps {
   batchEmployees?: BatchEmployeeDraft[];
   onBatchEmployeesChange?: (employees: BatchEmployeeDraft[]) => void;
   onProceedToStep2WithBatch?: (employees: BatchEmployeeDraft[]) => void;
+  onProceedToStep2Direct?: () => void;
 }
 
 export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
@@ -44,6 +45,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
   batchEmployees = [],
   onBatchEmployeesChange,
   onProceedToStep2WithBatch,
+  onProceedToStep2Direct,
 }) => {
   // Lựa chọn phương thức tiếp nhận hồ sơ tại Bước 1:
   // 1. Trích xuất AI qua ảnh (Đơn lẻ)
@@ -1099,23 +1101,38 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
           </span>
         </div>
 
-        <button
-          onClick={onExtractAI}
-          disabled={images.length === 0 || isProcessingAI}
-          className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-        >
-          {isProcessingAI ? (
-            <>
-              <RefreshCw className="w-4 h-4 animate-spin" />
-              <span>Đang phân tích với Gemini Vision...</span>
-            </>
-          ) : (
-            <>
-              <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>Chạy AI Vision Trích Xuất Hồ Sơ</span>
-            </>
+        <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full sm:w-auto">
+          {onProceedToStep2Direct && (
+            <button
+              type="button"
+              onClick={onProceedToStep2Direct}
+              disabled={images.length === 0 || isProcessingAI}
+              className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              title="Chuyển thẳng sang Bước 2 để đối chiếu ảnh trực tiếp song song với biểu mẫu"
+            >
+              <span>Vào Thẳng Bước 2 (Đối Chiếu Ảnh)</span>
+              <ArrowRight className="w-4 h-4 text-slate-500" />
+            </button>
           )}
-        </button>
+
+          <button
+            onClick={onExtractAI}
+            disabled={images.length === 0 || isProcessingAI}
+            className="w-full sm:w-auto px-6 py-2.5 bg-gradient-to-r from-blue-700 to-indigo-700 hover:from-blue-800 hover:to-indigo-800 text-white rounded-xl text-sm font-bold shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {isProcessingAI ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>Đang phân tích với Gemini Vision...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-amber-300" />
+                <span>Chạy AI Vision Trích Xuất Hồ Sơ</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
       </div>
       )}

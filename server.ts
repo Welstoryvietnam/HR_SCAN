@@ -14,6 +14,18 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+// Chống lưu cache trên trình duyệt cho tất cả các API route
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/")) {
+    res.set({
+      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+    });
+  }
+  next();
+});
+
 // Lazy/safe initialization for GoogleGenAI
 function getGeminiClient() {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -2008,23 +2020,48 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
   } catch (error) {
     const rawError = (error as Error)?.message || "";
     console.warn("[Gemini Vision Handled Warning]:", rawError);
-    let friendlyMessage = "Không thể trích xuất thông tin tài liệu. Vui lòng thử lại.";
+    let friendlyMessage = "Không thể trích xuất tự động toàn bộ thông tin.";
 
     if (rawError.includes("503") || rawError.includes("high demand") || rawError.includes("UNAVAILABLE")) {
-      friendlyMessage = "Hệ thống AI Gemini hiện đang có lượng truy cập cao. Vui lòng bấm thử lại sau vài giây.";
+      friendlyMessage = "Hệ thống AI Gemini hiện đang có lượng truy cập cao.";
     } else if (rawError.includes("429") || rawError.includes("RESOURCE_EXHAUSTED")) {
-      friendlyMessage = "Hạn mức yêu cầu AI tạm thời đạt giới hạn (Mã 429). Vui lòng đợi 30 giây và thử lại.";
+      friendlyMessage = "Hạn mức yêu cầu AI tạm thời đạt giới hạn (Mã 429).";
     } else if (rawError.includes("GEMINI_API_KEY")) {
       friendlyMessage = "Chưa cấu hình biến môi trường GEMINI_API_KEY hợp lệ.";
-    } else if (rawError.includes("Unexpected end of JSON input") || rawError.includes("JSON")) {
-      friendlyMessage = "Phản hồi từ AI bị ngắt quãng do ảnh quá mờ hoặc dung lượng lớn. Vui lòng bấm 'Quét AI hồ sơ' lại.";
+    } else if (rawError.includes("Unexpected end of JSON input") || rawError.includes("JSON") || rawError.includes("pattern")) {
+      friendlyMessage = "Ảnh chụp có dung lượng lớn hoặc định dạng đặc thù.";
     } else {
-      friendlyMessage = `Lỗi xử lý tài liệu: ${rawError}`;
+      friendlyMessage = `Thông báo xử lý tài liệu: ${rawError}`;
     }
 
-    res.status(503).json({
-      success: false,
-      error: friendlyMessage,
+    // Trả về HTTP 200 kèm cấu trúc hồ sơ an toàn để GFE/Proxy không chặn bằng trang lỗi HTML
+    res.status(200).json({
+      success: true,
+      data: {
+        hoVaTen: "",
+        ngaySinh: "",
+        gioiTinh: "Nam",
+        soCCCD: "",
+        ngayCap: "",
+        noiCap: "Cục Cảnh sát QLHC về TTXH",
+        queQuan: "",
+        diaChiThuongTru: "",
+        nguonDiaChi: "VNeID",
+        ghiChuSapNhap: "Chờ xác nhận thủ công đối chiếu ảnh tại Bước 2",
+        soDienThoai: "",
+        chucVu: "",
+        congViecDuKien: "",
+        thongTinGiaDinh: [],
+        thongTinChuaRo: ["Họ và tên", "Số CCCD (12 số)", "Ngày sinh", "Địa chỉ thường trú"],
+        cauHoiLamRo: [
+          friendlyMessage + " Vui lòng đối chiếu và xác nhận nhanh thông tin từ ảnh tài liệu bên cạnh."
+        ],
+        mucDoTinCay: "CAN_XAC_NHAN",
+        suggestedLuongCoBan: 5895000,
+        suggestedPhuCapCoDinh: 1050000,
+        matchedChucVu: "Nhân viên",
+      },
+      warning: friendlyMessage,
     });
   }
 });
@@ -2709,7 +2746,12 @@ async function startServer() {
         const indexPath = path.resolve(process.cwd(), "index.html");
         let template = fs.readFileSync(indexPath, "utf-8");
         template = await vite.transformIndexHtml(url, template);
-        res.status(200).set({ "Content-Type": "text/html; charset=utf-8" }).end(template);
+        res.status(200).set({
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          "Pragma": "no-cache",
+          "Expires": "0",
+        }).end(template);
       } catch (e) {
         vite.ssrFixStacktrace(e as Error);
         next(e);

@@ -569,6 +569,14 @@ export default function App() {
                   }}
                   onExtractAI={handleExtractAI}
                   isProcessingAI={isProcessingAI}
+                  onProceedToStep2Direct={() => {
+                    if (images.length === 0) {
+                      showNotification('error', 'Vui lòng chọn hoặc chụp ít nhất một ảnh tài liệu.');
+                      return;
+                    }
+                    setCurrentSopStep(2);
+                    showNotification('success', 'Đã chuyển sang Bước 2 (Kiểm tra & Bổ sung). Bạn có thể xem ảnh và biểu mẫu song song.');
+                  }}
                   batchEmployees={batchEmployees}
                   onBatchEmployeesChange={setBatchEmployees}
                   onProceedToStep2WithBatch={(list) => {
