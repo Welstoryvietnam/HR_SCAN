@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GeminiExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, NhanSuRecord, BatchEmployeeDraft } from '../types';
+import { GeminiExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, NhanSuRecord, BatchEmployeeDraft, KhoiNode } from '../types';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from '../data/organizationHierarchy';
 import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
 import { findTieuChuanLuong, DEFAULT_TIEU_CHUAN_LUONG } from '../data/tieuChuanLuongData';
@@ -60,6 +60,7 @@ interface ExtractedFormProps {
   batchEmployees?: BatchEmployeeDraft[];
   onBatchEmployeesChange?: (employees: BatchEmployeeDraft[]) => void;
   onSaveBatchToSheet?: (batchList: BatchEmployeeDraft[]) => Promise<boolean>;
+  organizationHierarchy?: KhoiNode[];
 }
 
 // Hàm format tiền tệ an toàn tuyệt đối chống crash unhandled TypeError
@@ -84,7 +85,11 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   batchEmployees = [],
   onBatchEmployeesChange,
   onSaveBatchToSheet,
+  organizationHierarchy = DEFAULT_ORGANIZATION_HIERARCHY,
 }) => {
+  // Cơ cấu tổ chức động do Admin cấu hình (hoặc mặc định)
+  const orgHierarchy = organizationHierarchy && organizationHierarchy.length > 0 ? organizationHierarchy : DEFAULT_ORGANIZATION_HIERARCHY;
+
   // Quản lý bước hiển thị trong SOP: chỉ hiển thị đúng bước hiện tại 2, 3, hoặc 4
   const [activeTabStep, setActiveTabStep] = useState<2 | 3 | 4>(
     currentStep && currentStep >= 2 && currentStep <= 4 ? (currentStep as 2 | 3 | 4) : 2
@@ -400,7 +405,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   // Xử lý thay đổi Khối ở thanh công cụ hàng loạt Bước 3
   const handleBulkKhoiChange = (newKhoi: string) => {
     setBulkKhoi(newKhoi);
-    const kObj = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === newKhoi);
+    const kObj = orgHierarchy.find((k) => k.name === newKhoi);
     if (kObj && kObj.bans.length > 0) {
       setBulkBan(kObj.bans[0].name);
       if (kObj.bans[0].phongs.length > 0) {
@@ -505,7 +510,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   // Xử lý cơ cấu Khối > Ban > Phòng
   const handleKhoiChange = (newKhoi: string) => {
     setKhoi(newKhoi);
-    const kObj = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === newKhoi);
+    const kObj = orgHierarchy.find((k) => k.name === newKhoi);
     if (kObj && kObj.bans.length > 0) {
       setBan(kObj.bans[0].name);
       if (kObj.bans[0].phongs.length > 0) {
@@ -521,7 +526,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
 
   const handleBanChange = (newBan: string) => {
     setBan(newBan);
-    const kObj = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === khoi);
+    const kObj = orgHierarchy.find((k) => k.name === khoi);
     const bObj = kObj?.bans.find((b) => b.name === newBan);
     if (bObj && bObj.phongs.length > 0) {
       setPhong(bObj.phongs[0].name);
@@ -609,16 +614,11 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                 BƯỚC {activeTabStep} / 4
               </span>
               <h2 className="text-lg font-bold text-slate-900">
-                {activeTabStep === 2 && 'Bước 2: AI Trích Xuất Form Tiêu Chuẩn (Anti-Hallucination)'}
+                {activeTabStep === 2 && 'Bước 2: AI Trích Xuất Form'}
                 {activeTabStep === 3 && 'Bước 3: Con Người Chọn Đơn Vị & Chức Vụ'}
                 {activeTabStep === 4 && 'Bước 4: Bảng Tiêu Chuẩn Tiền Lương & Lưu Vào Google Sheet'}
               </h2>
             </div>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              {activeTabStep === 2 && 'Kiểm tra thông tin cá nhân và giải đáp các câu hỏi làm rõ từ AI (nếu có ảnh mờ).'}
-              {activeTabStep === 3 && 'Chủ động phân bổ phòng ban (Khối ➔ Ban ➔ Phòng) và vị trí công tác (Công việc ➔ Chức vụ).'}
-              {activeTabStep === 4 && 'Đối chiếu định mức lương tiêu chuẩn, xem bảng Master Record hoàn chỉnh và bấm lưu.'}
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
@@ -653,7 +653,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
             }`}>
               2
             </span>
-            <span>Bước 2: AI Trích Xuất Form Chuẩn</span>
+            <span>Bước 2: AI Trích Xuất Form</span>
             {cauHoiLamRo.length > 0 && (
               <span className="bg-amber-400 text-amber-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
                 {cauHoiLamRo.length} câu hỏi
@@ -1254,7 +1254,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                       onChange={(e) => handleBulkKhoiChange(e.target.value)}
                       className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-emerald-500"
                     >
-                      {DEFAULT_ORGANIZATION_HIERARCHY.map((k) => (
+                      {orgHierarchy.map((k) => (
                         <option key={k.name} value={k.name}>
                           {k.name}
                         </option>
@@ -1271,7 +1271,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                       value={bulkBan}
                       onChange={(e) => {
                         setBulkBan(e.target.value);
-                        const kObj = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === bulkKhoi);
+                        const kObj = orgHierarchy.find((k) => k.name === bulkKhoi);
                         const bObj = kObj?.bans.find((b) => b.name === e.target.value);
                         if (bObj && bObj.phongs.length > 0) {
                           setBulkPhong(bObj.phongs[0].name);
@@ -1281,7 +1281,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                       }}
                       className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-emerald-500"
                     >
-                      {DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === bulkKhoi)?.bans.map((b) => (
+                      {orgHierarchy.find((k) => k.name === bulkKhoi)?.bans.map((b) => (
                         <option key={b.name} value={b.name}>
                           {b.name}
                         </option>
@@ -1299,7 +1299,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                       onChange={(e) => setBulkPhong(e.target.value)}
                       className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-emerald-500"
                     >
-                      {DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === bulkKhoi)
+                      {orgHierarchy.find((k) => k.name === bulkKhoi)
                         ?.bans.find((b) => b.name === bulkBan)
                         ?.phongs.map((p) => (
                           <option key={p.name} value={p.name}>
@@ -1479,7 +1479,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                                 value={emp.khoi || bulkKhoi}
                                 onChange={(e) => {
                                   const newKhoi = e.target.value;
-                                  const kObj = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === newKhoi);
+                                  const kObj = orgHierarchy.find((k) => k.name === newKhoi);
                                   const firstBan = kObj && kObj.bans.length > 0 ? kObj.bans[0].name : '';
                                   const firstPhong = kObj && kObj.bans.length > 0 && kObj.bans[0].phongs.length > 0 ? kObj.bans[0].phongs[0].name : '';
                                   handleUpdateBatchEmployeeRow(emp.id, {
@@ -1490,7 +1490,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                                 }}
                                 className="w-full text-xs px-2 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-700"
                               >
-                                {DEFAULT_ORGANIZATION_HIERARCHY.map((k) => (
+                                {orgHierarchy.map((k) => (
                                   <option key={k.name} value={k.name}>
                                     {k.name}
                                   </option>
@@ -1683,7 +1683,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                       onChange={(e) => handleKhoiChange(e.target.value)}
                       className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium"
                     >
-                      {DEFAULT_ORGANIZATION_HIERARCHY.map((k) => (
+                      {orgHierarchy.map((k) => (
                         <option key={k.id} value={k.name}>
                           {k.name}
                         </option>
@@ -1701,7 +1701,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                       disabled={!khoi}
                       className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium disabled:bg-slate-100"
                     >
-                      {DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === khoi)?.bans.map((b) => (
+                      {orgHierarchy.find((k) => k.name === khoi)?.bans.map((b) => (
                         <option key={b.id} value={b.name}>
                           {b.name}
                         </option>
@@ -1719,7 +1719,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                       disabled={!ban}
                       className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium disabled:bg-slate-100"
                     >
-                      {DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === khoi)
+                      {orgHierarchy.find((k) => k.name === khoi)
                         ?.bans.find((b) => b.name === ban)
                         ?.phongs.map((p) => (
                           <option key={p.id} value={p.name}>
@@ -1818,44 +1818,6 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                   />
                 </div>
               )}
-            </div>
-
-            {/* 3. Điểm làm việc & Loại hợp đồng */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wide block">
-                3. Điểm Làm Việc &amp; Loại Hợp Đồng Lao Động (Cột 19 - 20)
-              </span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Điểm / Văn Phòng Làm Việc <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={diemLamViec}
-                    onChange={(e) => setDiemLamViec(e.target.value)}
-                    placeholder="Ví dụ: Hà Nội - FPT Tower, Tòa nhà F-Ville..."
-                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Loại Hợp Đồng Lao Động <span className="text-rose-500">*</span>
-                  </label>
-                  <select
-                    value={loaiHopDong}
-                    onChange={(e) => setLoaiHopDong(e.target.value)}
-                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-emerald-500 font-medium"
-                  >
-                    <option value="Toàn thời gian (Chính thức)">Toàn thời gian (Chính thức)</option>
-                    <option value="Hợp đồng thử việc (60 ngày)">Hợp đồng thử việc (60 ngày)</option>
-                    <option value="Hợp đồng xác định thời hạn (12 tháng)">Hợp đồng xác định thời hạn (12 tháng)</option>
-                    <option value="Hợp đồng không xác định thời hạn">Hợp đồng không xác định thời hạn</option>
-                    <option value="Bán thời gian (Part-time)">Bán thời gian (Part-time)</option>
-                    <option value="Thời vụ / Khoán việc">Thời vụ / Khoán việc</option>
-                  </select>
-                </div>
-              </div>
             </div>
 
             {/* Điều hướng Bước 3 */}

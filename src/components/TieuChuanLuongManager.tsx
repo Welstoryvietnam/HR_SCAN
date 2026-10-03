@@ -1,11 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { TieuChuanLuongItem, UserProfile } from '../types';
+import { TieuChuanLuongItem, UserProfile, KhoiNode, BanNode, PhongNode } from '../types';
 import {
   Building2,
   Plus,
   Edit2,
   Trash2,
-  ShieldCheck,
   DollarSign,
   Check,
   AlertCircle,
@@ -17,18 +16,25 @@ import {
   Coins,
   Sparkles,
   Layers,
-  HelpCircle,
   Eye,
   ChevronRight,
-  Calculator
+  ChevronDown,
+  RotateCcw,
+  Save,
+  Network,
+  FolderTree,
+  CheckCircle2
 } from 'lucide-react';
 import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
+import { DEFAULT_ORGANIZATION_HIERARCHY } from '../data/organizationHierarchy';
 
 interface TieuChuanLuongManagerProps {
   standards: TieuChuanLuongItem[];
   currentUser: UserProfile;
   onSaveStandard: (item: Partial<TieuChuanLuongItem>) => Promise<void>;
   onDeleteStandard: (id: string) => Promise<void>;
+  organizationHierarchy?: KhoiNode[];
+  onSaveOrganizationHierarchy?: (newHierarchy: KhoiNode[]) => Promise<void>;
 }
 
 export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
@@ -36,7 +42,15 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
   currentUser,
   onSaveStandard,
   onDeleteStandard,
+  organizationHierarchy = DEFAULT_ORGANIZATION_HIERARCHY,
+  onSaveOrganizationHierarchy,
 }) => {
+  // Tab chính của Admin: 1. Tiêu chuẩn lương | 2. Cơ cấu tổ chức
+  const [adminSubTab, setAdminSubTab] = useState<'standards' | 'organization'>('standards');
+
+  // =========================================================================
+  // PHẦN 1: QUẢN LÝ TIÊU CHUẨN LƯƠNG & PHỤ CẤP (SHEET "TieuChuanLuong")
+  // =========================================================================
   const [isEditing, setIsEditing] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -58,10 +72,9 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
   const [moTa, setMoTa] = useState('');
   const [saving, setSaving] = useState(false);
 
-  // Bộ lọc & tìm kiếm
+  // Bộ lọc & tìm kiếm tiêu chuẩn
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedJobFilter, setSelectedJobFilter] = useState('ALL');
-  const [viewMode, setViewMode] = useState<'full' | 'compact'>('full');
 
   const isAdmin = currentUser.role === 'admin';
 
@@ -90,7 +103,7 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
     return Array.from(set).sort();
   }, [standards]);
 
-  // Lọc dữ liệu theo tìm kiếm & công việc
+  // Lọc dữ liệu tiêu chuẩn theo tìm kiếm & công việc
   const filteredStandards = useMemo(() => {
     return standards.filter((item) => {
       const matchSearch =
@@ -106,20 +119,7 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
     });
   }, [standards, searchQuery, selectedJobFilter]);
 
-  // Thống kê nhanh
-  const stats = useMemo(() => {
-    const total = standards.length;
-    const baseSalaries = standards.map((s) => s.luongCoBan).filter((n) => n > 0);
-    const minBase = baseSalaries.length > 0 ? Math.min(...baseSalaries) : 0;
-    const maxBase = baseSalaries.length > 0 ? Math.max(...baseSalaries) : 0;
-
-    const fixedAllowances = standards.map((s) => s.phuCapCoDinh);
-    const minAllowance = fixedAllowances.length > 0 ? Math.min(...fixedAllowances) : 0;
-    const maxAllowance = fixedAllowances.length > 0 ? Math.max(...fixedAllowances) : 0;
-
-    return { total, minBase, maxBase, minAllowance, maxAllowance };
-  }, [standards]);
-
+  // Mở form chỉnh sửa tiêu chuẩn vị trí cụ thể
   const handleStartEdit = (item: TieuChuanLuongItem) => {
     if (!isAdmin) return;
     setEditingId(item.id);
@@ -162,10 +162,10 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
     setIsEditing(true);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmitStandard = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!chucVu.trim()) {
-      alert('Vui lòng nhập tên chức vụ');
+      alert('Vui lòng nhập tên chức vụ!');
       return;
     }
 
@@ -199,7 +199,7 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
     }
   };
 
-  // Xuất file CSV Sheet TieuChuanLuong với đầy đủ từng loại phụ cấp
+  // Xuất file CSV Sheet TieuChuanLuong
   const handleExportCSV = () => {
     const headers = [
       'Mã Vị Trí',
@@ -218,778 +218,1137 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
       'Thưởng Chuyên Cần (VNĐ)',
       'Thưởng Sáng Kiến (VNĐ)',
       'Tổng Phụ Cấp Cố Định (VNĐ)',
-      'Tổng Định Mức (Lương CB + PC Cố Định)',
-      'Mô Tả / Ghi Chú'
+      'Tổng Thu Nhập Dự Kiến (VNĐ)',
+      'Ghi Chú Hạch Toán'
     ];
 
     const rows = filteredStandards.map((item) => [
-      `"${item.id}"`,
+      item.id,
       `"${item.congViec || ''}"`,
       `"${item.chucVu}"`,
       item.luongCoBan,
       item.phuCapChucVu || 0,
       item.phuCapDienThoai || 0,
-      `"${item.phuCapMoiTruong || 'Thủ công'}"`,
-      `"${item.phuCapXangXe || 'Thủ công'}"`,
-      `"${item.anToanVeSinhVien || 'Thủ công'}"`,
-      `"${item.phuCapKinhDoanh || 'Thủ công'}"`,
-      `"${item.phuCapNangNhoc || 'Thủ công'}"`,
+      item.phuCapMoiTruong || 'Thủ công',
+      item.phuCapXangXe || 'Thủ công',
+      item.anToanVeSinhVien || 'Thủ công',
+      item.phuCapKinhDoanh || 'Thủ công',
+      item.phuCapNangNhoc || 'Thủ công',
       item.troCapTayNghe || 0,
-      item.troCapGiaDinh || 0,
-      item.thuongChuyenCan || 0,
+      item.troCapGiaDinh !== undefined ? item.troCapGiaDinh : 150000,
+      item.thuongChuyenCan !== undefined ? item.thuongChuyenCan : 200000,
       item.thuongSangKien || 0,
       item.phuCapCoDinh,
       item.luongCoBan + item.phuCapCoDinh,
-      `"${(item.moTa || '').replace(/"/g, '""')}"`
+      `"${item.moTa || ''}"`
     ]);
 
     const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
+    link.setAttribute('href', url);
     link.setAttribute('download', `Sheet_TieuChuanLuong_TungLoaiPhuCap_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  };
+
+  // =========================================================================
+  // PHẦN 2: QUẢN LÝ CƠ CẤU TỔ CHỨC: TEAM (KHỐI) / GROUP (BAN) / PART (BỘ PHẬN)
+  // =========================================================================
+  const [localHierarchy, setLocalHierarchy] = useState<KhoiNode[]>(organizationHierarchy);
+  const [orgSearch, setOrgSearch] = useState('');
+  const [expandedTeams, setExpandedTeams] = useState<Record<string, boolean>>({});
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
+  // Đồng bộ khi prop từ ngoài thay đổi
+  React.useEffect(() => {
+    if (organizationHierarchy && organizationHierarchy.length > 0) {
+      setLocalHierarchy(organizationHierarchy);
+      // Mở rộng tất cả Team mặc định
+      const map: Record<string, boolean> = {};
+      organizationHierarchy.forEach((k) => (map[k.id] = true));
+      setExpandedTeams(map);
+    }
+  }, [organizationHierarchy]);
+
+  // Modal thêm / sửa Team, Group, Part
+  const [modalType, setModalType] = useState<'add_team' | 'edit_team' | 'add_group' | 'edit_group' | 'add_part' | 'edit_part' | null>(null);
+  const [targetTeamId, setTargetTeamId] = useState<string>('');
+  const [targetGroupId, setTargetGroupId] = useState<string>('');
+  const [targetPartId, setTargetPartId] = useState<string>('');
+  const [inputNodeName, setInputNodeName] = useState<string>('');
+  const [isSavingOrg, setIsSavingOrg] = useState(false);
+
+  // Thống kê cơ cấu
+  const orgStats = useMemo(() => {
+    let totalTeams = localHierarchy.length;
+    let totalGroups = 0;
+    let totalParts = 0;
+    localHierarchy.forEach((k) => {
+      totalGroups += k.bans.length;
+      k.bans.forEach((b) => {
+        totalParts += b.phongs.length;
+      });
+    });
+    return { totalTeams, totalGroups, totalParts };
+  }, [localHierarchy]);
+
+  // Lọc cơ cấu tổ chức theo ô tìm kiếm
+  const filteredHierarchy = useMemo(() => {
+    if (!orgSearch.trim()) return localHierarchy;
+    const q = orgSearch.toLowerCase().trim();
+
+    return localHierarchy
+      .map((k) => {
+        const teamMatch = k.name.toLowerCase().includes(q);
+        const filteredBans = k.bans
+          .map((b) => {
+            const banMatch = b.name.toLowerCase().includes(q);
+            const filteredPhongs = b.phongs.filter((p) => p.name.toLowerCase().includes(q));
+            if (banMatch || filteredPhongs.length > 0) {
+              return {
+                ...b,
+                phongs: banMatch ? b.phongs : filteredPhongs,
+              };
+            }
+            return null;
+          })
+          .filter(Boolean) as BanNode[];
+
+        if (teamMatch || filteredBans.length > 0) {
+          return {
+            ...k,
+            bans: teamMatch ? k.bans : filteredBans,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean) as KhoiNode[];
+  }, [localHierarchy, orgSearch]);
+
+  const toggleTeam = (teamId: string) => {
+    setExpandedTeams((prev) => ({ ...prev, [teamId]: !prev[teamId] }));
+  };
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  };
+
+  // Mở modal thêm Team (Khối)
+  const openAddTeam = () => {
+    setInputNodeName('');
+    setModalType('add_team');
+  };
+
+  // Mở modal sửa tên Team (Khối)
+  const openEditTeam = (k: KhoiNode) => {
+    setTargetTeamId(k.id);
+    setInputNodeName(k.name);
+    setModalType('edit_team');
+  };
+
+  // Xóa Team (Khối)
+  const handleDeleteTeam = (teamId: string, teamName: string) => {
+    if (!confirm(`Bạn có chắc chắn muốn xóa Team (Khối) "${teamName}" cùng toàn bộ Group và Part bên trong?`)) {
+      return;
+    }
+    const updated = localHierarchy.filter((k) => k.id !== teamId);
+    saveNewHierarchy(updated);
+  };
+
+  // Mở modal thêm Group (Ban)
+  const openAddGroup = (teamId: string) => {
+    setTargetTeamId(teamId);
+    setInputNodeName('');
+    setModalType('add_group');
+  };
+
+  // Mở modal sửa tên Group (Ban)
+  const openEditGroup = (teamId: string, b: BanNode) => {
+    setTargetTeamId(teamId);
+    setTargetGroupId(b.id);
+    setInputNodeName(b.name);
+    setModalType('edit_group');
+  };
+
+  // Xóa Group (Ban)
+  const handleDeleteGroup = (teamId: string, groupId: string, groupName: string) => {
+    if (!confirm(`Bạn có chắc muốn xóa Group (Ban) "${groupName}"?`)) return;
+    const updated = localHierarchy.map((k) => {
+      if (k.id === teamId) {
+        return {
+          ...k,
+          bans: k.bans.filter((b) => b.id !== groupId),
+        };
+      }
+      return k;
+    });
+    saveNewHierarchy(updated);
+  };
+
+  // Mở modal thêm Part (Bộ phận)
+  const openAddPart = (teamId: string, groupId: string) => {
+    setTargetTeamId(teamId);
+    setTargetGroupId(groupId);
+    setInputNodeName('');
+    setModalType('add_part');
+  };
+
+  // Mở modal sửa tên Part (Bộ phận)
+  const openEditPart = (teamId: string, groupId: string, p: PhongNode) => {
+    setTargetTeamId(teamId);
+    setTargetGroupId(groupId);
+    setTargetPartId(p.id);
+    setInputNodeName(p.name);
+    setModalType('edit_part');
+  };
+
+  // Xóa Part (Bộ phận)
+  const handleDeletePart = (teamId: string, groupId: string, partId: string, partName: string) => {
+    if (!confirm(`Bạn có chắc muốn xóa Part (Bộ phận) "${partName}"?`)) return;
+    const updated = localHierarchy.map((k) => {
+      if (k.id === teamId) {
+        return {
+          ...k,
+          bans: k.bans.map((b) => {
+            if (b.id === groupId) {
+              return {
+                ...b,
+                phongs: b.phongs.filter((p) => p.id !== partId),
+              };
+            }
+            return b;
+          }),
+        };
+      }
+      return k;
+    });
+    saveNewHierarchy(updated);
+  };
+
+  // Xử lý nộp form Modal Cơ Cấu Tổ Chức
+  const handleModalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = inputNodeName.trim().toUpperCase();
+    if (!trimmed) {
+      alert('Vui lòng nhập tên!');
+      return;
+    }
+
+    let updated: KhoiNode[] = [...localHierarchy];
+
+    if (modalType === 'add_team') {
+      const newTeam: KhoiNode = {
+        id: `team_${Date.now()}`,
+        name: trimmed,
+        bans: [],
+      };
+      updated.push(newTeam);
+      setExpandedTeams((prev) => ({ ...prev, [newTeam.id]: true }));
+    } else if (modalType === 'edit_team') {
+      updated = updated.map((k) => (k.id === targetTeamId ? { ...k, name: trimmed } : k));
+    } else if (modalType === 'add_group') {
+      updated = updated.map((k) => {
+        if (k.id === targetTeamId) {
+          const newBan: BanNode = {
+            id: `group_${Date.now()}`,
+            name: trimmed,
+            phongs: [{ id: `part_${Date.now()}_default`, name: trimmed }], // mặc định tạo 1 part cùng tên
+          };
+          return {
+            ...k,
+            bans: [...k.bans, newBan],
+          };
+        }
+        return k;
+      });
+      setExpandedGroups((prev) => ({ ...prev, [`group_${Date.now()}`]: true }));
+    } else if (modalType === 'edit_group') {
+      updated = updated.map((k) => {
+        if (k.id === targetTeamId) {
+          return {
+            ...k,
+            bans: k.bans.map((b) => (b.id === targetGroupId ? { ...b, name: trimmed } : b)),
+          };
+        }
+        return k;
+      });
+    } else if (modalType === 'add_part') {
+      updated = updated.map((k) => {
+        if (k.id === targetTeamId) {
+          return {
+            ...k,
+            bans: k.bans.map((b) => {
+              if (b.id === targetGroupId) {
+                return {
+                  ...b,
+                  phongs: [...b.phongs, { id: `part_${Date.now()}`, name: trimmed }],
+                };
+              }
+              return b;
+            }),
+          };
+        }
+        return k;
+      });
+    } else if (modalType === 'edit_part') {
+      updated = updated.map((k) => {
+        if (k.id === targetTeamId) {
+          return {
+            ...k,
+            bans: k.bans.map((b) => {
+              if (b.id === targetGroupId) {
+                return {
+                  ...b,
+                  phongs: b.phongs.map((p) => (p.id === targetPartId ? { ...p, name: trimmed } : p)),
+                };
+              }
+              return b;
+            }),
+          };
+        }
+        return k;
+      });
+    }
+
+    saveNewHierarchy(updated);
+    setModalType(null);
+  };
+
+  // Lưu cơ cấu tổ chức mới lên server & state
+  const saveNewHierarchy = async (newHierarchy: KhoiNode[]) => {
+    setLocalHierarchy(newHierarchy);
+    if (onSaveOrganizationHierarchy) {
+      setIsSavingOrg(true);
+      try {
+        await onSaveOrganizationHierarchy(newHierarchy);
+      } finally {
+        setIsSavingOrg(false);
+      }
+    }
+  };
+
+  // Khôi phục cơ cấu mặc định
+  const handleResetDefaultHierarchy = () => {
+    if (confirm('Khôi phục toàn bộ cơ cấu tổ chức về cấu hình chuẩn ban đầu của FPT?')) {
+      saveNewHierarchy(DEFAULT_ORGANIZATION_HIERARCHY);
+    }
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-xs space-y-5">
-      {/* Header & Quyền truy cập */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="p-2 bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-200">
-              <Layers className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                <span>Sheet "TieuChuanLuong": Chi Tiết Từng Loại Phụ Cấp & Định Mức</span>
-                <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2 py-0.5 rounded-full border border-emerald-300">
-                  {standards.length} vị trí ban hành
-                </span>
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Quy chuẩn Lương cơ bản và bóc tách chi tiết <strong>từng loại phụ cấp</strong> (Chức vụ, Môi trường, ATVSV, Kinh doanh, Nặng nhọc, Tay nghề, Gia đình, Chuyên cần, Sáng kiến).
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Nút Xuất CSV */}
+    <div className="space-y-6">
+      {/* ========================================================================= */}
+      {/* SUB-TAB CHUYỂN ĐỔI: 1. TIÊU CHUẨN LƯƠNG | 2. CƠ CẤU TỔ CHỨC TEAM/GROUP/PART */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-2 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5 w-full sm:w-auto p-1 bg-slate-100 rounded-xl">
           <button
-            onClick={handleExportCSV}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold border border-slate-300 transition"
-            title="Tải bảng tiêu chuẩn chi tiết về máy tính định dạng Excel CSV"
+            type="button"
+            onClick={() => setAdminSubTab('standards')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer flex-1 sm:flex-initial ${
+              adminSubTab === 'standards'
+                ? 'bg-white text-indigo-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
           >
-            <Download className="w-4 h-4 text-slate-600" />
-            <span>Xuất CSV Bảng Lương</span>
-          </button>
-
-          {/* Nút Thêm Mới Vị Trí (Dành cho Admin) */}
-          {isAdmin && (
-            <button
-              onClick={handleStartCreate}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-bold shadow-xs transition"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Thêm Vị Trí Tiêu Chuẩn</span>
-            </button>
-          )}
-
-          {isAdmin ? (
-            <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-xs font-bold px-2.5 py-1.5 rounded-xl border border-purple-200">
-              <ShieldCheck className="w-3.5 h-3.5 text-purple-700" />
-              <span>Admin Quản Trị</span>
+            <Coins className="w-4 h-4 text-amber-500" />
+            <span>Tiêu Chuẩn Lương &amp; Phụ Cấp (Sheet "TieuChuanLuong")</span>
+            <span className="bg-indigo-100 text-indigo-800 text-[11px] font-bold px-2 py-0.5 rounded-full ml-1">
+              {standards.length}
             </span>
-          ) : (
-            <span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1.5 rounded-xl border border-slate-200">
-              Chế độ xem
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setAdminSubTab('organization')}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs sm:text-sm font-bold transition cursor-pointer flex-1 sm:flex-initial ${
+              adminSubTab === 'organization'
+                ? 'bg-white text-indigo-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <FolderTree className="w-4 h-4 text-emerald-600" />
+            <span>Cơ Cấu Tổ Chức: Team (Khối) / Group (Ban) / Part (Bộ Phận)</span>
+            <span className="bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2 py-0.5 rounded-full ml-1">
+              {orgStats.totalTeams} Teams
             </span>
-          )}
+          </button>
+        </div>
+
+        <div className="text-xs text-slate-500 hidden lg:flex items-center gap-2 px-3">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Quyền Quản Trị Viên (Admin): Toàn quyền Thêm / Sửa / Xóa dữ liệu tiêu chuẩn</span>
         </div>
       </div>
 
-      {/* KPI Cards Thống Kê Tổng Quan */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
-          <span className="text-[11px] text-slate-500 block">Số vị trí tiêu chuẩn</span>
-          <span className="text-lg sm:text-xl font-bold text-slate-900 font-mono">
-            {stats.total} chức danh
-          </span>
-          <span className="text-[10px] text-blue-600 block mt-0.5">Thuộc 6 nhóm công việc</span>
-        </div>
-
-        <div className="bg-blue-50/60 border border-blue-200 p-3 rounded-xl">
-          <span className="text-[11px] text-blue-700 block">Dải Lương cơ bản</span>
-          <span className="text-sm sm:text-base font-bold text-blue-950 font-mono">
-            {stats.minBase.toLocaleString('vi-VN')} - {stats.maxBase.toLocaleString('vi-VN')}
-          </span>
-          <span className="text-[10px] text-blue-600 block mt-0.5">VNĐ/tháng theo vị trí</span>
-        </div>
-
-        <div className="bg-emerald-50/60 border border-emerald-200 p-3 rounded-xl">
-          <span className="text-[11px] text-emerald-700 block">Phụ cấp cố định chuẩn</span>
-          <span className="text-sm sm:text-base font-bold text-emerald-950 font-mono">
-            {stats.minAllowance.toLocaleString('vi-VN')} - {stats.maxAllowance.toLocaleString('vi-VN')}
-          </span>
-          <span className="text-[10px] text-emerald-600 block mt-0.5">Gồm 5 khoản phụ cấp thành phần</span>
-        </div>
-
-        <div className="bg-amber-50/60 border border-amber-200 p-3 rounded-xl">
-          <span className="text-[11px] text-amber-800 block">Phụ cấp điều kiện thực tế</span>
-          <span className="text-sm sm:text-base font-bold text-amber-950 font-mono">
-            4 loại thủ công
-          </span>
-          <span className="text-[10px] text-amber-700 block mt-0.5">Môi trường, ATVSV, KD, Nặng nhọc</span>
-        </div>
-      </div>
-
-      {/* Thông báo quyền nếu là nhân viên */}
-      {!isAdmin && (
-        <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs flex items-center gap-2 shadow-2xs">
-          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-          <span>
-            Bạn đang đăng nhập bằng tài khoản <strong>Nhân viên ({currentUser.email})</strong>. Dữ liệu Sheet "TieuChuanLuong" ở chế độ chỉ đọc. Chỉ tài khoản Quản trị viên (Admin) mới có quyền thêm hoặc chỉnh sửa định mức lương & phụ cấp.
-          </span>
-        </div>
-      )}
-
-      {/* Bộ Lọc & Tìm Kiếm & Chuyển Chế Độ Xem */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
-        {/* Tìm kiếm */}
-        <div className="relative flex-1 max-w-sm">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm theo chức vụ, công việc, mô tả..."
-            className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
-          />
-        </div>
-
-        {/* Lọc theo Công việc */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-slate-500 font-medium">Lọc công việc:</span>
-          <button
-            onClick={() => setSelectedJobFilter('ALL')}
-            className={`px-2.5 py-1 rounded-lg font-semibold transition ${
-              selectedJobFilter === 'ALL'
-                ? 'bg-blue-600 text-white shadow-2xs'
-                : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-            }`}
-          >
-            Tất cả ({standards.length})
-          </button>
-          {jobCategories.map((job) => {
-            const count = standards.filter((s) => s.congViec === job).length;
-            return (
-              <button
-                key={job}
-                onClick={() => setSelectedJobFilter(job)}
-                className={`px-2.5 py-1 rounded-lg font-semibold transition ${
-                  selectedJobFilter === job
-                    ? 'bg-blue-600 text-white shadow-2xs'
-                    : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                {job} ({count})
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Chế độ xem cột */}
-        <div className="flex items-center gap-1 border border-slate-300 rounded-lg p-0.5 bg-white shrink-0">
-          <button
-            onClick={() => setViewMode('full')}
-            className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
-              viewMode === 'full' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-            title="Hiển thị từng cột phụ cấp riêng biệt"
-          >
-            Tất cả phụ cấp
-          </button>
-          <button
-            onClick={() => setViewMode('compact')}
-            className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
-              viewMode === 'compact' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'
-            }`}
-            title="Xem tóm tắt thu gọn"
-          >
-            Xem cô đọng
-          </button>
-        </div>
-      </div>
-
-      {/* Modal / Inline Form Thêm/Chỉnh sửa Tiêu Chuẩn Lương & Phụ Cấp */}
-      {isEditing && (
-        <div className="p-4 sm:p-5 bg-gradient-to-br from-slate-50 to-blue-50/40 border-2 border-blue-300 rounded-xl space-y-4 shadow-sm animate-in fade-in duration-200">
-          <div className="flex items-center justify-between border-b border-blue-200/60 pb-3">
-            <div className="flex items-center gap-2">
-              <Calculator className="w-5 h-5 text-blue-700" />
-              <h3 className="text-sm font-bold text-blue-950 uppercase tracking-wide">
-                {editingId ? `Cập Nhật Định Mức Vị Trí: ${chucVu}` : 'Thêm Vị Trí Tiêu Chuẩn & Cấu Hình Phụ Cấp Mới'}
-              </h3>
-            </div>
-            <button
-              onClick={() => setIsEditing(false)}
-              className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Nhóm Thông tin Vị trí & Lương cơ bản */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      {/* ========================================================================= */}
+      {/* TAB 1: SHEET "TIEU CHUAN LUONG" */}
+      {/* ========================================================================= */}
+      {adminSubTab === 'standards' && (
+        <div className="space-y-6">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-6 rounded-2xl shadow-md">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  1. Nhóm Công Việc <span className="text-red-500">*</span>
-                </label>
-                <div className="flex gap-1.5">
-                  <select
-                    value={congViec}
-                    onChange={(e) => setCongViec(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium"
+                <div className="flex items-center gap-2.5 text-xs text-indigo-200 uppercase font-bold tracking-wider mb-1">
+                  <Coins className="w-4 h-4 text-amber-400" />
+                  <span>Sheet "TieuChuanLuong": Chi Tiết Từng Loại Phụ Cấp &amp; Định Mức</span>
+                </div>
+                <h1 className="text-xl sm:text-2xl font-bold">
+                  Bảng Định Mức Lương Tiêu Chuẩn &amp; Phụ Cấp Vị Trí
+                </h1>
+                <p className="text-xs sm:text-sm text-indigo-100 mt-1 max-w-2xl leading-relaxed">
+                  Quản trị viên có thể <strong>chỉnh sửa mức lương cơ bản hoặc bất kỳ loại phụ cấp nào</strong> (Chức vụ, Điện thoại, Tay nghề, Chuyên cần, v.v.) cho bất kỳ vị trí công việc nào.
+                </p>
+              </div>
+
+              {isAdmin && (
+                <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+                  <button
+                    type="button"
+                    onClick={handleStartCreate}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
                   >
-                    {DEFAULT_JOB_POSITIONS.map((j) => (
-                      <option key={j.id} value={j.name}>
-                        {j.name}
-                      </option>
-                    ))}
-                    <option value="Khác">Khác (Tự nhập)</option>
-                  </select>
+                    <Plus className="w-4 h-4" />
+                    <span>+ Thêm Vị Trí Tiêu Chuẩn Mới</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportCSV}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-semibold backdrop-blur-xs transition cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Xuất CSV Sheet</span>
+                  </button>
                 </div>
-              </div>
+              )}
+            </div>
+          </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  2. Chức Vụ Cụ Thể <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={chucVu}
-                  onChange={(e) => setChucVu(e.target.value)}
-                  placeholder="VD: Bếp Chính Âu"
-                  required
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white font-bold text-indigo-950"
-                />
-              </div>
+          {/* Form Modal Thêm / Chỉnh Sửa Tiêu Chuẩn */}
+          {isEditing && (
+            <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs overflow-y-auto">
+              <div className="bg-white rounded-2xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center">
+                      <Edit2 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-base text-slate-900">
+                        {editingId ? `Chỉnh Sửa Tiêu Chuẩn Chức Vụ: ${chucVu}` : 'Thêm Mới Vị Trí Tiêu Chuẩn Lương'}
+                      </h3>
+                      <span className="text-xs text-slate-500">Cập nhật trực tiếp lên Sheet "TieuChuanLuong"</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(false)}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  3. Lương Cơ Bản (VNĐ) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  step="1000"
-                  value={luongCoBan}
-                  onChange={(e) => setLuongCoBan(Number(e.target.value))}
-                  required
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white font-mono font-bold text-slate-900"
-                />
+                <form onSubmit={handleSubmitStandard} className="space-y-4">
+                  {/* Nhóm & Chức vụ */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Nhóm Công Việc (Job Category) <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={congViec}
+                        onChange={(e) => setCongViec(e.target.value)}
+                        placeholder="Ví dụ: Đầu Bếp, Bán Hàng, Dinh Dưỡng Viên..."
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Tên Vị Trí / Chức Vụ <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={chucVu}
+                        onChange={(e) => setChucVu(e.target.value)}
+                        placeholder="Ví dụ: Bếp Trưởng, Cửa Hàng Trưởng, GS II..."
+                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 font-bold"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Lương cơ bản & Phụ cấp chức vụ & Phụ cấp điện thoại */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="bg-amber-50/70 p-3 rounded-xl border border-amber-200">
+                      <label className="block text-xs font-bold text-amber-900 mb-1">
+                        Lương Cơ Bản Tiêu Chuẩn (VNĐ) <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="1000"
+                        value={luongCoBan}
+                        onChange={(e) => setLuongCoBan(Number(e.target.value))}
+                        className="w-full text-xs font-bold text-amber-950 px-2.5 py-1.5 border border-amber-300 rounded-lg bg-white focus:ring-2 focus:ring-amber-500"
+                        required
+                      />
+                      <span className="text-[10px] text-amber-700 mt-1 block">
+                        Đóng BHXH theo mức này
+                      </span>
+                    </div>
+
+                    <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-200">
+                      <label className="block text-xs font-bold text-indigo-900 mb-1">
+                        Phụ Cấp Chức Vụ (VNĐ)
+                      </label>
+                      <input
+                        type="number"
+                        step="1000"
+                        value={phuCapChucVu}
+                        onChange={(e) => setPhuCapChucVu(Number(e.target.value))}
+                        className="w-full text-xs font-bold text-indigo-950 px-2.5 py-1.5 border border-indigo-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    <div className="bg-indigo-50/70 p-3 rounded-xl border border-indigo-200">
+                      <label className="block text-xs font-bold text-indigo-900 mb-1">
+                        Phụ Cấp Điện Thoại (VNĐ)
+                      </label>
+                      <input
+                        type="number"
+                        step="1000"
+                        value={phuCapDienThoai}
+                        onChange={(e) => setPhuCapDienThoai(Number(e.target.value))}
+                        className="w-full text-xs font-bold text-indigo-950 px-2.5 py-1.5 border border-indigo-300 rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Trợ cấp tay nghề, Trợ cấp gia đình, Thưởng chuyên cần, Thưởng sáng kiến */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Trợ Cấp Tay Nghề
+                      </label>
+                      <input
+                        type="number"
+                        step="1000"
+                        value={troCapTayNghe}
+                        onChange={(e) => setTroCapTayNghe(Number(e.target.value))}
+                        className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Trợ Cấp Gia Đình
+                      </label>
+                      <input
+                        type="number"
+                        step="1000"
+                        value={troCapGiaDinh}
+                        onChange={(e) => setTroCapGiaDinh(Number(e.target.value))}
+                        className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Thưởng Chuyên Cần
+                      </label>
+                      <input
+                        type="number"
+                        step="1000"
+                        value={thuongChuyenCan}
+                        onChange={(e) => setThuongChuyenCan(Number(e.target.value))}
+                        className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                        Thưởng Sáng Kiến
+                      </label>
+                      <input
+                        type="number"
+                        step="1000"
+                        value={thuongSangKien}
+                        onChange={(e) => setThuongSangKien(Number(e.target.value))}
+                        className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Phụ cấp thủ công: Môi trường, Xăng xe, An toàn, v.v. */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2 border-t border-slate-100">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">PC Môi Trường</label>
+                      <input
+                        type="text"
+                        value={phuCapMoiTruong}
+                        onChange={(e) => setPhuCapMoiTruong(e.target.value)}
+                        placeholder="Thủ công"
+                        className="w-full text-[11px] px-2 py-1 border border-slate-300 rounded"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">PC Xăng Xe</label>
+                      <input
+                        type="text"
+                        value={phuCapXangXe}
+                        onChange={(e) => setPhuCapXangXe(e.target.value)}
+                        placeholder="Thủ công"
+                        className="w-full text-[11px] px-2 py-1 border border-slate-300 rounded"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">An Toàn Vệ Sinh</label>
+                      <input
+                        type="text"
+                        value={anToanVeSinhVien}
+                        onChange={(e) => setAnToanVeSinhVien(e.target.value)}
+                        placeholder="Thủ công"
+                        className="w-full text-[11px] px-2 py-1 border border-slate-300 rounded"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">PC Kinh Doanh</label>
+                      <input
+                        type="text"
+                        value={phuCapKinhDoanh}
+                        onChange={(e) => setPhuCapKinhDoanh(e.target.value)}
+                        placeholder="Thủ công"
+                        className="w-full text-[11px] px-2 py-1 border border-slate-300 rounded"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-600 mb-1">PC Nặng Nhọc</label>
+                      <input
+                        type="text"
+                        value={phuCapNangNhoc}
+                        onChange={(e) => setPhuCapNangNhoc(e.target.value)}
+                        placeholder="Thủ công"
+                        className="w-full text-[11px] px-2 py-1 border border-slate-300 rounded"
+                      />
+                    </div>
+                  </div>
+
+                  {/* TỔNG THU NHẬP TỰ ĐỘNG TÍNH */}
+                  <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-emerald-600" />
+                      <span className="text-xs font-bold text-emerald-900">
+                        Tổng Phụ Cấp Cố Định: {formComputedPhuCapCoDinh.toLocaleString('vi-VN')} đ/tháng
+                      </span>
+                    </div>
+                    <div className="text-xs font-extrabold text-emerald-800">
+                      Tổng Thu Nhập Dự Kiến: {formComputedTongThuNhap.toLocaleString('vi-VN')} đ/tháng
+                    </div>
+                  </div>
+
+                  {/* Nút hành động */}
+                  <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditing(false)}
+                      className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={saving}
+                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{saving ? 'Đang Lưu...' : 'Lưu Tiêu Chuẩn Này'}</span>
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
+          )}
 
-            {/* Khối Cấu Hình TỪNG LOẠI PHỤ CẤP CỐ ĐỊNH */}
-            <div className="bg-white p-3.5 rounded-xl border border-emerald-200">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
-                  <Coins className="w-4 h-4 text-emerald-600" />
-                  <span>Các Khoản Phụ Cấp & Trợ Cấp Cố Định Chuẩn Hóa:</span>
-                </span>
-                <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  Tổng PC Cố Định: {formComputedPhuCapCoDinh.toLocaleString('vi-VN')} đ
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    PC Chức Vụ (đ)
-                  </label>
-                  <input
-                    type="number"
-                    step="50000"
-                    value={phuCapChucVu}
-                    onChange={(e) => setPhuCapChucVu(Number(e.target.value))}
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    PC Điện Thoại (đ)
-                  </label>
-                  <input
-                    type="number"
-                    step="50000"
-                    value={phuCapDienThoai}
-                    onChange={(e) => setPhuCapDienThoai(Number(e.target.value))}
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    TC Tay Nghề (đ)
-                  </label>
-                  <input
-                    type="number"
-                    step="50000"
-                    value={troCapTayNghe}
-                    onChange={(e) => setTroCapTayNghe(Number(e.target.value))}
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    TC Gia Đình (đ)
-                  </label>
-                  <input
-                    type="number"
-                    step="50000"
-                    value={troCapGiaDinh}
-                    onChange={(e) => setTroCapGiaDinh(Number(e.target.value))}
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    Thưởng Chuyên Cần (đ)
-                  </label>
-                  <input
-                    type="number"
-                    step="50000"
-                    value={thuongChuyenCan}
-                    onChange={(e) => setThuongChuyenCan(Number(e.target.value))}
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono font-semibold"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    Thưởng Sáng Kiến (đ)
-                  </label>
-                  <input
-                    type="number"
-                    step="50000"
-                    value={thuongSangKien}
-                    onChange={(e) => setThuongSangKien(Number(e.target.value))}
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg font-mono font-semibold"
-                  />
-                </div>
-              </div>
+          {/* Thanh tìm kiếm & Lọc tiêu chuẩn */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Tìm kiếm chức vụ, công việc..."
+                className="w-full text-xs pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
 
-            {/* Khối Các Phụ Cấp Thực Tế (Quy định "Thủ công" theo tiêu chuẩn) */}
-            <div className="bg-white p-3.5 rounded-xl border border-amber-200">
-              <span className="text-xs font-bold text-amber-950 uppercase tracking-wide block mb-2">
-                Các Khoản Phụ Cấp Điều Kiện Thực Tế (Mặc định: "Thủ công"):
-              </span>
-
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    PC Môi Trường
-                  </label>
-                  <input
-                    type="text"
-                    value={phuCapMoiTruong}
-                    onChange={(e) => setPhuCapMoiTruong(e.target.value)}
-                    placeholder="Thủ công"
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-amber-50/40 font-medium text-amber-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    PC Xăng Xe
-                  </label>
-                  <input
-                    type="text"
-                    value={phuCapXangXe}
-                    onChange={(e) => setPhuCapXangXe(e.target.value)}
-                    placeholder="Thủ công"
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-amber-50/40 font-medium text-amber-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    An Toàn Vệ Sinh Viên
-                  </label>
-                  <input
-                    type="text"
-                    value={anToanVeSinhVien}
-                    onChange={(e) => setAnToanVeSinhVien(e.target.value)}
-                    placeholder="Thủ công"
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-amber-50/40 font-medium text-amber-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    PC Kinh Doanh
-                  </label>
-                  <input
-                    type="text"
-                    value={phuCapKinhDoanh}
-                    onChange={(e) => setPhuCapKinhDoanh(e.target.value)}
-                    placeholder="Thủ công"
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-amber-50/40 font-medium text-amber-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-600 font-semibold mb-1">
-                    PC Nặng Nhọc
-                  </label>
-                  <input
-                    type="text"
-                    value={phuCapNangNhoc}
-                    onChange={(e) => setPhuCapNangNhoc(e.target.value)}
-                    placeholder="Thủ công"
-                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-amber-50/40 font-medium text-amber-900"
-                  />
-                </div>
-              </div>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <span className="text-xs text-slate-500 shrink-0">Lọc Công Việc:</span>
+              <select
+                value={selectedJobFilter}
+                onChange={(e) => setSelectedJobFilter(e.target.value)}
+                className="text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-indigo-500 w-full sm:w-auto"
+              >
+                <option value="ALL">Tất cả ({standards.length})</option>
+                {jobCategories.map((job) => (
+                  <option key={job} value={job}>
+                    {job}
+                  </option>
+                ))}
+              </select>
             </div>
+          </div>
 
-            {/* Mô tả & Nút Lưu */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <div className="sm:col-span-2">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Mô Tả Nhiệm Vụ & Ghi Chú
-                </label>
-                <input
-                  type="text"
-                  value={moTa}
-                  onChange={(e) => setMoTa(e.target.value)}
-                  placeholder="Mô tả tiêu chuẩn chuyên môn, yêu cầu..."
-                  className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white"
-                />
-              </div>
-
-              <div className="sm:col-span-1 flex flex-col justify-center bg-white p-2.5 rounded-lg border border-slate-200">
-                <span className="text-[10px] text-slate-500 font-medium">Tổng thu nhập định mức:</span>
-                <span className="text-base font-bold text-emerald-700 font-mono">
-                  {formComputedTongThuNhap.toLocaleString('vi-VN')} VNĐ
-                </span>
-              </div>
-
-              <div className="sm:col-span-1 flex items-end gap-2">
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition disabled:opacity-50 shadow-2xs"
-                >
-                  {saving ? 'Đang lưu...' : 'Lưu Vào Sheet'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsEditing(false)}
-                  className="px-3 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold"
-                >
-                  Hủy
-                </button>
-              </div>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Bảng Hiển Thị Chi Tiết Từng Loại Phụ Cấp Trên Sheet "TieuChuanLuong" */}
-      <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              {/* Header Tầng 1: Phân nhóm các loại phụ cấp */}
-              <tr className="bg-slate-800 text-white font-bold border-b border-slate-700 text-[11px]">
-                <th colSpan={3} className="p-2.5 text-center border-r border-slate-700">
-                  THÔNG TIN CHỨC DANH
-                </th>
-                <th className="p-2.5 text-right border-r border-slate-700 bg-slate-850">
-                  LƯƠNG CƠ BẢN
-                </th>
-                <th
-                  colSpan={viewMode === 'full' ? 7 : 1}
-                  className="p-2.5 text-center border-r border-slate-700 bg-emerald-950/80 text-emerald-300"
-                >
-                  PHỤ CẤP & TRỢ CẤP CỐ ĐỊNH (CHUẨN HÓA)
-                </th>
-                {viewMode === 'full' && (
-                  <th colSpan={5} className="p-2.5 text-center border-r border-slate-700 bg-amber-950/70 text-amber-300">
-                    PHỤ CẤP THEO THỰC TẾ (THỦ CÔNG)
-                  </th>
-                )}
-                <th className="p-2.5 text-right border-r border-slate-700 bg-indigo-950/80 text-indigo-300">
-                  TỔNG ĐỊNH MỨC
-                </th>
-                <th className="p-2.5">GHI CHÚ / MÔ TẢ</th>
-                {isAdmin && <th className="p-2.5 text-center">THAO TÁC</th>}
-              </tr>
-
-              {/* Header Tầng 2: Từng loại phụ cấp chi tiết */}
-              <tr className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 text-[11px]">
-                <th className="p-2.5 whitespace-nowrap">Mã Vị Trí</th>
-                <th className="p-2.5 whitespace-nowrap">Công Việc</th>
-                <th className="p-2.5 whitespace-nowrap">Chức Vụ</th>
-                <th className="p-2.5 whitespace-nowrap text-right bg-slate-50 font-bold text-slate-900 border-r border-slate-200">
-                  Lương CB (VNĐ)
-                </th>
-
-                {/* Từng loại phụ cấp cố định */}
-                {viewMode === 'full' ? (
-                  <>
-                    <th className="p-2 text-right whitespace-nowrap bg-emerald-50/40">PC Chức Vụ</th>
-                    <th className="p-2 text-right whitespace-nowrap bg-emerald-50/40">PC Điện Thoại</th>
-                    <th className="p-2 text-right whitespace-nowrap bg-emerald-50/40">TC Tay Nghề</th>
-                    <th className="p-2 text-right whitespace-nowrap bg-emerald-50/40">TC Gia Đình</th>
-                    <th className="p-2 text-right whitespace-nowrap bg-emerald-50/40">Thưởng C.Cần</th>
-                    <th className="p-2 text-right whitespace-nowrap bg-emerald-50/40">Thưởng S.Kiến</th>
-                    <th className="p-2 text-right whitespace-nowrap bg-emerald-100/70 font-bold text-emerald-950 border-r border-slate-200">
+          {/* Bảng Hiển Thị Chi Tiết Từng Loại Phụ Cấp Trên Sheet "TieuChuanLuong" */}
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10">
+                  <tr>
+                    <th className="py-2.5 px-3">STT</th>
+                    <th className="py-2.5 px-3 min-w-[130px]">Nhóm Công Việc</th>
+                    <th className="py-2.5 px-3 min-w-[140px]">Chức Vụ</th>
+                    <th className="py-2.5 px-3 text-right min-w-[110px]">Lương Cơ Bản</th>
+                    <th className="py-2.5 px-3 text-right">PC Chức Vụ</th>
+                    <th className="py-2.5 px-3 text-right">PC Đ.Thoại</th>
+                    <th className="py-2.5 px-3 text-right">TC Tay Nghề</th>
+                    <th className="py-2.5 px-3 text-right">TC Gia Đình</th>
+                    <th className="py-2.5 px-3 text-right">Thưởng C.Cần</th>
+                    <th className="py-2.5 px-3 text-right">Thưởng S.Kiến</th>
+                    <th className="py-2.5 px-3 text-right min-w-[110px] text-indigo-900 bg-indigo-50/50">
                       Tổng PC Cố Định
                     </th>
-                  </>
-                ) : (
-                  <th className="p-2.5 text-right whitespace-nowrap bg-emerald-100/70 font-bold text-emerald-950 border-r border-slate-200">
-                    Tổng PC Cố Định
-                  </th>
-                )}
-
-                {/* Từng loại phụ cấp thực tế (thủ công) */}
-                {viewMode === 'full' && (
-                  <>
-                    <th className="p-2 text-center whitespace-nowrap bg-amber-50/40">PC Môi Trường</th>
-                    <th className="p-2 text-center whitespace-nowrap bg-amber-50/40">PC Xăng Xe</th>
-                    <th className="p-2 text-center whitespace-nowrap bg-amber-50/40">ATVS Viên</th>
-                    <th className="p-2 text-center whitespace-nowrap bg-amber-50/40">PC Kinh Doanh</th>
-                    <th className="p-2 text-center whitespace-nowrap bg-amber-50/40 border-r border-slate-200">PC Nặng Nhọc</th>
-                  </>
-                )}
-
-                <th className="p-2.5 text-right whitespace-nowrap font-bold text-indigo-900 bg-indigo-50/70 border-r border-slate-200">
-                  Lương + PC (VNĐ)
-                </th>
-                <th className="p-2.5 min-w-[140px]">Nhiệm Vụ</th>
-                {isAdmin && <th className="p-2.5 text-center whitespace-nowrap">Thao Tác</th>}
-              </tr>
-            </thead>
-
-            <tbody className="divide-y divide-slate-200">
-              {filteredStandards.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={viewMode === 'full' ? 18 : 8}
-                    className="p-8 text-center text-slate-400 italic"
-                  >
-                    Không tìm thấy chức danh hoặc vị trí nào khớp với bộ lọc.
-                  </td>
-                </tr>
-              ) : (
-                filteredStandards.map((item, index) => {
-                  const tongThuNhap = item.luongCoBan + item.phuCapCoDinh;
-                  return (
-                    <tr
-                      key={item.id}
-                      className="hover:bg-blue-50/40 transition group"
-                    >
-                      {/* Mã */}
-                      <td className="p-2.5 font-mono text-[11px] text-slate-400 font-medium whitespace-nowrap">
-                        {item.id}
-                      </td>
-
-                      {/* Nhóm Công việc */}
-                      <td className="p-2.5 whitespace-nowrap">
-                        <span className="inline-block bg-slate-100 text-slate-800 font-medium px-2 py-0.5 rounded text-[10px] border border-slate-200">
-                          {item.congViec || '—'}
-                        </span>
-                      </td>
-
-                      {/* Chức vụ */}
-                      <td className="p-2.5 font-bold text-slate-900 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-indigo-950 font-bold">{item.chucVu}</span>
-                        </div>
-                      </td>
-
-                      {/* Lương cơ bản */}
-                      <td className="p-2.5 text-right font-mono font-bold text-slate-900 bg-slate-50/50 border-r border-slate-200 whitespace-nowrap">
-                        {item.luongCoBan.toLocaleString('vi-VN')} đ
-                      </td>
-
-                      {/* Từng loại phụ cấp cố định chi tiết */}
-                      {viewMode === 'full' ? (
-                        <>
-                          {/* 1. PC Chức Vụ */}
-                          <td className="p-2 text-right font-mono text-slate-700 bg-emerald-50/20 whitespace-nowrap">
-                            {item.phuCapChucVu && item.phuCapChucVu > 0 ? (
-                              <span className="font-semibold text-emerald-900">
-                                {item.phuCapChucVu.toLocaleString('vi-VN')} đ
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 font-normal">0 đ</span>
-                            )}
-                          </td>
-
-                          {/* 2. PC Điện Thoại */}
-                          <td className="p-2 text-right font-mono text-slate-700 bg-emerald-50/20 whitespace-nowrap">
-                            {item.phuCapDienThoai && item.phuCapDienThoai > 0 ? (
-                              <span className="font-semibold text-emerald-900">
-                                {item.phuCapDienThoai.toLocaleString('vi-VN')} đ
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 font-normal">0 đ</span>
-                            )}
-                          </td>
-
-                          {/* 3. TC Tay Nghề */}
-                          <td className="p-2 text-right font-mono text-slate-700 bg-emerald-50/20 whitespace-nowrap">
-                            {item.troCapTayNghe && item.troCapTayNghe > 0 ? (
-                              <span className="font-semibold text-emerald-900">
-                                {item.troCapTayNghe.toLocaleString('vi-VN')} đ
-                              </span>
-                            ) : (
-                              <span className="text-slate-400 font-normal">0 đ</span>
-                            )}
-                          </td>
-
-                          {/* 4. TC Gia Đình */}
-                          <td className="p-2 text-right font-mono text-slate-700 bg-emerald-50/20 whitespace-nowrap">
-                            {item.troCapGiaDinh && item.troCapGiaDinh > 0 ? (
-                              <span>{item.troCapGiaDinh.toLocaleString('vi-VN')} đ</span>
-                            ) : (
-                              <span className="text-slate-400 font-normal">0 đ</span>
-                            )}
-                          </td>
-
-                          {/* 5. Thưởng Chuyên Cần */}
-                          <td className="p-2 text-right font-mono text-slate-700 bg-emerald-50/20 whitespace-nowrap">
-                            {item.thuongChuyenCan && item.thuongChuyenCan > 0 ? (
-                              <span>{item.thuongChuyenCan.toLocaleString('vi-VN')} đ</span>
-                            ) : (
-                              <span className="text-slate-400 font-normal">0 đ</span>
-                            )}
-                          </td>
-
-                          {/* 6. Thưởng Sáng Kiến */}
-                          <td className="p-2 text-right font-mono text-slate-700 bg-emerald-50/20 whitespace-nowrap">
-                            {item.thuongSangKien && item.thuongSangKien > 0 ? (
-                              <span>{item.thuongSangKien.toLocaleString('vi-VN')} đ</span>
-                            ) : (
-                              <span className="text-slate-400 font-normal">0 đ</span>
-                            )}
-                          </td>
-
-                          {/* TỔNG PHỤ CẤP CỐ ĐỊNH */}
-                          <td className="p-2.5 text-right font-mono font-bold text-emerald-800 bg-emerald-50/60 border-r border-slate-200 whitespace-nowrap">
-                            {item.phuCapCoDinh.toLocaleString('vi-VN')} đ
-                          </td>
-                        </>
-                      ) : (
-                        <td className="p-2.5 text-right font-mono font-bold text-emerald-800 bg-emerald-50/60 border-r border-slate-200 whitespace-nowrap">
+                    <th className="py-2.5 px-3 text-right min-w-[120px] text-emerald-900 bg-emerald-50/50">
+                      Tổng Thu Nhập
+                    </th>
+                    {isAdmin && (
+                      <th className="py-2.5 px-3 text-center min-w-[100px]">Thao Tác</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredStandards.map((item, idx) => {
+                    const totalIncome = item.luongCoBan + item.phuCapCoDinh;
+                    return (
+                      <tr key={item.id} className="hover:bg-indigo-50/30 transition">
+                        <td className="py-2.5 px-3 text-slate-500 font-mono">{idx + 1}</td>
+                        <td className="py-2.5 px-3 font-semibold text-slate-800">{item.congViec}</td>
+                        <td className="py-2.5 px-3 font-bold text-indigo-950">{item.chucVu}</td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">
+                          {item.luongCoBan.toLocaleString('vi-VN')} đ
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-600">
+                          {item.phuCapChucVu ? `${item.phuCapChucVu.toLocaleString('vi-VN')} đ` : '-'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-600">
+                          {item.phuCapDienThoai ? `${item.phuCapDienThoai.toLocaleString('vi-VN')} đ` : '-'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-600">
+                          {item.troCapTayNghe ? `${item.troCapTayNghe.toLocaleString('vi-VN')} đ` : '-'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-600">
+                          {(item.troCapGiaDinh !== undefined ? item.troCapGiaDinh : 150000).toLocaleString('vi-VN')} đ
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-600">
+                          {(item.thuongChuyenCan !== undefined ? item.thuongChuyenCan : 200000).toLocaleString('vi-VN')} đ
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-600">
+                          {item.thuongSangKien ? `${item.thuongSangKien.toLocaleString('vi-VN')} đ` : '-'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-bold text-indigo-900 bg-indigo-50/30">
                           {item.phuCapCoDinh.toLocaleString('vi-VN')} đ
                         </td>
-                      )}
-
-                      {/* Các phụ cấp thực tế (Thủ công) */}
-                      {viewMode === 'full' && (
-                        <>
-                          <td className="p-2 text-center whitespace-nowrap bg-amber-50/20">
-                            <span className="text-[10px] font-semibold bg-amber-100/80 text-amber-900 px-1.5 py-0.5 rounded border border-amber-200">
-                              {String(item.phuCapMoiTruong || 'Thủ công')}
-                            </span>
-                          </td>
-                          <td className="p-2 text-center whitespace-nowrap bg-amber-50/20">
-                            <span className="text-[10px] font-semibold bg-amber-100/80 text-amber-900 px-1.5 py-0.5 rounded border border-amber-200">
-                              {String(item.phuCapXangXe || 'Thủ công')}
-                            </span>
-                          </td>
-                          <td className="p-2 text-center whitespace-nowrap bg-amber-50/20">
-                            <span className="text-[10px] font-semibold bg-amber-100/80 text-amber-900 px-1.5 py-0.5 rounded border border-amber-200">
-                              {String(item.anToanVeSinhVien || 'Thủ công')}
-                            </span>
-                          </td>
-                          <td className="p-2 text-center whitespace-nowrap bg-amber-50/20">
-                            <span className="text-[10px] font-semibold bg-amber-100/80 text-amber-900 px-1.5 py-0.5 rounded border border-amber-200">
-                              {String(item.phuCapKinhDoanh || 'Thủ công')}
-                            </span>
-                          </td>
-                          <td className="p-2 text-center whitespace-nowrap bg-amber-50/20 border-r border-slate-200">
-                            <span className="text-[10px] font-semibold bg-amber-100/80 text-amber-900 px-1.5 py-0.5 rounded border border-amber-200">
-                              {String(item.phuCapNangNhoc || 'Thủ công')}
-                            </span>
-                          </td>
-                        </>
-                      )}
-
-                      {/* TỔNG ĐỊNH MỨC DỰ KIẾN (LƯƠNG CB + PC CỐ ĐỊNH) */}
-                      <td className="p-2.5 text-right font-mono font-black text-indigo-950 bg-indigo-50/50 border-r border-slate-200 whitespace-nowrap text-[12px]">
-                        {tongThuNhap.toLocaleString('vi-VN')} đ
-                      </td>
-
-                      {/* Ghi chú mô tả */}
-                      <td className="p-2.5 text-slate-600 max-w-[220px] truncate" title={item.moTa}>
-                        {item.moTa || '—'}
-                      </td>
-
-                      {/* Nút hành động */}
-                      {isAdmin && (
-                        <td className="p-2.5 text-center whitespace-nowrap">
-                          <div className="inline-flex items-center gap-1">
-                            <button
-                              onClick={() => handleStartEdit(item)}
-                              className="p-1 text-blue-600 hover:bg-blue-100 rounded transition"
-                              title="Sửa định mức & từng phụ cấp của vị trí"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                if (confirm(`Xác nhận xóa tiêu chuẩn chức vụ "${item.chucVu}" khỏi Sheet "TieuChuanLuong"?`)) {
-                                  onDeleteStandard(item.id);
-                                }
-                              }}
-                              className="p-1 text-rose-500 hover:bg-rose-100 rounded transition"
-                              title="Xóa chức vụ này"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                        <td className="py-2.5 px-3 text-right font-mono font-extrabold text-emerald-800 bg-emerald-50/30">
+                          {totalIncome.toLocaleString('vi-VN')} đ
                         </td>
-                      )}
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                        {isAdmin && (
+                          <td className="py-2.5 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEdit(item)}
+                                className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                                title="Chỉnh sửa định mức lương & phụ cấp chức vụ này"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (confirm(`Bạn có chắc muốn xóa tiêu chuẩn chức vụ "${item.chucVu}" khỏi Sheet "TieuChuanLuong"?`)) {
+                                    onDeleteStandard(item.id);
+                                  }
+                                }}
+                                className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                title="Xóa vị trí này"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Chú giải ý nghĩa các khoản phụ cấp */}
-      <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-600 space-y-2">
-        <span className="font-bold text-slate-800 flex items-center gap-1.5 uppercase text-[11px]">
-          <HelpCircle className="w-4 h-4 text-slate-500" />
-          <span>Quy định hạch toán từng loại phụ cấp trên Sheet "TieuChuanLuong":</span>
-        </span>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] leading-relaxed">
-          <div>
-            <strong className="text-emerald-900">• Cụm phụ cấp cố định:</strong> Phụ cấp chức vụ (500k-2tr), Trợ cấp tay nghề (500k-1.2tr), Trợ cấp gia đình (chuẩn 150k), Thưởng chuyên cần (chuẩn 200k), Thưởng sáng kiến (200k). Tổng các khoản này được tự động cộng vào <strong>Tổng Phụ Cấp Cố Định</strong>.
+      {/* ========================================================================= */}
+      {/* TAB 2: CƠ CẤU TỔ CHỨC: TEAM (KHỐI) / GROUP (BAN) / PART (BỘ PHẬN) */}
+      {/* ========================================================================= */}
+      {adminSubTab === 'organization' && (
+        <div className="space-y-6">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white p-6 rounded-2xl shadow-md">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2.5 text-xs text-emerald-200 uppercase font-bold tracking-wider mb-1">
+                  <FolderTree className="w-4 h-4 text-emerald-400" />
+                  <span>Cơ Cấu Tổ Chức Đa Tầng (3 Cấp): Team &gt; Group &gt; Part</span>
+                </div>
+                <h1 className="text-xl sm:text-2xl font-bold">
+                  Quản Lý Cơ Cấu: Team (Khối) / Group (Ban) / Part (Bộ Phận)
+                </h1>
+                <p className="text-xs sm:text-sm text-emerald-100 mt-1 max-w-2xl leading-relaxed">
+                  Dành riêng cho Quản trị viên khi công ty có biến động hoặc tái cơ cấu. Mọi thay đổi thêm/sửa/xóa ở đây sẽ <strong>tự động đồng bộ sang Bước 3</strong> của quy trình tiếp nhận hồ sơ.
+                </p>
+              </div>
+
+              {isAdmin && (
+                <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+                  <button
+                    type="button"
+                    onClick={openAddTeam}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>+ Thêm Team (Khối) Mới</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleResetDefaultHierarchy}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-semibold backdrop-blur-xs transition cursor-pointer"
+                    title="Khôi phục danh mục cơ cấu chuẩn ban đầu"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Khôi Phục Mẫu Chuẩn FPT</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Stats Cards */}
+            <div className="grid grid-cols-3 gap-3 mt-6 pt-5 border-t border-emerald-800/60">
+              <div className="bg-white/10 rounded-xl p-3 text-center">
+                <span className="text-[11px] text-emerald-200 block">Team (Khối)</span>
+                <span className="text-lg font-bold text-white">{orgStats.totalTeams}</span>
+              </div>
+              <div className="bg-white/10 rounded-xl p-3 text-center">
+                <span className="text-[11px] text-emerald-200 block">Group (Ban)</span>
+                <span className="text-lg font-bold text-white">{orgStats.totalGroups}</span>
+              </div>
+              <div className="bg-white/10 rounded-xl p-3 text-center">
+                <span className="text-[11px] text-emerald-200 block">Part (Bộ phận / Phòng)</span>
+                <span className="text-lg font-bold text-white">{orgStats.totalParts}</span>
+              </div>
+            </div>
           </div>
-          <div>
-            <strong className="text-amber-900">• Cụm phụ cấp thực tế ("Thủ công"):</strong> Phụ cấp môi trường, Phụ cấp xăng xe, An toàn vệ sinh viên, Phụ cấp kinh doanh, Phụ cấp nặng nhọc được ấn định mức chi trả linh hoạt dựa theo điều kiện thực tế tại đơn vị/bếp làm việc của nhân sự.
+
+          {/* Search bar */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between gap-3">
+            <div className="relative w-full max-w-md">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={orgSearch}
+                onChange={(e) => setOrgSearch(e.target.value)}
+                placeholder="Tìm kiếm Team (Khối), Group (Ban), Part (Bộ phận)..."
+                className="w-full text-xs pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+            <span className="text-xs text-slate-500">
+              Hiển thị {filteredHierarchy.length} / {localHierarchy.length} Team
+            </span>
           </div>
+
+          {/* Interactive Hierarchy Tree List */}
+          <div className="space-y-4">
+            {filteredHierarchy.map((team, tIdx) => {
+              const isExpanded = expandedTeams[team.id] !== false;
+              const teamGroupCount = team.bans.length;
+              const teamPartCount = team.bans.reduce((acc, b) => acc + b.phongs.length, 0);
+
+              return (
+                <div
+                  key={team.id}
+                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs transition hover:border-indigo-300"
+                >
+                  {/* TEAM (KHỐI) HEADER */}
+                  <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleTeam(team.id)}
+                        className="p-1 hover:bg-slate-200 rounded text-slate-500 cursor-pointer"
+                      >
+                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </button>
+
+                      <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                        {tIdx + 1}
+                      </div>
+
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded">
+                            TEAM (KHỐI)
+                          </span>
+                          <h3 className="font-bold text-sm sm:text-base text-slate-900">
+                            {team.name}
+                          </h3>
+                        </div>
+                        <span className="text-[11px] text-slate-500">
+                          {teamGroupCount} Group (Ban) &bull; {teamPartCount} Part (Bộ phận)
+                        </span>
+                      </div>
+                    </div>
+
+                    {isAdmin && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openAddGroup(team.id)}
+                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                          title="Thêm Group (Ban) vào Team này"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ Thêm Group (Ban)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openEditTeam(team)}
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg border border-slate-200 transition cursor-pointer"
+                          title="Đổi tên Team (Khối) này"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteTeam(team.id, team.name)}
+                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-white rounded-lg border border-slate-200 transition cursor-pointer"
+                          title="Xóa Team (Khối) này"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* GROUPS (BAN) INSIDE TEAM */}
+                  {isExpanded && (
+                    <div className="p-4 bg-white space-y-3">
+                      {team.bans.length === 0 ? (
+                        <div className="p-4 text-center text-slate-400 text-xs italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                          Chưa có Group (Ban) nào trong Team này. Hãy bấm "+ Thêm Group (Ban)" ở trên để bổ sung.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 gap-3 pl-4 sm:pl-8 border-l-2 border-indigo-200">
+                          {team.bans.map((group) => {
+                            const isGroupExpanded = expandedGroups[group.id] !== false;
+
+                            return (
+                              <div
+                                key={group.id}
+                                className="bg-slate-50/60 rounded-xl border border-slate-200 overflow-hidden"
+                              >
+                                {/* GROUP (BAN) ROW */}
+                                <div className="p-3 flex items-center justify-between gap-3 bg-slate-100/70 border-b border-slate-200">
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleGroup(group.id)}
+                                      className="p-1 hover:bg-slate-200 rounded text-slate-500 cursor-pointer"
+                                    >
+                                      {isGroupExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                                    </button>
+
+                                    <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded">
+                                      GROUP (BAN)
+                                    </span>
+                                    <span className="font-bold text-xs sm:text-sm text-slate-800">
+                                      {group.name}
+                                    </span>
+                                    <span className="text-[11px] text-slate-500">
+                                      ({group.phongs.length} Part)
+                                    </span>
+                                  </div>
+
+                                  {isAdmin && (
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => openAddPart(team.id, group.id)}
+                                        className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-md text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
+                                        title="Thêm Part (Bộ phận) vào Group này"
+                                      >
+                                        <Plus className="w-3 h-3" />
+                                        <span>+ Thêm Part</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditGroup(team.id, group)}
+                                        className="p-1 text-slate-400 hover:text-purple-600 rounded transition cursor-pointer"
+                                        title="Đổi tên Group (Ban)"
+                                      >
+                                        <Edit2 className="w-3 h-3" />
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteGroup(team.id, group.id, group.name)}
+                                        className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
+                                        title="Xóa Group (Ban)"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* PARTS (BỘ PHẬN / PHÒNG) INSIDE GROUP */}
+                                {isGroupExpanded && (
+                                  <div className="p-3 pl-6 sm:pl-10 space-y-1.5 border-l-2 border-purple-200 m-2">
+                                    {group.phongs.length === 0 ? (
+                                      <span className="text-[11px] text-slate-400 italic">
+                                        Chưa có Part nào. Bấm "+ Thêm Part" để thêm.
+                                      </span>
+                                    ) : (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                                        {group.phongs.map((part) => (
+                                          <div
+                                            key={part.id}
+                                            className="p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-xs hover:border-emerald-300 transition"
+                                          >
+                                            <div className="flex items-center gap-1.5 truncate">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                              <span className="font-semibold text-slate-800 truncate" title={part.name}>
+                                                {part.name}
+                                              </span>
+                                            </div>
+
+                                            {isAdmin && (
+                                              <div className="flex items-center gap-1 shrink-0 ml-1">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => openEditPart(team.id, group.id, part)}
+                                                  className="p-0.5 text-slate-400 hover:text-indigo-600 rounded cursor-pointer"
+                                                  title="Đổi tên Part"
+                                                >
+                                                  <Edit2 className="w-3 h-3" />
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleDeletePart(team.id, group.id, part.id, part.name)}
+                                                  className="p-0.5 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
+                                                  title="Xóa Part"
+                                                >
+                                                  <Trash2 className="w-3 h-3" />
+                                                </button>
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Modal Thêm / Sửa Team, Group, Part */}
+          {modalType && (
+            <div className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4 backdrop-blur-xs">
+              <div className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h3 className="font-bold text-base text-slate-900">
+                    {modalType === 'add_team' && '+ Thêm Team (Khối) Mới'}
+                    {modalType === 'edit_team' && 'Đổi Tên Team (Khối)'}
+                    {modalType === 'add_group' && '+ Thêm Group (Ban) Mới'}
+                    {modalType === 'edit_group' && 'Đổi Tên Group (Ban)'}
+                    {modalType === 'add_part' && '+ Thêm Part (Bộ Phận / Phòng) Mới'}
+                    {modalType === 'edit_part' && 'Đổi Tên Part (Bộ Phận / Phòng)'}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setModalType(null)}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-lg cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleModalSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Tên Đơn Vị Tổ Chức <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={inputNodeName}
+                      onChange={(e) => setInputNodeName(e.target.value)}
+                      placeholder="Ví dụ: FS INNOVATION, TRADING, CULINARY..."
+                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 font-bold uppercase"
+                      autoFocus
+                      required
+                    />
+                    <span className="text-[11px] text-slate-400 mt-1 block">
+                      Tên sẽ được tự động chuẩn hóa chữ in hoa để khớp tiêu chuẩn dữ liệu.
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setModalType(null)}
+                      className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                    >
+                      Hủy
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingOrg}
+                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-sm transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{isSavingOrg ? 'Đang Lưu...' : 'Xác Nhận & Lưu'}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 };

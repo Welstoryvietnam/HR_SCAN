@@ -33,21 +33,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-      {/* Top Banner */}
-      <div className="bg-slate-900 text-slate-200 px-4 py-1.5 text-xs flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="font-medium text-slate-100">Google Workspace Solution:</span>
-          <span className="text-slate-300">Google Sheets + Gemini Multimodal Vision + MailApp</span>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-slate-400">Tối ưu hóa: 1024px JPEG 0.8 (~85% token savings)</span>
-          <span className="bg-blue-800/80 text-blue-200 px-2 py-0.5 rounded font-mono text-[11px]">
-            Phân Quyền RBAC
-          </span>
-        </div>
-      </div>
-
       {/* Main Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
@@ -131,7 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <UploadCloud className="w-4 h-4" />
             <span>
-              {isAdmin ? 'Nộp Hồ Sơ & AI Vision' : 'Nhập & Điền Hồ Sơ Tuyển Dụng'}
+              {isAdmin ? 'Tiếp Nhận & Xử Lý SOP' : 'Nhập & Điền Hồ Sơ Tuyển Dụng'}
             </span>
           </button>
 
@@ -180,7 +165,7 @@ export const Header: React.FC<HeaderProps> = ({
                 }`}
               >
                 <Users className="w-4 h-4" />
-                <span>Sheet "TieuChuanLuong"</span>
+                <span>Tiêu Chuẩn Lương &amp; Cơ Cấu</span>
                 <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-1.5 py-0.2 rounded">
                   Admin
                 </span>

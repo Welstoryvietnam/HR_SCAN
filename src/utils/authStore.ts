@@ -17,6 +17,16 @@ const INITIAL_ACCOUNTS: SystemUserAccount[] = [
     createdAt: '2026-09-01T08:00:00.000Z',
   },
   {
+    id: 'usr_admin_thang',
+    username: 'tranvanthang',
+    password: 'admin123',
+    email: 'tranvanthang@congty.com'.toLowerCase(),
+    fullName: 'Trần Văn Thắng (Quản Trị Viên)',
+    role: 'admin',
+    status: 'active',
+    createdAt: '2026-09-05T08:00:00.000Z',
+  },
+  {
     id: 'usr_recruiter_01',
     username: 'tuyendung',
     password: 'tuyendung123',

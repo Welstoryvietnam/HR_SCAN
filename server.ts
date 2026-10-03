@@ -4,6 +4,7 @@ import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { DEFAULT_ORGANIZATION_HIERARCHY } from "./src/data/organizationHierarchy";
 
 dotenv.config();
 
@@ -51,6 +52,10 @@ const adminEmails = new Set<string>([
   "Happyendpu@gmail.com".toLowerCase(),
   "admin@congty.com",
   "hr.manager@workspace.vn",
+  "tranvanthang@gmail.com".toLowerCase(),
+  "tranvanthang@congty.com".toLowerCase(),
+  "thangtv@congty.com".toLowerCase(),
+  "thang.tran@congty.com".toLowerCase(),
 ]);
 
 // Cấu trúc tài khoản hệ thống (Admin & Nhân viên tuyển dụng)
@@ -77,6 +82,16 @@ let userAccounts: SystemAccount[] = [
     role: "admin",
     status: "active",
     createdAt: "2026-09-01T08:00:00.000Z",
+  },
+  {
+    id: "usr_admin_thang",
+    username: "tranvanthang",
+    password: "admin123",
+    email: "tranvanthang@congty.com".toLowerCase(),
+    fullName: "Trần Văn Thắng (Quản Trị Viên)",
+    role: "admin",
+    status: "active",
+    createdAt: "2026-09-05T08:00:00.000Z",
   },
   {
     id: "usr_recruiter_01",
@@ -147,6 +162,9 @@ const jobPositionsHierarchy = [
     chucVus: ["GS II", "GS III", "GS IV"],
   },
 ];
+
+// Cơ cấu tổ chức Team (Khối) / Group (Ban) / Part (Bộ phận)
+let organizationHierarchy = JSON.parse(JSON.stringify(DEFAULT_ORGANIZATION_HIERARCHY));
 
 // Sheet: TieuChuanLuong - Danh mục tiêu chuẩn theo đúng dữ liệu người dùng cung cấp
 let tieuChuanLuong = [
@@ -2156,6 +2174,26 @@ app.delete("/api/sheets/tieu-chuan-luong/:id", (req, res) => {
   const { id } = req.params;
   tieuChuanLuong = tieuChuanLuong.filter((t) => t.id !== id);
   res.json({ success: true, list: tieuChuanLuong });
+});
+
+// CƠ CẤU TỔ CHỨC: TEAM (KHỐI) / GROUP (BAN) / PART (BỘ PHẬN)
+app.get("/api/organization-hierarchy", (req, res) => {
+  res.json({ success: true, data: organizationHierarchy });
+});
+
+app.post("/api/organization-hierarchy", (req, res) => {
+  const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
+  if (!adminEmails.has(userEmail)) {
+    return res.status(403).json({ error: "Chỉ Quản trị viên (Admin) mới có quyền chỉnh sửa cơ cấu tổ chức." });
+  }
+
+  const { hierarchy } = req.body;
+  if (!Array.isArray(hierarchy)) {
+    return res.status(400).json({ error: "Cơ cấu tổ chức phải là một mảng dữ liệu hợp lệ." });
+  }
+
+  organizationHierarchy = hierarchy;
+  res.json({ success: true, data: organizationHierarchy });
 });
 
 // 3. SHEET: DANHSACHNHANSU (Lấy danh sách theo phân quyền tài khoản Google)

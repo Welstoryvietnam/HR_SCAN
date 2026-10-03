@@ -6,8 +6,10 @@ import {
   TieuChuanLuongItem,
   NhanSuRecord,
   EmailLogItem,
-  BatchEmployeeDraft
+  BatchEmployeeDraft,
+  KhoiNode
 } from './types';
+import { DEFAULT_ORGANIZATION_HIERARCHY } from './data/organizationHierarchy';
 import { Header, AppTab } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
 import { DocumentUploader } from './components/DocumentUploader';
@@ -60,6 +62,13 @@ export default function App() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [tieuChuanLuong, setTieuChuanLuong] = useState<TieuChuanLuongItem[]>([]);
+  const [organizationHierarchy, setOrganizationHierarchy] = useState<KhoiNode[]>(() => {
+    try {
+      const saved = localStorage.getItem('hr_org_hierarchy');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_ORGANIZATION_HIERARCHY;
+  });
   const [records, setRecords] = useState<NhanSuRecord[]>([]);
   const [emailLogs, setEmailLogs] = useState<EmailLogItem[]>([]);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -67,6 +76,49 @@ export default function App() {
   const showNotification = (type: 'success' | 'error', message: string) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 5000);
+  };
+
+  // Tải dữ liệu Cơ cấu tổ chức
+  const loadOrganizationHierarchy = async () => {
+    try {
+      const res = await safeFetchJson<{ success: boolean; data: KhoiNode[] }>(
+        '/api/organization-hierarchy'
+      );
+      if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        setOrganizationHierarchy(res.data.data);
+        localStorage.setItem('hr_org_hierarchy', JSON.stringify(res.data.data));
+      }
+    } catch (err) {
+      console.warn('Lỗi tải cơ cấu tổ chức:', err);
+    }
+  };
+
+  // Lưu cơ cấu tổ chức (Admin)
+  const handleSaveOrganizationHierarchy = async (newHierarchy: KhoiNode[]) => {
+    if (!currentUser) return;
+    try {
+      const res = await safeFetchJson<{ success: boolean; data: KhoiNode[] }>(
+        '/api/organization-hierarchy',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-email': currentUser.email,
+          },
+          body: JSON.stringify({ hierarchy: newHierarchy }),
+        }
+      );
+      if (!res.ok || !res.data?.success) {
+        throw new Error('Không thể lưu cơ cấu tổ chức lên máy chủ.');
+      }
+      setOrganizationHierarchy(newHierarchy);
+      localStorage.setItem('hr_org_hierarchy', JSON.stringify(newHierarchy));
+      showNotification('success', 'Đã lưu và cập nhật cơ cấu tổ chức thành công!');
+    } catch (err) {
+      showNotification('error', (err as Error).message);
+      setOrganizationHierarchy(newHierarchy);
+      localStorage.setItem('hr_org_hierarchy', JSON.stringify(newHierarchy));
+    }
   };
 
   // Tải dữ liệu Tiêu chuẩn lương (Sheet "TieuChuanLuong")
@@ -118,6 +170,7 @@ export default function App() {
   useEffect(() => {
     if (currentUser?.email) {
       loadTieuChuanLuong();
+      loadOrganizationHierarchy();
       loadRecords(currentUser.email);
       loadEmailLogs(currentUser.email);
     }
@@ -130,6 +183,7 @@ export default function App() {
     localStorage.setItem('hr_current_user', JSON.stringify(user));
     setActiveTab('upload');
     loadTieuChuanLuong();
+    loadOrganizationHierarchy();
     loadRecords(user.email);
     loadEmailLogs(user.email);
     showNotification('success', `Đăng nhập thành công: ${user.name} (${user.role === 'admin' ? 'Quản trị viên' : 'Nhân viên tuyển dụng'})`);
@@ -497,10 +551,10 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      {/* Main Content Area - Tràn viền tối ưu 100% diện tích thao tác */}
+      <main className="flex-1 w-full max-w-[1720px] mx-auto p-3 sm:p-5 lg:p-6 space-y-5">
         {activeTab === 'upload' && (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Banner hiển thị vai trò */}
             <div
               className={`p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
@@ -529,7 +583,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Thanh tiến trình SOP 4 Bước */}
+            {/* Thanh tiến trình SOP 4 Bước (Tối ưu: Chỉ giữ tên bước) */}
             <SopProgressHeader
               currentStep={currentSopStep}
               onSelectStep={(step) => {
@@ -541,7 +595,7 @@ export default function App() {
               step3Verified={currentSopStep >= 4}
             />
 
-            {/* BƯỚC 1: Chỉ hiện màn hình Uploader khi currentSopStep === 1 */}
+            {/* BƯỚC 1: Màn hình Uploader khi currentSopStep === 1 */}
             {currentSopStep === 1 && (
               <div className="space-y-4">
                 {extractedData && (
@@ -557,7 +611,7 @@ export default function App() {
                       onClick={() => setCurrentSopStep(2)}
                       className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer"
                     >
-                      <span>Tiếp tục xử lý Bước 2 (Form Chuẩn)</span>
+                      <span>Tiếp tục xử lý Bước 2 (AI Trích Xuất Form)</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -575,7 +629,7 @@ export default function App() {
                       return;
                     }
                     setCurrentSopStep(2);
-                    showNotification('success', 'Đã chuyển sang Bước 2 (Kiểm tra & Bổ sung). Bạn có thể xem ảnh và biểu mẫu song song.');
+                    showNotification('success', 'Đã chuyển sang Bước 2. Bạn có thể xem ảnh và biểu mẫu song song.');
                   }}
                   batchEmployees={batchEmployees}
                   onBatchEmployeesChange={setBatchEmployees}
@@ -608,11 +662,11 @@ export default function App() {
               </div>
             )}
 
-            {/* BƯỚC 2, 3, 4: Chỉ hiện màn hình của Bước đang làm việc */}
+            {/* BƯỚC 2, 3, 4: Biểu mẫu form chuẩn toàn màn hình */}
             {currentSopStep >= 2 && (
               <div className="space-y-4">
-                {/* Thanh trạng thái hồ sơ tinh gọn trên đầu workspace */}
-                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                {/* Thanh trạng thái hồ sơ tinh gọn */}
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-white rounded-xl border border-slate-200 text-xs shadow-2xs">
                   <div className="flex items-center gap-2 text-slate-700">
                     <FileSpreadsheet className="w-4 h-4 text-indigo-600 shrink-0" />
                     <span>
@@ -634,7 +688,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setCurrentSopStep(1)}
-                      className="px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-blue-700 bg-white border border-slate-300 rounded-lg hover:border-blue-300 transition cursor-pointer"
+                      className="px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-blue-700 bg-slate-50 border border-slate-300 rounded-lg hover:border-blue-300 transition cursor-pointer"
                     >
                       ← Đổi danh sách/ảnh (Bước 1)
                     </button>
@@ -653,7 +707,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Form chi tiết hiển thị DUY NHẤT bước tương ứng */}
+                {/* Form chi tiết hiển thị toàn màn hình */}
                 <ExtractedForm
                   initialData={extractedData}
                   tieuChuanLuongList={tieuChuanLuong}
@@ -673,6 +727,7 @@ export default function App() {
                   batchEmployees={batchEmployees}
                   onBatchEmployeesChange={setBatchEmployees}
                   onSaveBatchToSheet={handleSaveBatchToSheet}
+                  organizationHierarchy={organizationHierarchy}
                 />
               </div>
             )}
@@ -706,6 +761,8 @@ export default function App() {
             currentUser={currentUser}
             onSaveStandard={handleSaveStandard}
             onDeleteStandard={handleDeleteStandard}
+            organizationHierarchy={organizationHierarchy}
+            onSaveOrganizationHierarchy={handleSaveOrganizationHierarchy}
           />
         )}
 
