@@ -14,6 +14,36 @@ export async function optimizeImageFile(
 ): Promise<OptimizedImageFile> {
   return new Promise((resolve, reject) => {
     try {
+      // Xử lý tệp PDF trực tiếp
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error(`Không thể đọc file PDF: ${file.name}`));
+        reader.onload = (event) => {
+          try {
+            const dataUrl = event.target?.result as string;
+            const rawBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+            const base64Data = rawBase64.replace(/[\r\n\s]+/g, '');
+            const result: OptimizedImageFile = {
+              id: 'pdf_' + Math.random().toString(36).substring(2, 9) + '_' + Date.now(),
+              fileName: file.name,
+              originalSize: file.size,
+              compressedSize: file.size,
+              width: 800,
+              height: 1130,
+              mimeType: 'application/pdf',
+              base64Data: base64Data,
+              dataUrl: dataUrl,
+              docType: docType,
+            };
+            resolve(result);
+          } catch (err) {
+            reject(err instanceof Error ? err : new Error(String(err)));
+          }
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+
       const reader = new FileReader();
 
       reader.onerror = () => {

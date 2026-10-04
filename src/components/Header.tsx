@@ -38,21 +38,18 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center justify-between h-16">
           {/* Logo & Branding */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white shadow-sm font-bold text-lg">
-              HR
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white shadow-sm font-bold text-xs">
+              WELV
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                  HR Document AI Automator
+                  WELV Document AI Automator
                 </h1>
                 <span className="bg-emerald-100 text-emerald-800 text-[10px] font-semibold px-2 py-0.5 rounded-full">
                   v2.5 Vision
                 </span>
               </div>
-              <p className="text-xs text-slate-500 hidden sm:block">
-                Hệ thống tự động hóa nhập liệu hồ sơ nhân sự bằng AI tích hợp Google Sheets
-              </p>
             </div>
           </div>
 
@@ -81,11 +78,6 @@ export const Header: React.FC<HeaderProps> = ({
                     </span>
                   )}
                 </div>
-                <p className="text-[10px] text-slate-500">
-                  {isAdmin
-                    ? 'Quyền xem và sửa toàn bộ thông tin'
-                    : 'Chỉ thực hiện quy trình nhập & điền thông tin'}
-                </p>
               </div>
             </div>
 

@@ -356,8 +356,6 @@ export default function App() {
       await loadRecords(currentUser.email);
       await loadEmailLogs(currentUser.email);
 
-      // Chuyển tab sang bảng hồ sơ để người dùng kiểm tra ngay
-      setActiveTab('records');
       return true;
     } catch (err) {
       showNotification('error', (err as Error).message);
@@ -400,8 +398,6 @@ export default function App() {
       await loadRecords(currentUser.email);
       await loadEmailLogs(currentUser.email);
 
-      // Chuyển tab sang bảng hồ sơ để người dùng kiểm tra ngay
-      setActiveTab('records');
       return true;
     } catch (err) {
       showNotification('error', (err as Error).message);
@@ -554,7 +550,7 @@ export default function App() {
       {/* Main Content Area - Tràn viền tối ưu 100% diện tích thao tác */}
       <main className="flex-1 w-full max-w-[1720px] mx-auto p-3 sm:p-5 lg:p-6 space-y-5">
         {activeTab === 'upload' && (
-          <div className="space-y-4">
+          <div className="space-y-4 animate-fade-in">
             {/* Banner hiển thị vai trò */}
             <div
               className={`p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
@@ -597,7 +593,7 @@ export default function App() {
 
             {/* BƯỚC 1: Màn hình Uploader khi currentSopStep === 1 */}
             {currentSopStep === 1 && (
-              <div className="space-y-4">
+              <div className="space-y-4 animate-fade-in">
                 {extractedData && (
                   <div className="bg-blue-50 border border-blue-200 p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
                     <div className="flex items-center gap-2 text-blue-900">
@@ -689,20 +685,9 @@ export default function App() {
                       type="button"
                       onClick={() => setCurrentSopStep(1)}
                       className="px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-blue-700 bg-slate-50 border border-slate-300 rounded-lg hover:border-blue-300 transition cursor-pointer"
+                      title="Quay lại Bước 1 để chọn lại ảnh hoặc tài liệu khác"
                     >
                       ← Đổi danh sách/ảnh (Bước 1)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setImages([]);
-                        setExtractedData(null);
-                        setBatchEmployees([]);
-                        setCurrentSopStep(1);
-                      }}
-                      className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:text-rose-700 bg-white border border-rose-200 rounded-lg hover:border-rose-300 transition cursor-pointer"
-                    >
-                      + Nhập hồ sơ mới
                     </button>
                   </div>
                 </div>
@@ -710,6 +695,7 @@ export default function App() {
                 {/* Form chi tiết hiển thị toàn màn hình */}
                 <ExtractedForm
                   initialData={extractedData}
+                  existingRecords={records}
                   tieuChuanLuongList={tieuChuanLuong}
                   userEmail={currentUser.email}
                   onSaveToSheet={handleSaveToSheet}
@@ -722,7 +708,12 @@ export default function App() {
                     setExtractedData(null);
                     setBatchEmployees([]);
                     setCurrentSopStep(1);
+                    showNotification(
+                      'success',
+                      'Đã khởi tạo phiên làm việc mới. Vui lòng nạp tài liệu nhân viên mới tiếp theo.'
+                    );
                   }}
+                  onViewRecordsTab={() => setActiveTab('records')}
                   uploadedImagesCount={images.length}
                   batchEmployees={batchEmployees}
                   onBatchEmployeesChange={setBatchEmployees}
@@ -736,46 +727,56 @@ export default function App() {
 
         {/* Tab Bảng hồ sơ nhân sự (Sheet DanhSachNhanSu) */}
         {activeTab === 'records' && (
-          <NhanSuTable
-            records={records}
-            currentUser={currentUser}
-            onRefresh={() => loadRecords(currentUser.email)}
-            onDeleteRecord={isAdmin ? handleDeleteRecord : undefined}
-            onEditRecord={isAdmin ? handleEditRecord : undefined}
-            tieuChuanLuongList={tieuChuanLuong}
-          />
+          <div className="animate-fade-in">
+            <NhanSuTable
+              records={records}
+              currentUser={currentUser}
+              onRefresh={() => loadRecords(currentUser.email)}
+              onDeleteRecord={isAdmin ? handleDeleteRecord : undefined}
+              onEditRecord={isAdmin ? handleEditRecord : undefined}
+              tieuChuanLuongList={tieuChuanLuong}
+            />
+          </div>
         )}
 
         {/* CÁC TAB CHỈ QUẢN TRỊ VIÊN MỚI TRUY CẬP ĐƯỢC */}
         {isAdmin && activeTab === 'dashboard' && (
-          <Dashboard
-            records={records}
-            currentUser={currentUser}
-            standards={tieuChuanLuong}
-          />
+          <div className="animate-fade-in">
+            <Dashboard
+              records={records}
+              currentUser={currentUser}
+              standards={tieuChuanLuong}
+            />
+          </div>
         )}
 
         {isAdmin && activeTab === 'salary' && (
-          <TieuChuanLuongManager
-            standards={tieuChuanLuong}
-            currentUser={currentUser}
-            onSaveStandard={handleSaveStandard}
-            onDeleteStandard={handleDeleteStandard}
-            organizationHierarchy={organizationHierarchy}
-            onSaveOrganizationHierarchy={handleSaveOrganizationHierarchy}
-          />
+          <div className="animate-fade-in">
+            <TieuChuanLuongManager
+              standards={tieuChuanLuong}
+              currentUser={currentUser}
+              onSaveStandard={handleSaveStandard}
+              onDeleteStandard={handleDeleteStandard}
+              organizationHierarchy={organizationHierarchy}
+              onSaveOrganizationHierarchy={handleSaveOrganizationHierarchy}
+            />
+          </div>
         )}
 
         {isAdmin && activeTab === 'emails' && (
-          <EmailViewer
-            emailLogs={emailLogs}
-            userEmail={currentUser.email}
-            isAdmin={true}
-          />
+          <div className="animate-fade-in">
+            <EmailViewer
+              emailLogs={emailLogs}
+              userEmail={currentUser.email}
+              isAdmin={true}
+            />
+          </div>
         )}
 
         {isAdmin && activeTab === 'users' && (
-          <UserManagement currentUser={currentUser} />
+          <div className="animate-fade-in">
+            <UserManagement currentUser={currentUser} />
+          </div>
         )}
       </main>
 
@@ -783,7 +784,7 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>
-            Hệ thống Nhập liệu Hồ sơ Nhân sự AI &bull; Google Sheets + Gemini Vision + MailApp
+            Hệ thống Nhập liệu Hồ sơ Nhân sự AI &bull; Designed by Brian Tran
           </span>
           <span className="font-mono text-[11px] text-slate-400">
             Tài khoản: {currentUser.email} &bull; Vai trò:{' '}

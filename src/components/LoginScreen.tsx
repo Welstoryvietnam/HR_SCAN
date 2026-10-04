@@ -167,21 +167,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
       <div className="max-w-md w-full relative z-10 space-y-5">
         {/* Brand Header */}
-        <div className="text-center space-y-2.5">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 text-white shadow-lg shadow-blue-500/30">
-            <Sparkles className="w-8 h-8" />
-          </div>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              HR Document AI
+        <div className="text-center space-y-3">
+          <div className="flex flex-col items-center justify-center space-y-2">
+            {/* Logo Welstory SVG */}
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl px-8 py-5 border border-white/10 shadow-xl transition-all duration-300 hover:bg-white/10">
+              <svg viewBox="0 0 500 110" className="w-56 sm:w-64 h-auto" fill="none" xmlns="http://www.w3.org/2000/svg">
+                {/* Left accent */}
+                <path d="M44 38H10C10 48 18 60 30 60C38 60 44 52 44 38Z" fill="#ff5419" />
+                
+                {/* Right accent */}
+                <path d="M456 38H490C490 48 482 60 470 60C462 60 456 52 456 38Z" fill="#ff5419" />
+
+                {/* Lowercase typography "welstory" with matching style */}
+                <text x="250" y="76" textAnchor="middle" fill="#ff5419" fontSize="76" fontWeight="900" fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" letterSpacing="-0.04em">welstory</text>
+              </svg>
+            </div>
+            
+            <h1 className="text-[11px] font-bold tracking-[0.35em] uppercase text-slate-400">
+              Document AI Automator
             </h1>
-            <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-              Hệ Thống Quản Trị & Tuyển Dụng Nhân Sự Doanh Nghiệp
-            </p>
-          </div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-800/80 border border-slate-700 rounded-full text-[11px] text-slate-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Phân quyền tài khoản &bull; Quản lý bảo mật qua Email</span>
           </div>
         </div>
 

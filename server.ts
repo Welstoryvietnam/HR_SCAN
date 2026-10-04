@@ -1832,7 +1832,9 @@ app.post("/api/ai/extract-documents", async (req, res) => {
         }
 
         // Chuẩn hóa MIME type chuẩn theo Google GenAI
-        if (mimeType.toLowerCase().includes("png")) {
+        if (mimeType.toLowerCase().includes("pdf")) {
+          mimeType = "application/pdf";
+        } else if (mimeType.toLowerCase().includes("png")) {
           mimeType = "image/png";
         } else if (mimeType.toLowerCase().includes("webp")) {
           mimeType = "image/webp";
@@ -1864,7 +1866,13 @@ app.post("/api/ai/extract-documents", async (req, res) => {
 
     // Prompt ngắn gọn, súc tích, tuân thủ nghiêm ngặt SOP Bước 2: KHÔNG TỰ SUY ĐOÁN & ƯU TIÊN VNeID
     const promptText = `Bạn là Trợ lý AI chuyên môn trích xuất hồ sơ nhân sự theo chuẩn quy trình SOP.
-NHIỆM VỤ BƯỚC 2: Trích xuất thông tin của nhân viên từ các ảnh tài liệu đính kèm (Ảnh chụp màn hình ứng dụng VNeID, CCCD 2 mặt, Sơ yếu lý lịch, Giấy xác nhận cư trú).
+NHIỆM VỤ BƯỚC 2: Trích xuất thông tin của nhân viên từ các tài liệu đính kèm (Ảnh chụp màn hình ứng dụng VNeID, CCCD 2 mặt, Sơ yếu lý lịch, Giấy xác nhận cư trú, CV ứng tuyển, hoặc tệp PDF tài liệu giấy nhiều trang).
+
+QUY TẮC ĐỐI VỚI TỆP PDF / CV NHIỀU TRANG:
+- Hãy rà soát TOÀN BỘ CÁC TRANG của tệp PDF (bao gồm CV ứng tuyển hoặc hồ sơ xin việc nhiều trang) để tìm kiếm và tổng hợp đầy đủ các trường thông tin cần thiết.
+- Trích xuất thông tin cá nhân cơ bản như Họ tên, ngày sinh, số điện thoại, email, địa chỉ từ các trang thông tin liên hệ.
+- Trích xuất vị trí ứng tuyển / công việc dự kiến ("congViecDuKien" hoặc "chucVu") từ tiêu đề CV hoặc phần định hướng nghề nghiệp.
+- Trích xuất thông tin người thân / gia đình ("thongTinGiaDinh") nếu có liệt kê trong sơ yếu lý lịch hoặc CV.
 
 QUY TẮC ĐẶC BIỆT VỀ VNeID & ĐỊA CHỈ HÀNH CHÍNH (ƯU TIÊN VNeID):
 - NGUYÊN TẮC BẮT BUỘC: Nếu trong danh sách ảnh có ảnh chụp màn hình ứng dụng VNeID (mục cư trú, quê quán, thông tin định danh), BẮT BUỘC ƯU TIÊN TUYỆT ĐỐI lấy "diaChiThuongTru" và "queQuan" từ màn hình VNeID, vì VNeID chứa thông tin đã cập nhật theo đơn vị hành chính mới nhất sau các đợt sáp nhập cấp xã/phường/quận/huyện/tỉnh.
@@ -1883,10 +1891,10 @@ Yêu cầu định dạng:
 - soCCCD: chuỗi 12 chữ số (chỉ ghi khi nhận diện đầy đủ 12 số, không đoán mò).
 - nguonDiaChi: "VNeID" hoặc "CCCD".
 - ghiChuSapNhap: tóm tắt đơn vị hành chính sau sáp nhập.
-- chucVu: tên chức vụ cụ thể phát hiện trong hồ sơ/đơn xin việc nếu có, không có thì để "".
-- khoi, ban, phong: phân cấp phòng ban nếu có trong đơn/tài liệu, nếu không có thì để "".
-- thongTinGiaDinh: mảng người thân gồm { "quanHe", "hoTen", "namSinh", "ngheNghiep" } nếu có trong Sơ yếu lý lịch.
-- mucDoTinCay: "CAO" nếu đọc rõ các trường chính (Họ tên, CCCD, Ngày sinh); "CAN_XAC_NHAN" nếu có từ 1-3 trường mờ/thiếu; "CHUA_RO" nếu ảnh quá mờ hoặc thiếu tài liệu chính.
+- chucVu: tên chức vụ cụ thể phát hiện trong hồ sơ/CV nếu có, không có thì để "".
+- khoi, ban, phong: phân cấp phòng ban nếu có trong đơn/CV/tài liệu, nếu không có thì để "".
+- thongTinGiaDinh: mảng người thân gồm { "quanHe", "hoTen", "namSinh", "ngheNghiep" } nếu có trong Sơ yếu lý lịch hoặc CV.
+- mucDoTinCay: "CAO" nếu đọc rõ các trường chính (Họ tên, CCCD hoặc thông tin cá nhân cốt lõi); "CAN_XAC_NHAN" nếu có từ 1-3 trường mờ/thiếu; "CHUA_RO" nếu ảnh/tệp quá mờ hoặc thiếu tài liệu chính.
 
 Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong markdown tick:
 {

@@ -48,6 +48,7 @@ import {
 
 interface ExtractedFormProps {
   initialData: GeminiExtractionResult | null;
+  existingRecords?: NhanSuRecord[];
   tieuChuanLuongList: TieuChuanLuongItem[];
   userEmail: string;
   onSaveToSheet: (formData: any) => Promise<boolean>;
@@ -56,6 +57,7 @@ interface ExtractedFormProps {
   currentStep?: number;
   onBackToStep1?: () => void;
   onResetNewRecord?: () => void;
+  onViewRecordsTab?: () => void;
   uploadedImagesCount?: number;
   batchEmployees?: BatchEmployeeDraft[];
   onBatchEmployeesChange?: (employees: BatchEmployeeDraft[]) => void;
@@ -73,6 +75,7 @@ const formatVND = (value: number | string | undefined | null): string => {
 
 export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   initialData,
+  existingRecords = [],
   tieuChuanLuongList,
   userEmail,
   onSaveToSheet,
@@ -81,6 +84,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   currentStep,
   onBackToStep1,
   onResetNewRecord,
+  onViewRecordsTab,
   uploadedImagesCount = 0,
   batchEmployees = [],
   onBatchEmployeesChange,
@@ -90,10 +94,28 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   // Cơ cấu tổ chức động do Admin cấu hình (hoặc mặc định)
   const orgHierarchy = organizationHierarchy && organizationHierarchy.length > 0 ? organizationHierarchy : DEFAULT_ORGANIZATION_HIERARCHY;
 
-  // Quản lý bước hiển thị trong SOP: chỉ hiển thị đúng bước hiện tại 2, 3, hoặc 4
-  const [activeTabStep, setActiveTabStep] = useState<2 | 3 | 4>(
+  // Quản lý bước hiển thị trong SOP: 2 (Form), 3 (Chức vụ), 4 (Lương & Lưu), 5 (Bước sau Bước 4: Đã lưu & Tiếp nhận mới)
+  const [activeTabStep, setActiveTabStep] = useState<2 | 3 | 4 | 5>(
     currentStep && currentStep >= 2 && currentStep <= 4 ? (currentStep as 2 | 3 | 4) : 2
   );
+
+  // Trạng thái đã lưu thành công vào Google Sheet & dữ liệu tóm tắt vừa lưu để phục vụ "+ Tiếp nhận hồ sơ mới"
+  const [isSavedSuccess, setIsSavedSuccess] = useState(false);
+  const [savedSummary, setSavedSummary] = useState<{
+    hoVaTen: string;
+    soCCCD: string;
+    chucVu: string;
+    phongBan: string;
+    count: number;
+  } | null>(null);
+
+  // Xử lý chuyển tab bước SOP
+  const handleSelectStep = (step: 2 | 3 | 4 | 5) => {
+    setActiveTabStep(step);
+    if (onStepChange && step <= 4) {
+      onStepChange(step);
+    }
+  };
 
   // Đồng bộ bước hiển thị khi prop currentStep thay đổi từ bên ngoài (ví dụ header SOP)
   useEffect(() => {
@@ -178,6 +200,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
 
   // Điền dữ liệu khi Gemini AI hoàn thành trích xuất đơn lẻ
   useEffect(() => {
+    setIsSavedSuccess(false);
+    setSavedSummary(null);
     if (initialData) {
       setHoVaTen(initialData.hoVaTen ? initialData.hoVaTen.toUpperCase() : '');
       setNgaySinh(initialData.ngaySinh || '');
@@ -220,14 +244,6 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       setLuongDongBHXH((std.luongCoBan || 0) + (std.phuCapChucVu || 0));
     }
   }, [congViecDuKien, chucVu]);
-
-  // Đồng bộ thay đổi step ra ngoài nếu có callback
-  const handleSelectStep = (step: 2 | 3 | 4) => {
-    setActiveTabStep(step);
-    if (onStepChange) {
-      onStepChange(step);
-    }
-  };
 
   // Tra cứu bảng tiêu chuẩn lương
   const matchedStandard = findTieuChuanLuong(congViecDuKien, chucVu);
@@ -568,7 +584,18 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     setValidationError(null);
 
     if (batchList.length > 1 && onSaveBatchToSheet) {
-      await onSaveBatchToSheet(batchList);
+      const ok = await onSaveBatchToSheet(batchList);
+      if (ok) {
+        setIsSavedSuccess(true);
+        setSavedSummary({
+          hoVaTen: batchList.map((b) => b.hoVaTen).join(', '),
+          soCCCD: `${batchList.length} hồ sơ`,
+          chucVu: `${batchList.length} vị trí`,
+          phongBan: 'Theo danh sách phân bổ',
+          count: batchList.length,
+        });
+        setActiveTabStep(4);
+      }
       return;
     }
 
@@ -588,8 +615,29 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       isManualSalary: true,
     };
 
-    await onSaveToSheet(payload);
+    const ok = await onSaveToSheet(payload);
+    if (ok) {
+      setIsSavedSuccess(true);
+      setSavedSummary({
+        hoVaTen: hoVaTen,
+        soCCCD: soCCCD,
+        chucVu: chucVu || 'Chưa phân bổ',
+        phongBan: phong || ban || khoi || 'Chưa chọn',
+        count: 1,
+      });
+      setActiveTabStep(5);
+    }
   };
+
+  // Kiểm tra trùng số CCCD với cơ sở dữ liệu đã lưu (Cảnh báo Bước 2)
+  const cleanCurrentCCCD = soCCCD.replace(/\D/g, '');
+  const duplicateCCCDRecord = cleanCurrentCCCD.length >= 9
+    ? existingRecords?.find((r) => {
+        if (!r.soCCCD) return false;
+        const cleanExisting = r.soCCCD.replace(/\D/g, '');
+        return cleanExisting === cleanCurrentCCCD;
+      })
+    : null;
 
   // Phân tích danh sách trường chưa rõ từ AI
   const thongTinChuaRo = initialData?.thongTinChuaRo || [];
@@ -609,14 +657,15 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className={`text-white text-xs font-bold px-2 py-0.5 rounded ${
-                activeTabStep === 2 ? 'bg-blue-600' : activeTabStep === 3 ? 'bg-emerald-600' : 'bg-indigo-600'
+                activeTabStep === 2 ? 'bg-blue-600' : activeTabStep === 3 ? 'bg-emerald-600' : activeTabStep === 4 ? 'bg-indigo-600' : 'bg-emerald-600'
               }`}>
-                BƯỚC {activeTabStep} / 4
+                {activeTabStep === 5 ? 'HOÀN TẤT' : `BƯỚC ${activeTabStep} / 4`}
               </span>
               <h2 className="text-lg font-bold text-slate-900">
                 {activeTabStep === 2 && 'Bước 2: AI Trích Xuất Form'}
                 {activeTabStep === 3 && 'Bước 3: Con Người Chọn Đơn Vị & Chức Vụ'}
                 {activeTabStep === 4 && 'Bước 4: Bảng Tiêu Chuẩn Tiền Lương & Lưu Vào Google Sheet'}
+                {activeTabStep === 5 && 'Bước Sau Bước 4: Đã Lưu Thành Công Vào Google Sheet'}
               </h2>
             </div>
           </div>
@@ -629,7 +678,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               <button
                 type="button"
                 onClick={onBackToStep1}
-                className="text-xs font-semibold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition"
+                className="text-xs font-semibold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition cursor-pointer"
               >
                 ← Quay lại Bước 1 (Tải/Chụp ảnh)
               </button>
@@ -637,7 +686,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
           </div>
         </div>
 
-        {/* Tab Stepper Bar for Step 2, 3, 4 */}
+        {/* Tab Stepper Bar for Step 2, 3, 4 and Post-Step 4 */}
         <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
           <button
             type="button"
@@ -654,6 +703,11 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               2
             </span>
             <span>Bước 2: AI Trích Xuất Form</span>
+            {duplicateCCCDRecord && (
+              <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black animate-pulse">
+                Trùng CCCD
+              </span>
+            )}
             {cauHoiLamRo.length > 0 && (
               <span className="bg-amber-400 text-amber-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
                 {cauHoiLamRo.length} câu hỏi
@@ -694,6 +748,22 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
             </span>
             <span>Bước 4: Bảng Tiêu Chuẩn &amp; Lưu Sheet</span>
           </button>
+
+          {/* Bước sau Bước 4: Hiển thị sau khi đã lưu thành công */}
+          {isSavedSuccess && (
+            <button
+              type="button"
+              onClick={() => handleSelectStep(5)}
+              className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
+                activeTabStep === 5
+                  ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-300'
+                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+              }`}
+            >
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <span>✓ Đã Lưu &amp; Tiếp Nhận Mới</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -709,7 +779,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         {/* BƯỚC 2: AI TRẢ RA THÔNG TIN THEO FORM TIÊU CHUẨN (HỎI LẠI NẾU KHÔNG RÕ) */}
         {/* ========================================================================= */}
         {activeTabStep === 2 && (
-          <div className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/20 p-4 sm:p-5">
+          <div className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/20 p-4 sm:p-5 animate-fade-in">
             {/* Header Bước 2 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-100 pb-3">
               <div>
@@ -763,6 +833,30 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               </div>
             )}
 
+            {/* CẢNH BÁO TRÙNG SỐ CCCD ĐƯỢC YÊU CẦU */}
+            {duplicateCCCDRecord && (
+              <div className="p-4 bg-rose-50 border-2 border-rose-500 rounded-xl text-rose-950 space-y-2 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+                  <span className="text-xs sm:text-sm font-black text-rose-700 uppercase tracking-wide">
+                    Cảnh báo: Yêu cầu kiểm tra lại, trùng số căn cước công dân
+                  </span>
+                  <span className="px-2 py-0.5 bg-rose-200 text-rose-900 font-mono font-bold text-xs rounded">
+                    {cleanCurrentCCCD}
+                  </span>
+                </div>
+                <p className="text-xs text-rose-800 leading-relaxed">
+                  Số Căn cước công dân <strong>{cleanCurrentCCCD}</strong> đã tồn tại trong cơ sở dữ liệu nhân sự của <strong>{duplicateCCCDRecord.hoVaTen}</strong> (Mã nhân sự: {duplicateCCCDRecord.id}, Chức vụ: {duplicateCCCDRecord.chucVu || duplicateCCCDRecord.congViecDuKien || 'Chưa rõ'}, Đơn vị: {duplicateCCCDRecord.phong || duplicateCCCDRecord.ban || duplicateCCCDRecord.khoi || 'N/A'}).
+                </p>
+                <div className="text-[11px] text-rose-700 bg-white/90 p-2.5 rounded-lg border border-rose-200 flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>
+                    Vui lòng đối chiếu kỹ lại ảnh chụp CCCD hoặc kiểm tra xem ứng viên này đã được khai báo trước đó hay chưa!
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Form Fields: Thông Tin Cá Nhân */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -800,7 +894,11 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                     <label className="text-xs font-bold text-slate-700">
                       Số CCCD (12 chữ số) <span className="text-rose-500">*</span>
                     </label>
-                    {isFieldUnclear('Số CCCD', soCCCD) ? (
+                    {duplicateCCCDRecord ? (
+                      <span className="text-[10px] text-rose-700 bg-rose-100 border border-rose-300 px-1.5 py-0.5 rounded font-bold animate-pulse">
+                        ⚠️ Trùng CCCD
+                      </span>
+                    ) : isFieldUnclear('Số CCCD', soCCCD) ? (
                       <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded font-semibold">
                         ⚠️ Cần xác nhận
                       </span>
@@ -817,9 +915,19 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                     placeholder="001095012345"
                     required
                     className={`w-full text-xs sm:text-sm px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 font-mono ${
-                      isFieldUnclear('Số CCCD', soCCCD) ? 'border-amber-400 bg-amber-50/20' : 'border-slate-300'
+                      duplicateCCCDRecord
+                        ? 'border-rose-500 bg-rose-50 text-rose-900 ring-2 ring-rose-200'
+                        : isFieldUnclear('Số CCCD', soCCCD)
+                        ? 'border-amber-400 bg-amber-50/20'
+                        : 'border-slate-300'
                     }`}
                   />
+                  {duplicateCCCDRecord && (
+                    <p className="mt-1 text-[11px] font-bold text-rose-600 flex items-center gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      <span>Yêu cầu kiểm tra lại, trùng số căn cước công dân với nhân sự "{duplicateCCCDRecord.hoVaTen}"!</span>
+                    </p>
+                  )}
                 </div>
 
                 {/* Ngày sinh */}
@@ -1120,7 +1228,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         {/* BƯỚC 3: CON NGƯỜI THAO TÁC - LỰA CHỌN PHÒNG BAN, BỘ PHẬN, CÔNG VIỆC CHỨC VỤ */}
         {/* ========================================================================= */}
         {activeTabStep === 3 && (
-          <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/20 p-4 sm:p-5">
+          <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/20 p-4 sm:p-5 animate-fade-in">
             {/* Header Bước 3 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-100 pb-3">
               <div>
@@ -1856,7 +1964,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         {/* BƯỚC 4: 12 KHOẢN LƯƠNG & PHỤ CẤP (ĐIỀN TAY) + LƯU SHEET + XUẤT EXCEL 43 CỘT */}
         {/* ========================================================================= */}
         {activeTabStep === 4 && (
-          <div className="space-y-5 rounded-xl border border-indigo-200 bg-indigo-50/20 p-4 sm:p-5">
+          <div className="space-y-5 rounded-xl border border-indigo-200 bg-indigo-50/20 p-4 sm:p-5 animate-fade-in">
             {/* Header Bước 4 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100 pb-3">
               <div>
@@ -2366,20 +2474,11 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                 <button
                   type="button"
                   onClick={() => handleSelectStep(3)}
-                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+                  className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" />
                   <span>Quay Lại Bước 3 (Chức vụ &amp; Phòng ban)</span>
                 </button>
-                {onResetNewRecord && (
-                  <button
-                    type="button"
-                    onClick={onResetNewRecord}
-                    className="px-3.5 py-2 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl text-xs font-semibold transition flex items-center gap-1"
-                  >
-                    <span>+ Tiếp nhận hồ sơ mới</span>
-                  </button>
-                )}
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
@@ -2419,6 +2518,101 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                     </>
                   )}
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* BƯỚC SAU BƯỚC 4 (BƯỚC 5): HOÀN TẤT & TIẾP NHẬN HỒ SƠ MỚI TIẾP THEO       */}
+        {/* ========================================================================= */}
+        {activeTabStep === 5 && (
+          <div className="space-y-6 rounded-2xl border-2 border-emerald-500 bg-gradient-to-br from-emerald-50/90 via-teal-50/40 to-white p-6 sm:p-10 shadow-lg animate-in fade-in duration-300">
+            <div className="text-center space-y-4 max-w-2xl mx-auto">
+              <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center mx-auto shadow-lg ring-8 ring-emerald-100">
+                <CheckCircle2 className="w-12 h-12" />
+              </div>
+
+              <div>
+                <span className="inline-block text-xs font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-3.5 py-1 rounded-full mb-2">
+                  ✓ BƯỚC HOÀN TẤT (SAU BƯỚC 4): ĐÃ LƯU THÀNH CÔNG VÀO GOOGLE SHEET
+                </span>
+                <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                  Đã Lưu Dòng Dữ Liệu Nhân Sự Thành Công!
+                </h3>
+                <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
+                  Dữ liệu của nhân sự <strong>{savedSummary?.hoVaTen || hoVaTen}</strong> đã được ghi nhận chuẩn xác 43 cột vào Google Sheets. Hãy bấm nút bên dưới để tiếp nhận hồ sơ nhân viên mới tiếp theo!
+                </p>
+              </div>
+
+              {/* Thẻ tóm tắt thông tin chi tiết của nhân sự vừa lưu */}
+              {savedSummary && (
+                <div className="bg-white rounded-2xl border border-emerald-200 p-5 text-xs text-left grid grid-cols-1 sm:grid-cols-2 gap-3.5 shadow-sm">
+                  <div>
+                    <span className="text-slate-400 block text-[11px] font-medium">HỌ VÀ TÊN</span>
+                    <strong className="text-slate-900 text-sm font-bold block">{savedSummary.hoVaTen}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px] font-medium">SỐ CĂN CƯỚC CÔNG DÂN</span>
+                    <strong className="text-slate-900 text-sm font-mono font-bold block">{savedSummary.soCCCD}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px] font-medium">CHỨC VỤ / VỊ TRÍ</span>
+                    <strong className="text-blue-700 font-bold block">{savedSummary.chucVu}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px] font-medium">ĐƠN VỊ CÔNG TÁC</span>
+                    <strong className="text-slate-700 font-bold block">{savedSummary.phongBan}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px] font-medium">LƯƠNG CƠ BẢN</span>
+                    <strong className="text-slate-900 font-mono font-bold block">{formatVND(luongCoBan)} đ</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[11px] font-medium">TỔNG THU NHẬP DỰ KIẾN</span>
+                    <strong className="text-emerald-700 font-mono font-black text-sm block">{formatVND(tongThuNhapDuKien)} đ</strong>
+                  </div>
+                </div>
+              )}
+
+              {/* NÚT CHÍNH NỔI BẬT ĐƯỢC YÊU CẦU: + TIẾP NHẬN HỒ SƠ MỚI (NHẬP NHÂN VIÊN TIẾP THEO) */}
+              <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+                {onResetNewRecord && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSavedSuccess(false);
+                      setSavedSummary(null);
+                      setActiveTabStep(2);
+                      onResetNewRecord();
+                    }}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 hover:from-blue-700 hover:to-indigo-700 text-white rounded-2xl text-base sm:text-lg font-black shadow-xl hover:shadow-2xl transition cursor-pointer active:scale-98 ring-4 ring-blue-100"
+                  >
+                    <Plus className="w-6 h-6" />
+                    <span>+ Tiếp Nhận Hồ Sơ Mới (Nhập Nhân Viên Tiếp Theo)</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Các thao tác phụ */}
+              <div className="pt-2 flex flex-wrap items-center justify-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setActiveTabStep(4)}
+                  className="px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl font-semibold transition cursor-pointer"
+                >
+                  Xem lại biểu mẫu Bước 4
+                </button>
+                {onViewRecordsTab && (
+                  <button
+                    type="button"
+                    onClick={onViewRecordsTab}
+                    className="px-4 py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl font-semibold transition cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                    <span>Mở Bảng Danh Sách Nhân Sự</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
