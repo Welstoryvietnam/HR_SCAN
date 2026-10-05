@@ -1722,12 +1722,12 @@ app.post("/api/settings/admins", (req, res) => {
 
 // Danh sách các model Gemini hợp lệ theo hướng dẫn nền tảng (ưu tiên model có độ sẵn sàng cao)
 const GEMINI_CANDIDATE_MODELS = [
-  "gemini-3.1-flash-lite", // Khả năng đa phương thức cao, tốc độ phản hồi nhanh, tải ổn định
-  "gemini-3.8-flash",      // Model chính tiêu chuẩn
+  "gemini-3.8-flash",      // Model chính tiêu chuẩn, đa phương thức tốt nhất
+  "gemini-3.1-flash-lite", // Khả năng đa phương thức cao, tốc độ phản hồi nhanh
   "gemini-flash-latest",   // Model alias mới nhất
 ];
 
-let activeGeminiModel = "gemini-3.1-flash-lite";
+let activeGeminiModel = "gemini-3.8-flash";
 
 // Hàm phân tích và tự động vá lỗi JSON khi Gemini phản hồi bị cắt ngắn hoặc lẫn ký tự lạ
 function safeParseExtractedJson(raw: string): any {
@@ -1936,12 +1936,12 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
     let lastError: any = null;
 
     for (const model of modelsToTry) {
-      for (let attempt = 0; attempt < 2; attempt++) {
+      for (let attempt = 0; attempt < 3; attempt++) {
         try {
           console.log(`[Gemini Vision] Đang gọi model: ${model} (thử lần ${attempt + 1})...`);
           const res = await ai.models.generateContent({
             model,
-            contents: parts,
+            contents: { parts },
             config: {
               responseMimeType: "application/json",
               maxOutputTokens: 8192,
@@ -1969,9 +1969,9 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
             errMsg.includes("RESOURCE_EXHAUSTED") ||
             errMsg.includes("overloaded");
 
-          if (isTransient && attempt === 0) {
-            // Chờ ngắn 800ms rồi thử lại model này 1 lần
-            await new Promise((resolve) => setTimeout(resolve, 800));
+          if (isTransient && attempt < 2) {
+            // Chờ tăng dần: 500ms -> 1200ms rồi thử lại
+            await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
             continue;
           }
           // Chuyển sang model dự phòng tiếp theo

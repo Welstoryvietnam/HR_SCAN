@@ -56,6 +56,8 @@ interface ExtractedFormProps {
   onStepChange?: (step: number) => void;
   currentStep?: number;
   onBackToStep1?: () => void;
+  onReExtractAI?: () => void;
+  isProcessingAI?: boolean;
   onResetNewRecord?: () => void;
   onViewRecordsTab?: () => void;
   uploadedImagesCount?: number;
@@ -83,6 +85,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   onStepChange,
   currentStep,
   onBackToStep1,
+  onReExtractAI,
+  isProcessingAI,
   onResetNewRecord,
   onViewRecordsTab,
   uploadedImagesCount = 0,
@@ -806,14 +810,28 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
             {/* AI Clarification Dialog: Nếu có thông tin chưa rõ hoặc câu hỏi làm rõ */}
             {cauHoiLamRo.length > 0 || thongTinChuaRo.length > 0 ? (
               <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl text-amber-950 space-y-2.5">
-                <div className="flex items-center gap-2">
-                  <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
-                  <span className="text-xs font-bold uppercase tracking-wide text-amber-900">
-                    Cảnh báo Anti-Hallucination &amp; Câu hỏi làm rõ từ AI ({cauHoiLamRo.length} yêu cầu xác nhận)
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
+                    <span className="text-xs font-bold uppercase tracking-wide text-amber-900">
+                      Cảnh báo Anti-Hallucination &amp; Yêu cầu xác nhận ({cauHoiLamRo.length} mục)
+                    </span>
+                  </div>
+                  {onReExtractAI && (
+                    <button
+                      type="button"
+                      onClick={onReExtractAI}
+                      disabled={isProcessingAI}
+                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
+                      title="Chạy lại mô hình AI Vision để quét lại toàn bộ tài liệu"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-200" />
+                      <span>{isProcessingAI ? 'Đang AI quét lại...' : '⚡ Thử lại AI Trích Xuất'}</span>
+                    </button>
+                  )}
                 </div>
                 <p className="text-xs text-amber-800 leading-relaxed">
-                  Để đảm bảo tính chính xác tuyệt đối theo SOP, AI đã từ chối đoán mò các trường mờ hoặc thiếu dưới đây và cần bạn xác nhận trực tiếp vào ô tương ứng:
+                  Để đảm bảo tính chính xác tuyệt đối theo SOP, AI đã từ chối đoán mò các trường mờ/thiếu dưới đây và cần bạn kiểm tra hoặc điền trực tiếp vào biểu mẫu:
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
                   {cauHoiLamRo.map((q, idx) => (

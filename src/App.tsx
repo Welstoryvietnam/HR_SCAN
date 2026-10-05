@@ -224,7 +224,7 @@ export default function App() {
           fileName: img.fileName,
           docType: img.docType,
           mimeType: img.mimeType,
-          base64Data: img.base64Data,
+          base64Data: img.base64Data || (img.dataUrl ? (img.dataUrl.includes(',') ? img.dataUrl.split(',')[1] : img.dataUrl) : ''),
         })),
       };
 
@@ -683,6 +683,16 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      onClick={handleExtractAI}
+                      disabled={isProcessingAI || images.length === 0}
+                      className="px-3 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
+                      title="Quét lại toàn bộ tài liệu bằng AI Vision"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>{isProcessingAI ? 'Đang AI quét...' : '⚡ Quét lại bằng AI'}</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setCurrentSopStep(1)}
                       className="px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-blue-700 bg-slate-50 border border-slate-300 rounded-lg hover:border-blue-300 transition cursor-pointer"
                       title="Quay lại Bước 1 để chọn lại ảnh hoặc tài liệu khác"
@@ -703,6 +713,8 @@ export default function App() {
                   onStepChange={(step) => setCurrentSopStep(step)}
                   currentStep={currentSopStep}
                   onBackToStep1={() => setCurrentSopStep(1)}
+                  onReExtractAI={handleExtractAI}
+                  isProcessingAI={isProcessingAI}
                   onResetNewRecord={() => {
                     setImages([]);
                     setExtractedData(null);
