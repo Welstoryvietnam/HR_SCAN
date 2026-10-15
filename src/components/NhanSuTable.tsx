@@ -101,6 +101,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
       const response = await fetch('/api/export/csv', {
         headers: {
           'x-user-email': currentUser.email,
+          'Authorization': `Bearer ${currentUser.sessionToken || ''}`,
         },
       });
 
@@ -132,7 +133,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-bold text-slate-900">
-              Cơ Sở Dữ Liệu: Sheet "DanhSachNhanSu"
+              Cơ Sở Dữ Liệu: Hồ sơ đã lưu
             </h2>
             {isAdmin ? (
               <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-xs font-bold px-2.5 py-0.5 rounded-full">

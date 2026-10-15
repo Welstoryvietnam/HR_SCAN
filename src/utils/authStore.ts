@@ -90,84 +90,12 @@ export async function authenticateUser(
   identifier: string,
   password: string
 ): Promise<{ success: boolean; user?: UserProfile; error?: string }> {
-  const cleanId = identifier.trim().toLowerCase();
-  const cleanPass = String(password);
-
-  // 1. Kiểm tra tài khoản trong kho dữ liệu (Xác thực tức thì, chống mọi lỗi 405/404 từ proxy mạng)
-  const accounts = getStoredAccounts();
-  const matched = accounts.find(
-    (u) =>
-      u.username.toLowerCase() === cleanId ||
-      u.email.toLowerCase() === cleanId
-  );
-
-  // Nếu tìm thấy tài khoản và mật khẩu hoàn toàn chính xác -> Đăng nhập thành công ngay lập tức!
-  if (matched && matched.password === cleanPass) {
-    if (matched.status === 'locked') {
-      return {
-        success: false,
-        error: 'Tài khoản này đang bị khóa tạm thời. Vui lòng liên hệ Quản trị viên để mở khóa.',
-      };
-    }
-
-    matched.lastLogin = new Date().toISOString();
-    saveStoredAccounts(accounts);
-
-    const isAdmin = matched.role === 'admin' || matched.email.toLowerCase() === 'happyendpu@gmail.com';
-    const profile: UserProfile = {
-      id: matched.id,
-      username: matched.username,
-      email: matched.email,
-      name: matched.fullName,
-      role: isAdmin ? 'admin' : 'employee',
-      displayName: isAdmin ? 'Quản trị viên (Toàn quyền)' : 'Nhân viên tuyển dụng',
-    };
-
-    // Gửi thông báo ngầm đến server (không chặn luồng nếu proxy lỗi)
-    safeFetchJson('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: cleanId, password: cleanPass }),
-    }).catch(() => {});
-
-    return { success: true, user: profile };
-  }
-
-  // Nếu tìm thấy tài khoản nhưng mật khẩu SAI -> Báo lỗi mật khẩu rõ ràng ngay
-  if (matched && matched.password !== cleanPass) {
-    return {
-      success: false,
-      error: 'Mật khẩu không chính xác. Nếu quên mật khẩu, vui lòng bấm "Quên mật khẩu?" để đổi mật khẩu qua Email.',
-    };
-  }
-
-  // 2. Nếu không tìm thấy trong kho lưu trữ cục bộ, thử tra cứu từ server backend
-  try {
-    const res = await safeFetchJson<{
-      success: boolean;
-      user?: UserProfile;
-      error?: string;
-    }>('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: cleanId, password: cleanPass }),
-    });
-
-    if (res.data?.success && res.data.user) {
-      return { success: true, user: res.data.user };
-    }
-    if (res.data && !res.data.success && res.data.error) {
-      return { success: false, error: res.data.error };
-    }
-  } catch (err) {
-    console.warn('Backend login query error:', err);
-  }
-
-  // Không tìm thấy tài khoản
-  return {
-    success: false,
-    error: `Tài khoản "${identifier}" không tồn tại trên hệ thống. Vui lòng liên hệ Quản trị viên (Admin) để được cấp tài khoản.`,
-  };
+  const result = await safeFetchJson<{success:boolean;user?:UserProfile;error?:string}>('/api/auth/login', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:identifier.trim(),password}),
+  });
+  if (result.ok && result.data?.success && result.data.user?.sessionToken) return {success:true,user:result.data.user};
+  return {success:false,error:result.data?.error || result.error || 'Không thể đăng nhập máy chủ. Vui lòng thử lại.'};
 }
 
 /**

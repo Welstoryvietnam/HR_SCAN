@@ -124,7 +124,7 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <FileSpreadsheet className="w-4 h-4" />
             <span>
-              {isAdmin ? 'Sheet "DanhSachNhanSu"' : 'Hồ Sơ Đã Nộp Của Bạn'}
+              {isAdmin ? 'Hồ sơ đã lưu' : 'Hồ Sơ Đã Nộp Của Bạn'}
             </span>
             <span className="ml-1 px-1.5 py-0.2 bg-slate-200 text-slate-700 text-[11px] rounded-full">
               {recordsCount}

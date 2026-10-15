@@ -39,7 +39,8 @@ export default function App() {
     try {
       const saved = localStorage.getItem('hr_current_user');
       if (saved) {
-        return JSON.parse(saved);
+        const user = JSON.parse(saved);
+        return user?.sessionToken ? user : null;
       }
     } catch {
       // ignore
@@ -49,7 +50,7 @@ export default function App() {
 
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      return Boolean(localStorage.getItem('hr_current_user'));
+      return Boolean(JSON.parse(localStorage.getItem('hr_current_user') || 'null')?.sessionToken);
     } catch {
       return false;
     }
@@ -150,6 +151,8 @@ export default function App() {
       );
       if (res.data?.success && Array.isArray(res.data.data)) {
         setRecords(res.data.data);
+      } else {
+        showNotification('error',res.error || 'Không tải được hồ sơ đã lưu. Vui lòng thử lại.');
       }
     } catch (err) {
       console.warn('Lỗi tải danh sách hồ sơ:', err);
@@ -180,16 +183,21 @@ export default function App() {
     }
   }, [currentUser?.email]);
 
+  // Refresh the saved list when returning to this device or browser tab.
+  useEffect(() => {
+    if (!currentUser?.email) return;
+    const refresh = () => { if (document.visibilityState === 'visible') void loadRecords(currentUser.email); };
+    window.addEventListener('focus',refresh);
+    document.addEventListener('visibilitychange',refresh);
+    return () => { window.removeEventListener('focus',refresh); document.removeEventListener('visibilitychange',refresh); };
+  },[currentUser?.email]);
+
   // Xử lý khi đăng nhập thành công
   const handleLoginSuccess = (user: UserProfile) => {
     setCurrentUser(user);
     setIsAuthenticated(true);
     localStorage.setItem('hr_current_user', JSON.stringify(user));
     setActiveTab('upload');
-    loadTieuChuanLuong();
-    loadOrganizationHierarchy();
-    loadRecords(user.email);
-    loadEmailLogs(user.email);
     showNotification('success', `Đăng nhập thành công: ${user.name} (${user.role === 'admin' ? 'Quản trị viên' : 'Nhân viên tuyển dụng'})`);
   };
 
@@ -299,7 +307,7 @@ export default function App() {
 
       showNotification(
         'success',
-        `Đã lưu hồ sơ của ${formData.hoVaTen} vào Sheet "DanhSachNhanSu" & gửi email xác nhận thành công!`
+        `Đã lưu hồ sơ của ${formData.hoVaTen} lên hệ thống.`
       );
 
       // Cập nhật lại danh sách và email logs
@@ -341,7 +349,7 @@ export default function App() {
 
       showNotification(
         'success',
-        `Đã lưu thành công ${batchList.length} nhân sự vào Google Sheets và gửi email xác nhận!`
+        `Đã lưu thành công ${batchList.length} hồ sơ nhân sự lên hệ thống.`
       );
 
       // Cập nhật lại danh sách và email logs
@@ -452,7 +460,7 @@ export default function App() {
       if (!res.ok || !res.data?.success) {
         throw new Error(res.error || res.data?.error || 'Không thể xóa hồ sơ.');
       }
-      showNotification('success', 'Đã xóa hồ sơ khỏi Sheet "DanhSachNhanSu".');
+      showNotification('success', 'Đã xóa hồ sơ khỏi hệ thống.');
       loadRecords(currentUser.email);
     } catch (err) {
       showNotification('error', (err as Error).message);

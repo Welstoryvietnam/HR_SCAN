@@ -9,7 +9,15 @@ export async function safeFetchJson<T = any>(
     if (String(input).includes('/api/ai/extract-documents') && typeof init?.body === 'string' && new TextEncoder().encode(init.body).byteLength > 4_000_000) {
       return { ok: false, error: 'Tổng dung lượng tài liệu quá lớn cho một lần trích xuất. Vui lòng giảm dung lượng hoặc số trang PDF/ảnh của nhân viên này rồi thử lại.' };
     }
-    const res = await fetch(input, init);
+    const headers = new Headers(init?.headers);
+    // Attach the signed session only to this app's relative API URLs.
+    if (typeof input === 'string' && input.startsWith('/api/')) {
+      try {
+        const user = JSON.parse(localStorage.getItem('hr_current_user') || 'null');
+        if (user?.sessionToken) headers.set('Authorization',`Bearer ${user.sessionToken}`);
+      } catch { /* Login requests and tests may have no stored session. */ }
+    }
+    const res = await fetch(input, {...init,headers});
     const text = await res.text();
 
     if (!text || text.trim() === '') {

@@ -1,6 +1,7 @@
 export type UserRole = 'admin' | 'employee';
 
 export interface UserProfile {
+  sessionToken?: string;
   id?: string;
   username?: string;
   email: string;

@@ -3,6 +3,9 @@ import path from "path";
 import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import { randomUUID } from "node:crypto";
+import { recordStore, personnelFields, firestoreConfigured, StorageError } from "./backend/recordStore.js";
+import { createSession, readSession } from "./backend/session.js";
 import { DEFAULT_ORGANIZATION_HIERARCHY } from "./src/data/organizationHierarchy.js";
 
 dotenv.config();
@@ -13,6 +16,11 @@ const PORT = 3000;
 app.get("/api/health", (_req, res) => {
   res.set("Cache-Control", "no-store");
   res.json({ success: true, service: "hr-scan-api", geminiConfigured: Boolean(process.env.GEMINI_API_KEY) });
+});
+
+app.get("/api/storage/status", (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({provider:"firestore",configured:firestoreConfigured(),attachmentsStored:false});
 });
 
 // Middleware for parsing large JSON (needed for multimodal Base64 images)
@@ -684,220 +692,7 @@ let tieuChuanLuong = [
   },
 ];
 
-// Sheet: DanhSachNhanSu
-let danhSachNhanSu = [
-  {
-    id: "NS_20260901_001",
-    timestamp: "2026-09-02T09:15:00.000Z",
-    userEmail: "nguyenvana@congty.com",
-    hoVaTen: "NGUYỄN VĂN AN",
-    ngaySinh: "15/04/1995",
-    gioiTinh: "Nam",
-    soCCCD: "001095012345",
-    ngayCap: "20/05/2021",
-    noiCap: "Cục Cảnh sát QLHC về TTXH",
-    queQuan: "Xã Kim Chung, Huyện Hoài Đức, TP Hà Nội",
-    diaChiThuongTru: "Số 28, Ngõ 195 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, TP Hà Nội",
-    soDienThoai: "0912345678",
-    khoi: "FS MANAGEMENT",
-    ban: "FS1",
-    phong: "FS1",
-    congViecDuKien: "Đầu Bếp",
-    chucVu: "Bếp Trưởng",
-    isManualSalary: false,
-    thongTinGiaDinh: [
-      { quanHe: "Bố", hoTen: "NGUYỄN VĂN BÌNH", namSinh: "1965", ngheNghiep: "Hưu trí" },
-      { quanHe: "Mẹ", hoTen: "LÊ THỊ MAI", namSinh: "1968", ngheNghiep: "Kinh doanh tự do" },
-      { quanHe: "Vợ", hoTen: "TRẦN THU HÀ", namSinh: "1997", ngheNghiep: "Giáo viên" }
-    ],
-    luongCoBan: 7683000,
-    phuCapChucVu: 1500000,
-    phuCapDienThoai: 0,
-    troCapTayNghe: 500000,
-    troCapGiaDinh: 150000,
-    thuongChuyenCan: 200000,
-    thuongSangKien: 200000,
-    phuCapMoiTruong: 300000,
-    phuCapXangXe: 200000,
-    phuCapNangNhoc: 200000,
-    anToanVeSinhVien: 0,
-    phuCapKinhDoanh: 0,
-    phuCapCoDinh: 2550000,
-    phuCapPhatSinh: 500000,
-    tongThuNhapDuKien: 10733000,
-    ghiChu: "Vị trí chuẩn: Bếp Trưởng - Đầy đủ chứng chỉ bếp trưởng & bằng cấp",
-    soTaiLieuDinhKem: 3,
-    trangThaiEmail: "Đã gửi",
-    thoiGianGuiEmail: "2026-09-02T09:15:30.000Z",
-  },
-  {
-    id: "NS_20260905_002",
-    timestamp: "2026-09-05T14:30:00.000Z",
-    userEmail: "tranthingoc@congty.com",
-    hoVaTen: "TRẦN THỊ NGỌC",
-    ngaySinh: "22/11/1998",
-    gioiTinh: "Nữ",
-    soCCCD: "036198009876",
-    ngayCap: "12/08/2022",
-    noiCap: "Cục Cảnh sát QLHC về TTXH",
-    queQuan: "Xã Đông Hưng, Huyện Tiền Hải, Tỉnh Thái Bình",
-    diaChiThuongTru: "Phòng 802 Chung cư VOV, Mễ Trì, Quận Nam Từ Liêm, TP Hà Nội",
-    soDienThoai: "0987654321",
-    khoi: "FD MANAGEMENT",
-    ban: "FD SALES & MARKETING",
-    phong: "FD SALES & MARKETING",
-    congViecDuKien: "Bán Hàng",
-    chucVu: "Cửa Hàng Trưởng",
-    isManualSalary: false,
-    thongTinGiaDinh: [
-      { quanHe: "Bố", hoTen: "TRẦN VĂN NAM", namSinh: "1963", ngheNghiep: "Làm nông" },
-      { quanHe: "Mẹ", hoTen: "PHẠM THỊ HOA", namSinh: "1967", ngheNghiep: "Nội trợ" }
-    ],
-    luongCoBan: 5895000,
-    phuCapChucVu: 500000,
-    phuCapDienThoai: 0,
-    troCapTayNghe: 0,
-    troCapGiaDinh: 150000,
-    thuongChuyenCan: 200000,
-    thuongSangKien: 200000,
-    phuCapKinhDoanh: 500000,
-    phuCapMoiTruong: 0,
-    anToanVeSinhVien: 0,
-    phuCapNangNhoc: 0,
-    phuCapCoDinh: 1050000,
-    phuCapPhatSinh: 500000,
-    tongThuNhapDuKien: 7445000,
-    ghiChu: "Vị trí chuẩn: Bán Hàng - Cửa Hàng Trưởng",
-    soTaiLieuDinhKem: 2,
-    trangThaiEmail: "Đã gửi",
-    thoiGianGuiEmail: "2026-09-05T14:30:25.000Z",
-  },
-  {
-    id: "NS_20260910_003",
-    timestamp: "2026-09-10T10:00:00.000Z",
-    userEmail: "Happyendpu@gmail.com",
-    hoVaTen: "LÊ HOÀNG MINH",
-    ngaySinh: "08/03/1992",
-    gioiTinh: "Nam",
-    soCCCD: "079092004567",
-    ngayCap: "15/01/2023",
-    noiCap: "Cục Cảnh sát QLHC về TTXH",
-    queQuan: "Phường Bến Nghé, Quận 1, TP Hồ Chí Minh",
-    diaChiThuongTru: "125 Lê Lợi, Phường Bến Thành, Quận 1, TP Hồ Chí Minh",
-    soDienThoai: "0909123888",
-    khoi: "FS BUSINESS SUPPORT",
-    ban: "PRODUCT PLANNING",
-    phong: "CULINARY ACADEMY",
-    congViecDuKien: "Coffee Shop",
-    chucVu: "Cửa Hàng Trưởng",
-    isManualSalary: false,
-    thongTinGiaDinh: [
-      { quanHe: "Vợ", hoTen: "ĐẶNG THỊ LAN", namSinh: "1994", ngheNghiep: "Dược sĩ" }
-    ],
-    luongCoBan: 5895000,
-    phuCapChucVu: 500000,
-    phuCapDienThoai: 0,
-    troCapTayNghe: 500000,
-    troCapGiaDinh: 150000,
-    thuongChuyenCan: 200000,
-    thuongSangKien: 200000,
-    phuCapMoiTruong: 0,
-    anToanVeSinhVien: 0,
-    phuCapKinhDoanh: 0,
-    phuCapNangNhoc: 0,
-    phuCapCoDinh: 1550000,
-    phuCapPhatSinh: 0,
-    tongThuNhapDuKien: 7445000,
-    ghiChu: "Vị trí chuẩn: Coffee Shop - Cửa Hàng Trưởng",
-    soTaiLieuDinhKem: 3,
-    trangThaiEmail: "Đã gửi",
-    thoiGianGuiEmail: "2026-09-10T10:00:45.000Z",
-  },
-  {
-    id: "NS_20260912_004",
-    timestamp: "2026-09-12T08:20:00.000Z",
-    userEmail: "Happyendpu@gmail.com",
-    hoVaTen: "VŨ THỊ HƯƠNG",
-    ngaySinh: "14/07/1996",
-    gioiTinh: "Nữ",
-    soCCCD: "030196001234",
-    ngayCap: "10/04/2021",
-    noiCap: "Cục Cảnh sát QLHC về TTXH",
-    queQuan: "Tỉnh Ninh Bình",
-    diaChiThuongTru: "Phường Dịch Vọng Hậu, Quận Cầu Giấy, TP Hà Nội",
-    soDienThoai: "0965123456",
-    khoi: "HR & GA",
-    ban: "HUMAN RESOURCES",
-    phong: "HUMAN RESOURCES",
-    congViecDuKien: "Dinh Dưỡng Viên",
-    chucVu: "DDV II",
-    isManualSalary: false,
-    thongTinGiaDinh: [
-      { quanHe: "Bố", hoTen: "VŨ VĂN HÙNG", namSinh: "1960", ngheNghiep: "Cán bộ hưu trí" }
-    ],
-    luongCoBan: 6389000,
-    phuCapChucVu: 0,
-    phuCapDienThoai: 0,
-    troCapTayNghe: 0,
-    troCapGiaDinh: 150000,
-    thuongChuyenCan: 200000,
-    thuongSangKien: 200000,
-    phuCapMoiTruong: 0,
-    anToanVeSinhVien: 0,
-    phuCapKinhDoanh: 0,
-    phuCapNangNhoc: 0,
-    phuCapCoDinh: 550000,
-    phuCapPhatSinh: 0,
-    tongThuNhapDuKien: 6939000,
-    ghiChu: "Vị trí chuẩn: Dinh Dưỡng Viên - DDV II",
-    soTaiLieuDinhKem: 2,
-    trangThaiEmail: "Đã gửi",
-    thoiGianGuiEmail: "2026-09-12T08:20:30.000Z",
-  },
-  {
-    id: "NS_20260913_005",
-    timestamp: "2026-09-13T16:45:00.000Z",
-    userEmail: "Happyendpu@gmail.com",
-    hoVaTen: "PHẠM QUỐC TUẤN",
-    ngaySinh: "29/10/1997",
-    gioiTinh: "Nam",
-    soCCCD: "001097008912",
-    ngayCap: "05/11/2022",
-    noiCap: "Cục Cảnh sát QLHC về TTXH",
-    queQuan: "TP Hải Phòng",
-    diaChiThuongTru: "Vinhomes Smart City, Tây Mỗ, Nam Từ Liêm, Hà Nội",
-    soDienThoai: "0977889900",
-    khoi: "MANAGEMENT & SUPPORT",
-    ban: "FINANCIAL MANAGEMENT",
-    phong: "FINANCIAL MANAGEMENT",
-    congViecDuKien: "Kế toán tổng hợp & Báo cáo quản trị",
-    chucVu: "Chuyên viên Kế toán",
-    isManualSalary: true,
-    thongTinGiaDinh: [
-      { quanHe: "Mẹ", hoTen: "HOÀNG THỊ THẢO", namSinh: "1970", ngheNghiep: "Giáo viên" }
-    ],
-    luongCoBan: 12500000,
-    phuCapChucVu: 0,
-    phuCapDienThoai: 0,
-    troCapTayNghe: 0,
-    troCapGiaDinh: 0,
-    thuongChuyenCan: 0,
-    thuongSangKien: 0,
-    phuCapMoiTruong: 0,
-    anToanVeSinhVien: 0,
-    phuCapKinhDoanh: 0,
-    phuCapNangNhoc: 0,
-    phuCapCoDinh: 2000000,
-    phuCapPhatSinh: 1500000,
-    tongThuNhapDuKien: 16000000,
-    ghiChu: "Vị trí ngoài tiêu chuẩn (nhập thủ công tự do). Chứng chỉ Kế toán trưởng",
-    soTaiLieuDinhKem: 2,
-    trangThaiEmail: "Đã gửi",
-    thoiGianGuiEmail: "2026-09-13T16:45:15.000Z",
-  }
-];
-
-// Lịch sử email gửi đi
+// Personnel records are stored only in Firestore; no seeded production profiles.
 let emailLogs: Array<{
   id: string;
   timestamp: string;
@@ -973,6 +768,24 @@ function timLuongTheoChucVu(chucVu: string, congViec?: string) {
 // API ROUTES
 // -------------------------------------------------------------
 
+// Persistent personnel data requires a server-verified login, never a client email alone.
+const requirePersonnelSession: express.RequestHandler = (req,res,next) => {
+  const token = req.headers.authorization?.replace(/^Bearer /,'') || '';
+  const user = readSession(token);
+  const account = userAccounts.find(item => item.id === user?.id);
+  if (!user || !account || account.status !== 'active' || account.email.toLowerCase() !== user.email || account.role !== user.role) {
+    res.status(401).json({success:false,error:"Phiên đăng nhập hết hạn. Vui lòng đăng xuất và đăng nhập lại để truy cập hồ sơ."});
+    return;
+  }
+  res.locals.personnelUser = user;
+  req.headers['x-user-email'] = user.email;
+  next();
+};
+app.use(['/api/admin','/api/settings'],requirePersonnelSession,(_req,res,next) => {
+  if (res.locals.personnelUser.role !== 'admin') {res.status(403).json({success:false,error:'Chỉ Quản trị viên mới có quyền thực hiện thao tác này.'});return;}
+  next();
+});
+
 // Kiểm tra thông tin người dùng và phân quyền
 app.get("/api/auth/me", (req, res) => {
   const clientEmail = ((req.headers["x-user-email"] as string) || "Happyendpu@gmail.com").toLowerCase().trim();
@@ -1042,6 +855,7 @@ app.post("/api/auth/login", (req, res) => {
       name: account.fullName,
       role: account.role,
       displayName: isAdmin ? "Quản trị viên (Toàn quyền)" : "Nhân viên tuyển dụng",
+      sessionToken: createSession({id:account.id,email:account.email,role:account.role}),
     };
 
     res.json({
@@ -1056,6 +870,10 @@ app.post("/api/auth/login", (req, res) => {
 
 // Yêu cầu đặt lại mật khẩu khi quên mật khẩu qua Email (Mô phỏng gửi qua MailApp)
 app.post("/api/auth/forgot-password", (req, res) => {
+  if (firestoreConfigured()) {
+    res.status(503).json({success:false,error:'Gửi mã đổi mật khẩu qua email chưa được cấu hình. Vui lòng liên hệ Quản trị viên.'});
+    return;
+  }
   try {
     const { email } = req.body;
     if (!email) {
@@ -1116,6 +934,10 @@ app.post("/api/auth/forgot-password", (req, res) => {
 
 // Xác nhận đặt lại mật khẩu mới
 app.post("/api/auth/reset-password", (req, res) => {
+  if (firestoreConfigured()) {
+    res.status(503).json({success:false,error:'Gửi mã đổi mật khẩu qua email chưa được cấu hình. Vui lòng liên hệ Quản trị viên.'});
+    return;
+  }
   try {
     const { email, code, newPassword } = req.body;
     if (!email || !code || !newPassword) {
@@ -2191,18 +2013,18 @@ app.post("/api/organization-hierarchy", (req, res) => {
 });
 
 // 3. SHEET: DANHSACHNHANSU (Lấy danh sách theo phân quyền tài khoản Google)
-app.get("/api/sheets/danh-sach-nhan-su", (req, res) => {
+app.use('/api/sheets/danh-sach-nhan-su',requirePersonnelSession);
+app.use('/api/export/csv',requirePersonnelSession);
+
+app.get("/api/sheets/danh-sach-nhan-su", async (req, res) => {
   try {
     const userEmail = ((req.headers["x-user-email"] as string) || "Happyendpu@gmail.com").toLowerCase().trim();
-    const isAdmin = adminEmails.has(userEmail);
+    const isAdmin = res.locals.personnelUser.role === 'admin';
 
     // Phân quyền thông minh:
     // - Admin: xem toàn bộ hồ sơ của tất cả nhân viên
     // - Nhân viên: chỉ xem lịch sử các hồ sơ do chính tài khoản của họ gửi lên
-    let filtered = danhSachNhanSu;
-    if (!isAdmin) {
-      filtered = danhSachNhanSu.filter((item) => item.userEmail.toLowerCase() === userEmail);
-    }
+    const filtered = await recordStore.list(isAdmin ? undefined : userEmail);
 
     // Sắp xếp mới nhất lên đầu
     const sorted = [...filtered].sort(
@@ -2217,12 +2039,12 @@ app.get("/api/sheets/danh-sach-nhan-su", (req, res) => {
       data: sorted,
     });
   } catch (error) {
-    res.status(500).json({ error: (error as Error).message });
+    res.status(error instanceof StorageError ? error.status : 503).json({ success:false,error:"Không tải được hồ sơ từ Firestore. " + (error instanceof StorageError ? error.message : "Vui lòng thử lại.") });
   }
 });
 
 // Hàm nghiệp vụ chuẩn hóa, lưu trữ hồ sơ và tạo email xác nhận (Hỗ trợ cả đơn lẻ & hàng loạt)
-function processAndSaveRecord(body: any, userEmail: string) {
+function buildPersonnelRecord(body: any, userEmail: string) {
   const {
     hoVaTen,
     ngaySinh,
@@ -2331,7 +2153,7 @@ function processAndSaveRecord(body: any, userEmail: string) {
 
   const timestamp = new Date().toISOString();
   const newRecord = {
-    id: `NS_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    id: `NS_${randomUUID()}`,
     timestamp,
     userEmail,
     hoVaTen: String(hoVaTen).toUpperCase().trim(),
@@ -2383,69 +2205,33 @@ function processAndSaveRecord(body: any, userEmail: string) {
     trinhDoHocVan: trinhDoHocVan || "Trung cấp / Cao đẳng / Đại học",
     ghiChu: ghiChu || "",
     soTaiLieuDinhKem: Number(soTaiLieuDinhKem) || 1,
-    trangThaiEmail: "Đã gửi" as const,
-    thoiGianGuiEmail: timestamp,
+    trangThaiEmail: "Chờ gửi" as const,
   };
-
-  // Lưu trữ dữ liệu vào Sheet "DanhSachNhanSu"
-  danhSachNhanSu.unshift(newRecord);
-
-  // Tự động ghi nhận log gửi email
-  const emailSubject = `[Xác nhận] Đã tiếp nhận hồ sơ nhân sự - ${newRecord.hoVaTen}`;
-  const emailHtml = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #1e293b; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-      <div style="background: #1e3a8a; color: #ffffff; padding: 24px; text-align: center;">
-        <h2 style="margin: 0; font-size: 20px;">THÔNG BÁO TIẾP NHẬN HỒ SƠ NHÂN SỰ</h2>
-        <p style="margin: 6px 0 0 0; opacity: 0.9; font-size: 14px;">Hệ thống Tự động hóa Nhân sự AI - Google Workspace</p>
-      </div>
-      <div style="padding: 24px;">
-        <p>Kính gửi <strong>${newRecord.hoVaTen}</strong>,</p>
-        <p>Hồ sơ tuyển dụng và nhập liệu nhân sự của bạn gửi từ tài khoản <strong>${userEmail}</strong> đã được số hóa và ghi nhận thành công vào cơ sở dữ liệu bảng tính Google Sheets.</p>
-        <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 16px; margin: 16px 0;">
-          <h3 style="margin-top: 0; color: #0f172a; font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px;">Thông tin cá nhân & Đơn vị:</h3>
-          <p>Họ và tên: <strong>${newRecord.hoVaTen}</strong> | CCCD: ${newRecord.soCCCD}</p>
-          <p>Cơ cấu tổ chức: <strong>${newRecord.khoi ? `${newRecord.khoi} > ${newRecord.ban} > ${newRecord.phong}` : 'Chưa phân bổ'}</strong></p>
-          <p>Vị trí: <strong>${newRecord.congViecDuKien ? `${newRecord.congViecDuKien} - ` : ''}${newRecord.chucVu}</strong></p>
-        </div>
-        <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 6px; padding: 16px; margin: 16px 0;">
-          <p style="margin:0; font-weight:bold; color:#064e3b; font-size:16px;">TỔNG THU NHẬP DỰ KIẾN: ${newRecord.tongThuNhapDuKien.toLocaleString("vi-VN")} VNĐ/tháng</p>
-        </div>
-      </div>
-    </div>
-  `;
-
-  emailLogs.unshift({
-    id: `mail_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-    timestamp,
-    toEmail: userEmail,
-    subject: emailSubject,
-    htmlContent: emailHtml,
-    status: "Thành công",
-  });
 
   return newRecord;
 }
 
 // LƯU 1 HỒ SƠ NHÂN SỰ VÀO SHEET "DANHSACHNHANSU"
-app.post("/api/sheets/danh-sach-nhan-su", (req, res) => {
+app.post("/api/sheets/danh-sach-nhan-su", async (req, res) => {
   try {
     const userEmail = ((req.headers["x-user-email"] as string) || req.body.userEmail || "nhanvien@congty.com").toLowerCase().trim();
-    const newRecord = processAndSaveRecord(req.body, userEmail);
+    const newRecord = buildPersonnelRecord(req.body, userEmail);
+    await recordStore.create([newRecord]);
 
     res.json({
       success: true,
-      message: "Lưu hồ sơ thành công và đã gửi email xác nhận.",
+      message: "Đã lưu hồ sơ vào Firestore.",
       record: newRecord,
-      emailSent: true,
+      emailSent: false,
     });
   } catch (error) {
     console.error("Lỗi khi lưu hồ sơ:", error);
-    res.status(500).json({ error: (error as Error).message });
+    res.status(error instanceof StorageError ? error.status : 400).json({success:false,error:error instanceof StorageError ? error.message : "Dữ liệu hồ sơ không hợp lệ. Vui lòng kiểm tra họ tên, CCCD, email và các khoản lương."});
   }
 });
 
 // LƯU HÀNG LOẠT NHIỀU HỒ SƠ NHÂN SỰ VÀO SHEET "DANHSACHNHANSU"
-app.post("/api/sheets/danh-sach-nhan-su/batch", (req, res) => {
+app.post("/api/sheets/danh-sach-nhan-su/batch", async (req, res) => {
   try {
     const userEmail = ((req.headers["x-user-email"] as string) || req.body.userEmail || "nhanvien@congty.com").toLowerCase().trim();
     const rawList = req.body.records || req.body.employees || req.body;
@@ -2455,50 +2241,34 @@ app.post("/api/sheets/danh-sach-nhan-su/batch", (req, res) => {
       return res.status(400).json({ error: "Danh sách hồ sơ rỗng hoặc không đúng định dạng mảng." });
     }
 
-    const savedRecords: any[] = [];
-    const errors: string[] = [];
-
-    for (let i = 0; i < batchList.length; i++) {
-      try {
-        const item = batchList[i];
-        const saved = processAndSaveRecord(item, userEmail);
-        savedRecords.push(saved);
-      } catch (err: any) {
-        errors.push(`Dòng ${i + 1} (${batchList[i]?.hoVaTen || 'Ẩn danh'}): ${err.message}`);
-      }
-    }
+    const savedRecords = batchList.map(item => buildPersonnelRecord(item,userEmail));
+    await recordStore.create(savedRecords);
 
     res.json({
       success: true,
-      message: `Đã lưu thành công ${savedRecords.length} / ${batchList.length} hồ sơ nhân sự vào Google Sheets.`,
+      message: `Đã lưu ${savedRecords.length} hồ sơ vào Firestore.`,
       count: savedRecords.length,
       records: savedRecords,
-      errors: errors.length > 0 ? errors : undefined,
     });
   } catch (error) {
     console.error("Lỗi khi lưu hàng loạt hồ sơ:", error);
-    res.status(500).json({ error: (error as Error).message });
+    res.status(error instanceof StorageError ? error.status : 400).json({success:false,error:error instanceof StorageError ? error.message : "Danh sách có hồ sơ không hợp lệ. Chưa lưu hồ sơ nào; vui lòng kiểm tra dữ liệu và thử lại."});
   }
 });
 
 // Chỉnh sửa toàn bộ thông tin hồ sơ nhân sự (Dành riêng cho Quản trị viên - Admin)
-app.put("/api/sheets/danh-sach-nhan-su/:id", (req, res) => {
+app.put("/api/sheets/danh-sach-nhan-su/:id", async (req, res) => {
   try {
     const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
-    if (!adminEmails.has(userEmail)) {
+    if (res.locals.personnelUser.role !== 'admin') {
       return res.status(403).json({
         error: "Từ chối truy cập: Chỉ Quản trị viên (Admin) mới có quyền chỉnh sửa toàn bộ thông tin hồ sơ nhân sự.",
       });
     }
 
     const { id } = req.params;
-    const index = danhSachNhanSu.findIndex((item) => item.id === id);
-    if (index === -1) {
-      return res.status(404).json({ error: `Không tìm thấy hồ sơ với mã: ${id}` });
-    }
-
-    const existing = danhSachNhanSu[index];
-    const body = req.body;
+    const {record:existing,version} = await recordStore.get(id);
+    const body = personnelFields(req.body);
 
     // Tính toán lại các khoản phụ cấp và tổng thu nhập nếu có chỉnh sửa số tiền
     const luongCoBan = body.luongCoBan !== undefined ? Number(body.luongCoBan) : existing.luongCoBan;
@@ -2515,12 +2285,15 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", (req, res) => {
     const phuCapKinhDoanh = body.phuCapKinhDoanh !== undefined ? Number(body.phuCapKinhDoanh) : (existing.phuCapKinhDoanh || 0);
     const phuCapNangNhoc = body.phuCapNangNhoc !== undefined ? Number(body.phuCapNangNhoc) : (existing.phuCapNangNhoc || 0);
     const phuCapPhatSinh = body.phuCapPhatSinh !== undefined ? Number(body.phuCapPhatSinh) : (existing.phuCapPhatSinh || 0);
+    const troCapDacThuFPT = Number(body.troCapDacThuFPT ?? existing.troCapDacThuFPT) || 0;
+    const thuongNangLucAM = Number(body.thuongNangLucAM ?? existing.thuongNangLucAM) || 0;
+    const phuCapLuuDong = Number(body.phuCapLuuDong ?? existing.phuCapLuuDong) || 0;
 
     const phuCapCoDinh = body.phuCapCoDinh !== undefined
       ? Number(body.phuCapCoDinh)
       : (phuCapChucVu + phuCapDienThoai + troCapTayNghe + troCapGiaDinh + thuongChuyenCan + thuongSangKien);
 
-    const tongPhuCap = phuCapCoDinh + phuCapMoiTruong + phuCapXangXe + anToanVeSinhVien + phuCapKinhDoanh + phuCapNangNhoc + (Number(body.troCapDacThuFPT) || 0) + (Number(body.thuongNangLucAM) || 0) + (Number(body.phuCapLuuDong) || 0) + phuCapPhatSinh;
+    const tongPhuCap = phuCapCoDinh + phuCapMoiTruong + phuCapXangXe + anToanVeSinhVien + phuCapKinhDoanh + phuCapNangNhoc + troCapDacThuFPT + thuongNangLucAM + phuCapLuuDong + phuCapPhatSinh;
     
     const tongThuNhapDuKien = body.tongThuNhapDuKien !== undefined
       ? Number(body.tongThuNhapDuKien)
@@ -2530,11 +2303,15 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", (req, res) => {
       ? Number(body.luongDongBHXH)
       : (luongCoBan + phuCapChucVu);
 
-    const updatedRecord = {
+    const updatedRecord: Record<string,any> = {
       ...existing,
       ...body,
       id, // Bảo toàn ID hồ sơ
       timestamp: existing.timestamp,
+      userEmail: existing.userEmail,
+      troCapDacThuFPT,
+      thuongNangLucAM,
+      phuCapLuuDong,
       luongCoBan,
       phuCapChucVu,
       phuCapDienThoai,
@@ -2555,7 +2332,7 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", (req, res) => {
       capNhatLuc: new Date().toISOString(),
     };
 
-    danhSachNhanSu[index] = updatedRecord;
+    await recordStore.update(id,updatedRecord,version);
 
     res.json({
       success: true,
@@ -2564,27 +2341,31 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi khi cập nhật hồ sơ:", error);
-    res.status(500).json({ error: (error as Error).message });
+    res.status(error instanceof StorageError ? error.status : 503).json({success:false,error:error instanceof StorageError ? error.message : "Không cập nhật được hồ sơ. Vui lòng thử lại."});
   }
 });
 
 // Xóa hồ sơ (Dành cho Admin)
-app.delete("/api/sheets/danh-sach-nhan-su/:id", (req, res) => {
+app.delete("/api/sheets/danh-sach-nhan-su/:id", async (req, res) => {
   const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
-  if (!adminEmails.has(userEmail)) {
+  if (res.locals.personnelUser.role !== 'admin') {
     return res.status(403).json({ error: "Chỉ Quản trị viên mới có quyền xóa hồ sơ nhân sự." });
   }
 
   const { id } = req.params;
-  danhSachNhanSu = danhSachNhanSu.filter((item) => item.id !== id);
-  res.json({ success: true, remaining: danhSachNhanSu.length });
+  try {
+    await recordStore.delete(id);
+    res.json({success:true});
+  } catch (error) {
+    res.status(error instanceof StorageError ? error.status : 503).json({success:false,error:error instanceof StorageError ? error.message : "Không xóa được hồ sơ. Vui lòng thử lại."});
+  }
 });
 
 // 4. XUẤT FILE CSV "Bang_Tong_Hop_Nhan_Su.csv" (Chỉ Quản trị viên - Admin)
-app.get("/api/export/csv", (req, res) => {
+app.get("/api/export/csv", async (req, res) => {
   try {
     const userEmail = ((req.headers["x-user-email"] as string) || "Happyendpu@gmail.com").toLowerCase().trim();
-    const isAdmin = adminEmails.has(userEmail);
+    const isAdmin = res.locals.personnelUser.role === 'admin';
 
     if (!isAdmin) {
       return res.status(403).json({
@@ -2638,7 +2419,7 @@ app.get("/api/export/csv", (req, res) => {
       return `"${s}"`;
     };
 
-    const rows = danhSachNhanSu.map((ns) => {
+    const rows = (await recordStore.list()).map((ns) => {
       const familyStr = Array.isArray(ns.thongTinGiaDinh)
         ? ns.thongTinGiaDinh.map((f) => `${f.quanHe}: ${f.hoTen} (${f.namSinh || "?"}) - ${f.ngheNghiep || ""}`).join("; ")
         : "";

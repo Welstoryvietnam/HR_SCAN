@@ -110,7 +110,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     currentStep && currentStep >= 2 && currentStep <= 4 ? (currentStep as 2 | 3 | 4) : 2
   );
 
-  // Trạng thái đã lưu thành công vào Google Sheet & dữ liệu tóm tắt vừa lưu để phục vụ "+ Tiếp nhận hồ sơ mới"
+  // Trạng thái đã lưu thành công vào Firestore & dữ liệu tóm tắt vừa lưu để phục vụ "+ Tiếp nhận hồ sơ mới"
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
   const [savedSummary, setSavedSummary] = useState<{
     hoVaTen: string;
@@ -645,7 +645,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     setThongTinGiaDinh(thongTinGiaDinh.filter((_, i) => i !== index));
   };
 
-  // Nộp form lưu vào Google Sheet (Chuẩn 43 cột - Hỗ trợ cả 1 hoặc nhiều người)
+  // Nộp form lưu vào Firestore (Chuẩn 43 cột - Hỗ trợ cả 1 hoặc nhiều người)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
@@ -745,8 +745,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               <h2 className="text-lg font-bold text-slate-900">
                 {activeTabStep === 2 && 'Bước 2: AI Trích Xuất Form'}
                 {activeTabStep === 3 && 'Bước 3: Con Người Chọn Đơn Vị & Chức Vụ'}
-                {activeTabStep === 4 && 'Bước 4: Bảng Tiêu Chuẩn Tiền Lương & Lưu Vào Google Sheet'}
-                {activeTabStep === 5 && 'Bước Sau Bước 4: Đã Lưu Thành Công Vào Google Sheet'}
+                {activeTabStep === 4 && 'Bước 4: Bảng Tiêu Chuẩn Tiền Lương & Lưu Hồ Sơ'}
+                {activeTabStep === 5 && 'Bước Sau Bước 4: Đã Lưu Hồ Sơ Thành Công'}
               </h2>
             </div>
           </div>
@@ -1731,14 +1731,14 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                   className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {isSaving ? (
-                    <span>Đang lưu vào Sheet &amp; gửi email...</span>
+                    <span>Đang lưu hồ sơ...</span>
                   ) : (
                     <>
                       <FileCheck2 className="w-4 h-4" />
                       <span>
                         {batchList.length > 1
-                          ? `Lưu ${batchList.length} Dòng Dữ Liệu Vào Google Sheets (Chuẩn 43 Cột)`
-                          : 'Lưu Dòng Dữ Liệu Vào Google Sheets (Chuẩn 43 Cột)'}
+                          ? `Lưu ${batchList.length} Hồ Sơ Vào Hệ Thống`
+                          : 'Lưu Hồ Sơ Vào Hệ Thống'}
                       </span>
                     </>
                   )}
@@ -1760,13 +1760,13 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
 
               <div>
                 <span className="inline-block text-xs font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-3.5 py-1 rounded-full mb-2">
-                  ✓ BƯỚC HOÀN TẤT (SAU BƯỚC 4): ĐÃ LƯU THÀNH CÔNG VÀO GOOGLE SHEET
+                  ✓ BƯỚC HOÀN TẤT (SAU BƯỚC 4): ĐÃ LƯU HỒ SƠ THÀNH CÔNG
                 </span>
                 <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
                   Đã Lưu Dòng Dữ Liệu Nhân Sự Thành Công!
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
-                  Dữ liệu của nhân sự <strong>{savedSummary?.hoVaTen || hoVaTen}</strong> đã được ghi nhận chuẩn xác 43 cột vào Google Sheets. Hãy bấm nút bên dưới để tiếp nhận hồ sơ nhân viên mới tiếp theo!
+                  Dữ liệu của nhân sự <strong>{savedSummary?.hoVaTen || hoVaTen}</strong> đã được lưu vào hệ thống. Hãy bấm nút bên dưới để tiếp nhận hồ sơ nhân viên mới tiếp theo!
                 </p>
               </div>
 
