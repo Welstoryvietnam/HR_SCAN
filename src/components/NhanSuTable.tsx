@@ -346,9 +346,9 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                     </td>
 
                     <td className="p-3 text-center">
-                      <span className="inline-flex items-center gap-1 bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                        <CheckCircle className="w-3 h-3 text-emerald-600" />
-                        <span>Đã gửi</span>
+                      <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${item.trangThaiEmail === 'Đã gửi' ? 'bg-emerald-100 text-emerald-800' : item.trangThaiEmail === 'Lỗi' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>
+                        {item.trangThaiEmail === 'Đã gửi' && <CheckCircle className="w-3 h-3 text-emerald-600" />}
+                        <span>{item.trangThaiEmail || 'Chờ gửi'}</span>
                       </span>
                     </td>
 
