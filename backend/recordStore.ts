@@ -82,10 +82,12 @@ export class FirestoreRecordStore {
     const response = await fetch(`https://firestore.googleapis.com/v1/${path}`,{method,headers:{Authorization:`Bearer ${await this.accessToken()}`,'Content-Type':'application/json'},...(body === undefined ? {} : {body:JSON.stringify(body)}),signal:AbortSignal.timeout(20_000)});
     const data = await response.json();
     if (!response.ok) {
-      if (response.status === 409 || data.error?.status === 'FAILED_PRECONDITION') throw new StorageError('Hồ sơ đã thay đổi. Vui lòng tải lại danh sách trước khi lưu.',409);
+      // Streaming REST methods such as runQuery can wrap errors in an array.
+      const upstreamError = Array.isArray(data) ? data.find(item => item.error)?.error : data.error;
+      if (response.status === 409 || upstreamError?.status === 'FAILED_PRECONDITION') throw new StorageError('Hồ sơ đã thay đổi. Vui lòng tải lại danh sách trước khi lưu.',409);
       if (response.status === 404 && method === 'GET') throw new StorageError('Không tìm thấy hồ sơ.',404);
       if (response.status === 404) throw new StorageError('Chưa tìm thấy Firestore database (default) trong project ' + firebaseCredentials().projectId + '. Vui lòng tạo database với ID (default).');
-      const serviceDisabled = data.error?.details?.some((detail: any) => detail.reason === 'SERVICE_DISABLED') || /has not been used|is disabled/i.test(data.error?.message || '');
+      const serviceDisabled = upstreamError?.details?.some((detail: any) => detail.reason === 'SERVICE_DISABLED') || /has not been used|is disabled/i.test(upstreamError?.message || '');
       if (response.status === 403 && serviceDisabled) throw new StorageError('Chưa bật Cloud Firestore API cho project ' + firebaseCredentials().projectId + '. Vui lòng bật API và tạo Firestore database (default).');
       if (response.status === 403) throw new StorageError('Service Account chưa có quyền truy cập Firestore trong project ' + firebaseCredentials().projectId + '. Vui lòng cấp vai trò Cloud Datastore User (roles/datastore.user) trong Google Cloud IAM.');
       throw new StorageError(response.status === 429 ? 'Firestore đạt hạn mức sử dụng. Vui lòng thử lại sau.' : 'Không truy cập được Firestore. Vui lòng kiểm tra database (default) và quyền Service Account.');

@@ -172,6 +172,8 @@ test('configuration errors distinguish missing database, disabled API and missin
     await assert.rejects(() => store.list(),/database \(default\)/);
     upstreamFailure = {status:403,body:{error:{status:'PERMISSION_DENIED',details:[{reason:'SERVICE_DISABLED'}]}}};
     await assert.rejects(() => store.list(),/Chưa bật Cloud Firestore API/);
+    upstreamFailure = {status:403,body:[{error:{status:'PERMISSION_DENIED',details:[{reason:'SERVICE_DISABLED'}]}}]};
+    await assert.rejects(() => store.list(),/Chưa bật Cloud Firestore API/);
     upstreamFailure = {status:403,body:{error:{status:'PERMISSION_DENIED'}}};
     await assert.rejects(() => store.list(),/roles\/datastore.user/);
   } finally {upstreamFailure = null;}
