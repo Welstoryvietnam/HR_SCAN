@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
-import { DEFAULT_ORGANIZATION_HIERARCHY } from "./src/data/organizationHierarchy";
+import { DEFAULT_ORGANIZATION_HIERARCHY } from "./src/data/organizationHierarchy.js";
 
 dotenv.config();
 

@@ -1,4 +1,4 @@
-import { KhoiNode } from '../types';
+import type { KhoiNode } from '../types';
 
 /**
  * Cấu trúc phân cấp tổ chức phòng ban chuẩn theo dữ liệu hình ảnh:
