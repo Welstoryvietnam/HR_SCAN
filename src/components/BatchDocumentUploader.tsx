@@ -10,9 +10,10 @@ interface Props {
   onProceed: (employees: BatchEmployeeDraft[]) => void;
   onBusyChange: (busy: boolean) => void;
   employees: BatchEmployeeDraft[];
+  onDraftsChange?: (employees: BatchEmployeeDraft[]) => void;
 }
 
-export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChange, employees: previousEmployees }: Props) {
+export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChange, employees: previousEmployees, onDraftsChange }: Props) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -37,6 +38,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
     onBusyChange(true);
     setError('');
     const employees: BatchEmployeeDraft[] = [];
+    const failures: string[] = [];
     try {
       for (let index = 0; index < groups.length; index++) {
         const group = groups[index];
@@ -52,12 +54,19 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
             const data = result.data.data;
             Object.assign(draft,data,{id:group.id,hoVaTen:data.hoVaTen || draft.hoVaTen,soTaiLieuDinhKem:group.documents.length});
           } else {
-            draft.cauHoiLamRo = ['Chưa trích xuất được tài liệu của nhân viên này. Vui lòng đối chiếu và bổ sung thông tin.'];
+            const message = result.data?.error || result.error || 'Không nhận được kết quả AI.';
+            failures.push(`Nhân viên ${index + 1}: ${message}`);
+            draft.cauHoiLamRo = [message];
           }
         }
         employees.push(draft);
       }
-      onProceed(employees);
+      onDraftsChange?.(employees);
+      if (failures.length) {
+        setError(failures.join('\n'));
+      } else {
+        onProceed(employees);
+      }
     } catch (err) { setError((err as Error).message); }
     finally { setBusy(false); onBusyChange(false); setStatus(''); }
   };
@@ -71,7 +80,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
       <p className="text-[11px] text-slate-400">{group.documents.length} tài liệu • 1 nhân viên</p>
     </div>)}</div>
     {!groups.length && <p className="py-6 text-center text-sm text-slate-500">Bấm “Thêm nhân viên” để bắt đầu danh sách.</p>}
-    {error && <p role="alert" className="text-xs text-rose-700">{error}</p>}
+    {error && <p role="alert" className="whitespace-pre-wrap text-xs text-rose-700">{error}</p>}
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 pt-3">
       <p role="status" className="text-xs text-slate-500">{busy ? status || 'Đang tải tài liệu…' : `${groups.length} nhân viên • ${groups.reduce((sum,group) => sum + group.documents.length,0)} tài liệu`}</p>
       <div className="flex flex-wrap gap-2"><button type="button" disabled={busy || !groups.length} onClick={() => void proceed(false)} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-50">Nhập thủ công tại Bước 2<ArrowRight className="h-3 w-3" /></button><button type="button" disabled={busy || !groups.some(group => group.documents.length)} onClick={() => void proceed(true)} className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50"><Sparkles className="h-4 w-4" />{busy ? 'Đang xử lý…' : `Trích xuất AI & mở bảng ${groups.length} người`}</button></div>

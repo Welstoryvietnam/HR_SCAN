@@ -6,6 +6,9 @@ export async function safeFetchJson<T = any>(
   init?: RequestInit
 ): Promise<{ ok: boolean; data?: T; error?: string }> {
   try {
+    if (String(input).includes('/api/ai/extract-documents') && typeof init?.body === 'string' && new TextEncoder().encode(init.body).byteLength > 4_000_000) {
+      return { ok: false, error: 'Tổng dung lượng tài liệu quá lớn cho một lần trích xuất. Vui lòng giảm dung lượng hoặc số trang PDF/ảnh của nhân viên này rồi thử lại.' };
+    }
     const res = await fetch(input, init);
     const text = await res.text();
 
@@ -24,6 +27,10 @@ export async function safeFetchJson<T = any>(
       let sanitizedError = `Lỗi phản hồi từ máy chủ (HTTP ${res.status})`;
       if (text.includes('NOT_FOUND') || text.includes('The page could not be found') || text.includes('hkg1::')) {
         sanitizedError = 'Không tìm thấy máy chủ API trên môi trường mạng hiện tại (404 Not Found). Đang kích hoạt chế độ dự phòng ngoại tuyến.';
+      } else if (res.status === 405) {
+        sanitizedError = 'API chưa được triển khai đúng trên máy chủ (HTTP 405). Vui lòng kiểm tra cấu hình Vercel.';
+      } else if (res.status === 413) {
+        sanitizedError = 'Tài liệu vượt giới hạn dung lượng máy chủ (HTTP 413). Vui lòng giảm dung lượng PDF hoặc số ảnh.';
       } else if (text.trim().startsWith('<') || text.includes('<html')) {
         sanitizedError = `Máy chủ trả về trang HTML thay vì JSON (HTTP ${res.status}).`;
       } else if (text.includes('did not match the expected pattern') || text.includes('pattern')) {
@@ -33,8 +40,8 @@ export async function safeFetchJson<T = any>(
       }
 
       return {
-        ok: res.ok,
-        error: res.ok ? undefined : sanitizedError,
+        ok: false,
+        error: sanitizedError,
       };
     }
   } catch (err) {

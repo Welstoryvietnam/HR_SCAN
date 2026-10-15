@@ -187,7 +187,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
         <button type="button" disabled={isProcessingAI || batchBusy} aria-pressed={!batchMode} onClick={() => setBatchMode(false)} className={`rounded-lg px-4 py-2 text-xs font-bold ${!batchMode ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Một nhân viên</button>
         <button type="button" disabled={isProcessingAI || batchBusy} aria-pressed={batchMode} onClick={() => { stopCamera(); setBatchMode(true); if (!employeeGroups.length) onEmployeeGroupsChange([{id:crypto.randomUUID(),label:'',documents:[]}]); }} className={`rounded-lg px-4 py-2 text-xs font-bold ${batchMode ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Nhiều nhân viên</button>
       </div>
-      {batchMode && onProceedToStep2WithBatch ? <BatchDocumentUploader groups={employeeGroups} employees={batchEmployees || []} onChange={onEmployeeGroupsChange} onProceed={onProceedToStep2WithBatch} onBusyChange={setBatchBusy} /> : <>
+      {batchMode && onProceedToStep2WithBatch ? <BatchDocumentUploader groups={employeeGroups} employees={batchEmployees || []} onChange={onEmployeeGroupsChange} onProceed={onProceedToStep2WithBatch} onBusyChange={setBatchBusy} onDraftsChange={onBatchEmployeesChange} /> : <>
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
         <div>

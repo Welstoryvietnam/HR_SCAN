@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { DEFAULT_ORGANIZATION_HIERARCHY } from "./src/data/organizationHierarchy";
@@ -10,6 +9,11 @@ dotenv.config();
 
 const app = express();
 const PORT = 3000;
+
+app.get("/api/health", (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ success: true, service: "hr-scan-api", geminiConfigured: Boolean(process.env.GEMINI_API_KEY) });
+});
 
 // Middleware for parsing large JSON (needed for multimodal Base64 images)
 app.use(express.json({ limit: "50mb" }));
@@ -1936,15 +1940,19 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
     let response: any = null;
     let successfulModel = activeGeminiModel;
     let lastError: any = null;
+    const deadline = Date.now() + 45_000;
 
     for (const model of modelsToTry) {
+      if (Date.now() >= deadline) break;
       for (let attempt = 0; attempt < 3; attempt++) {
+        if (Date.now() >= deadline) break;
         try {
           console.log(`[Gemini Vision] Đang gọi model: ${model} (thử lần ${attempt + 1})...`);
           const res = await ai.models.generateContent({
             model,
             contents: { parts },
             config: {
+              httpOptions: { timeout: Math.max(1_000, Math.min(15_000, deadline - Date.now())) },
               responseMimeType: "application/json",
               maxOutputTokens: 8192,
               temperature: 0.1,
@@ -1987,8 +1995,7 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
     }
 
     if (!response) {
-      console.warn("[Gemini Vision] Không nhận được phản hồi AI từ các model trực tuyến, kích hoạt cơ chế tạo hồ sơ dự phòng an toàn.");
-      response = { text: "{}" };
+      throw lastError || new Error("Gemini không trả về kết quả trích xuất. Vui lòng thử lại.");
     }
 
     const responseText = response.text || "{}";
@@ -2057,41 +2064,17 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
       friendlyMessage = "Hạn mức yêu cầu AI tạm thời đạt giới hạn (Mã 429).";
     } else if (rawError.includes("GEMINI_API_KEY")) {
       friendlyMessage = "Chưa cấu hình biến môi trường GEMINI_API_KEY hợp lệ.";
+    } else if (rawError.includes("API_KEY_INVALID") || rawError.includes("API key not valid") || rawError.includes("401") || rawError.includes("403")) {
+      friendlyMessage = "Gemini API key không hợp lệ hoặc không có quyền truy cập. Vui lòng kiểm tra cấu hình GEMINI_API_KEY trên Vercel.";
+    } else if (/timeout|timed out|aborted/i.test(rawError)) {
+      friendlyMessage = "AI phản hồi quá thời gian chờ. Vui lòng thử lại với ít tài liệu hơn.";
     } else if (rawError.includes("Unexpected end of JSON input") || rawError.includes("JSON") || rawError.includes("pattern")) {
       friendlyMessage = "Ảnh chụp có dung lượng lớn hoặc định dạng đặc thù.";
     } else {
-      friendlyMessage = `Thông báo xử lý tài liệu: ${rawError}`;
+      friendlyMessage = "Gemini không xử lý được tài liệu. Vui lòng thử lại hoặc kiểm tra nhật ký máy chủ.";
     }
 
-    // Trả về HTTP 200 kèm cấu trúc hồ sơ an toàn để GFE/Proxy không chặn bằng trang lỗi HTML
-    res.status(200).json({
-      success: true,
-      data: {
-        hoVaTen: "",
-        ngaySinh: "",
-        gioiTinh: "Nam",
-        soCCCD: "",
-        ngayCap: "",
-        noiCap: "Cục Cảnh sát QLHC về TTXH",
-        queQuan: "",
-        diaChiThuongTru: "",
-        nguonDiaChi: "VNeID",
-        ghiChuSapNhap: "Chờ xác nhận thủ công đối chiếu ảnh tại Bước 2",
-        soDienThoai: "",
-        chucVu: "",
-        congViecDuKien: "",
-        thongTinGiaDinh: [],
-        thongTinChuaRo: ["Họ và tên", "Số CCCD (12 số)", "Ngày sinh", "Địa chỉ thường trú"],
-        cauHoiLamRo: [
-          friendlyMessage + " Vui lòng đối chiếu và xác nhận nhanh thông tin từ ảnh tài liệu bên cạnh."
-        ],
-        mucDoTinCay: "CAN_XAC_NHAN",
-        suggestedLuongCoBan: 5895000,
-        suggestedPhuCapCoDinh: 1050000,
-        matchedChucVu: "Nhân viên",
-      },
-      warning: friendlyMessage,
-    });
+    res.status(rawError.includes("GEMINI_API_KEY") ? 503 : 502).json({ success: false, error: friendlyMessage });
   }
 });
 
@@ -2788,8 +2771,20 @@ app.get("/api/email-logs", (req, res) => {
 // VITE MIDDLEWARE & SERVER STARTUP
 // -------------------------------------------------------------
 
+app.use("/api", (_req, res) => {
+  res.status(404).json({ success: false, error: "Không tìm thấy API được yêu cầu." });
+});
+
+app.use((error: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const status = error?.status === 413 ? 413 : error instanceof SyntaxError ? 400 : 500;
+  res.status(status).json({ success: false, error: status === 413 ? "Tài liệu vượt giới hạn dung lượng máy chủ." : status === 400 ? "Dữ liệu JSON không hợp lệ." : "Máy chủ gặp lỗi khi xử lý yêu cầu." });
+});
+
+export default app;
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -2830,4 +2825,6 @@ async function startServer() {
   });
 }
 
-startServer();
+if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
+  startServer();
+}
