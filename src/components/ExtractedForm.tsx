@@ -1741,6 +1741,18 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                   </span>
                 </button>
 
+                <button
+                  type="button"
+                  disabled
+                  aria-label="Xuất thông tin hộ gia đình"
+                  aria-describedby="household-export-template-note"
+                  className="w-full sm:w-auto px-5 py-3 bg-slate-50 text-slate-500 border-2 border-slate-200 rounded-xl text-xs sm:text-sm font-bold flex flex-wrap items-center justify-center gap-2 cursor-not-allowed"
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Xuất thông tin hộ gia đình</span>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Chờ mẫu</span>
+                </button>
+
                 {/* NÚT LƯU VÀO GOOGLE SHEETS */}
                 <button
                   type="submit"
@@ -1760,6 +1772,9 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                     </>
                   )}
                 </button>
+                <p id="household-export-template-note" className="w-full text-xs text-slate-500">
+                  Xuất thông tin hộ gia đình sẽ được kích hoạt khi có mẫu xuất.
+                </p>
               </div>
             </div>
           </div>
