@@ -10,6 +10,7 @@ import { createSession, readSession } from '../backend/session.js';
 const documents = new Map<string,any>();
 const originalFetch = globalThis.fetch;
 let failCommit = false;
+let upstreamFailure: {status:number;body:any} | null = null;
 let commits = 0;
 let servers: Server[] = [];
 let urls: string[] = [];
@@ -24,6 +25,7 @@ before(async () => {
     const url = String(input);
     if (url === 'https://oauth2.googleapis.com/token') return json({access_token:'test-token',expires_in:3600});
     if (!url.startsWith('https://firestore.googleapis.com/')) return originalFetch(input,init);
+    if (upstreamFailure) return json(upstreamFailure.body,upstreamFailure.status);
     assert.equal(new Headers(init?.headers).get('Authorization'),'Bearer test-token');
     const body = init?.body ? JSON.parse(String(init.body)) : {};
     if (url.endsWith(':commit')) {
@@ -161,4 +163,16 @@ test('a valid multi-employee batch is committed together and readable from a fre
   const store = new FirestoreRecordStore();
   assert.equal((await store.list('tuyendung@congty.com')).length,2);
   for (const record of result.records) await store.delete(record.id);
+});
+
+test('configuration errors distinguish missing database, disabled API and missing IAM access',async () => {
+  const store = new FirestoreRecordStore();
+  try {
+    upstreamFailure = {status:404,body:{error:{status:'NOT_FOUND'}}};
+    await assert.rejects(() => store.list(),/database \(default\)/);
+    upstreamFailure = {status:403,body:{error:{status:'PERMISSION_DENIED',details:[{reason:'SERVICE_DISABLED'}]}}};
+    await assert.rejects(() => store.list(),/Chưa bật Cloud Firestore API/);
+    upstreamFailure = {status:403,body:{error:{status:'PERMISSION_DENIED'}}};
+    await assert.rejects(() => store.list(),/roles\/datastore.user/);
+  } finally {upstreamFailure = null;}
 });
