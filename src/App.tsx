@@ -7,6 +7,8 @@ import {
   NhanSuRecord,
   EmailLogItem,
   BatchEmployeeDraft,
+  EmployeeDocumentGroup,
+  EmployeeIntakeInfo,
   KhoiNode
 } from './types';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from './data/organizationHierarchy';
@@ -57,6 +59,8 @@ export default function App() {
   const [images, setImages] = useState<OptimizedImageFile[]>([]);
   const [extractedData, setExtractedData] = useState<GeminiExtractionResult | null>(null);
   const [batchEmployees, setBatchEmployees] = useState<BatchEmployeeDraft[]>([]);
+  const [employeeGroups, setEmployeeGroups] = useState<EmployeeDocumentGroup[]>([]);
+  const [singleIntakeInfo, setSingleIntakeInfo] = useState<EmployeeIntakeInfo>({});
   const [currentSopStep, setCurrentSopStep] = useState<number>(1);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -197,6 +201,8 @@ export default function App() {
     setImages([]);
     setExtractedData(null);
     setBatchEmployees([]);
+    setEmployeeGroups([]);
+    setSingleIntakeInfo({});
     setCurrentSopStep(1);
     showNotification('success', 'Đã đăng xuất khỏi hệ thống thành công.');
   };
@@ -271,6 +277,7 @@ export default function App() {
       }
 
       const extractedInfo = res.data.data;
+      setBatchEmployees([]);
       setExtractedData(extractedInfo);
       setCurrentSopStep(2);
 
@@ -624,12 +631,16 @@ export default function App() {
                       showNotification('error', 'Vui lòng chọn hoặc chụp ít nhất một ảnh tài liệu.');
                       return;
                     }
+                    setBatchEmployees([]);
                     setCurrentSopStep(2);
                     showNotification('success', 'Đã chuyển sang Bước 2. Bạn có thể xem ảnh và biểu mẫu song song.');
                   }}
                   batchEmployees={batchEmployees}
                   onBatchEmployeesChange={setBatchEmployees}
+                  employeeGroups={employeeGroups}
+                  onEmployeeGroupsChange={setEmployeeGroups}
                   onProceedToStep2WithBatch={(list) => {
+                    setImages(employeeGroups.flatMap(group => group.documents));
                     setBatchEmployees(list);
                     if (list.length > 0) {
                       const first = list[0];
@@ -645,6 +656,7 @@ export default function App() {
                         nguonDiaChi: first.nguonDiaChi,
                         ghiChuSapNhap: first.ghiChuSapNhap,
                         soDienThoai: first.soDienThoai,
+                        emailCaNhan: first.emailCaNhan,
                         congViecDuKien: first.congViecDuKien || 'Đầu Bếp',
                         chucVu: first.chucVu || 'Bếp Trưởng',
                         thongTinGiaDinh: first.thongTinGiaDinh || [],
@@ -683,13 +695,13 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={handleExtractAI}
+                      onClick={() => batchEmployees.length ? setCurrentSopStep(1) : handleExtractAI()}
                       disabled={isProcessingAI || images.length === 0}
                       className="px-3 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
-                      title="Quét lại toàn bộ tài liệu bằng AI Vision"
+                      title={batchEmployees.length ? 'Quay lại Bước 1 để quét riêng tài liệu của từng nhân viên' : 'Quét lại toàn bộ tài liệu bằng AI Vision'}
                     >
                       <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>{isProcessingAI ? 'Đang AI quét...' : '⚡ Quét lại bằng AI'}</span>
+                      <span>{isProcessingAI ? 'Đang AI quét...' : batchEmployees.length ? 'Quét lại theo nhân viên' : '⚡ Quét lại bằng AI'}</span>
                     </button>
                     <button
                       type="button"
@@ -719,6 +731,8 @@ export default function App() {
                     setImages([]);
                     setExtractedData(null);
                     setBatchEmployees([]);
+                    setEmployeeGroups([]);
+                    setSingleIntakeInfo({});
                     setCurrentSopStep(1);
                     showNotification(
                       'success',
@@ -728,9 +742,14 @@ export default function App() {
                   onViewRecordsTab={() => setActiveTab('records')}
                   uploadedImagesCount={images.length}
                   batchEmployees={batchEmployees}
-                  onBatchEmployeesChange={setBatchEmployees}
+                  onBatchEmployeesChange={(list) => {
+                    setBatchEmployees(list);
+                    setEmployeeGroups(groups => groups.map(group => ({...group, label: list.find(employee => employee.id === group.id)?.hoVaTen ?? group.label})));
+                  }}
                   onSaveBatchToSheet={handleSaveBatchToSheet}
                   organizationHierarchy={organizationHierarchy}
+                  intakeInfo={singleIntakeInfo}
+                  onIntakeInfoChange={(updates) => setSingleIntakeInfo(previous => ({...previous, ...updates}))}
                 />
               </div>
             )}

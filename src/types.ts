@@ -50,7 +50,14 @@ export interface ThanhVienGiaDinh {
   ngheNghiep?: string;
 }
 
-export interface NhanSuRecord {
+export interface EmployeeIntakeInfo {
+  ngayVaoLam?: string;
+  diaChiTamTru?: string;
+  emailCaNhan?: string;
+  tinhTrangHoSo?: string;
+}
+
+export interface NhanSuRecord extends EmployeeIntakeInfo {
   id: string;
   timestamp: string;
   userEmail: string;
@@ -104,7 +111,7 @@ export interface NhanSuRecord {
   thoiGianGuiEmail?: string;
 }
 
-export interface BatchEmployeeDraft {
+export interface BatchEmployeeDraft extends EmployeeIntakeInfo {
   id: string;
   hoVaTen: string;
   ngaySinh: string;
@@ -150,6 +157,14 @@ export interface BatchEmployeeDraft {
   thongTinGiaDinh?: ThanhVienGiaDinh[];
   ghiChu?: string;
   soTaiLieuDinhKem?: number;
+  thongTinChuaRo?: string[];
+  cauHoiLamRo?: string[];
+}
+
+export interface EmployeeDocumentGroup {
+  id: string;
+  label: string;
+  documents: OptimizedImageFile[];
 }
 
 export interface OptimizedImageFile {
@@ -166,6 +181,7 @@ export interface OptimizedImageFile {
 }
 
 export interface GeminiExtractionResult {
+  emailCaNhan?: string;
   hoVaTen: string;
   ngaySinh: string;
   gioiTinh: string;

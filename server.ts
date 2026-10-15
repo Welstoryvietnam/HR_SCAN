@@ -1892,6 +1892,7 @@ Yêu cầu định dạng:
 - nguonDiaChi: "VNeID" hoặc "CCCD".
 - ghiChuSapNhap: tóm tắt đơn vị hành chính sau sáp nhập.
 - chucVu: tên chức vụ cụ thể phát hiện trong hồ sơ/CV nếu có, không có thì để "".
+- emailCaNhan: chỉ lấy email liên hệ của chính nhân viên nhìn thấy rõ trong ảnh hoặc CV; không lấy email nhà tuyển dụng, không suy đoán; không có thì để "".
 - khoi, ban, phong: phân cấp phòng ban nếu có trong đơn/CV/tài liệu, nếu không có thì để "".
 - thongTinGiaDinh: mảng người thân gồm { "quanHe", "hoTen", "namSinh", "ngheNghiep" } nếu có trong Sơ yếu lý lịch hoặc CV.
 - mucDoTinCay: "CAO" nếu đọc rõ các trường chính (Họ tên, CCCD hoặc thông tin cá nhân cốt lõi); "CAN_XAC_NHAN" nếu có từ 1-3 trường mờ/thiếu; "CHUA_RO" nếu ảnh/tệp quá mờ hoặc thiếu tài liệu chính.
@@ -1909,6 +1910,7 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
   "nguonDiaChi": "VNeID",
   "ghiChuSapNhap": "",
   "soDienThoai": "",
+  "emailCaNhan": "",
   "khoi": "",
   "ban": "",
   "phong": "",
@@ -1991,6 +1993,7 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
 
     const responseText = response.text || "{}";
     const extractedData: any = safeParseExtractedJson(responseText);
+    extractedData.emailCaNhan = typeof extractedData.emailCaNhan === "string" ? extractedData.emailCaNhan.trim() : "";
 
     // Đảm bảo Họ tên được viết hoa
     if (extractedData.hoVaTen) {
@@ -2250,6 +2253,10 @@ function processAndSaveRecord(body: any, userEmail: string) {
     ghiChuSapNhap = "",
     diemLamViec = "",
     loaiHopDong = "Toàn thời gian (Chính thức)",
+    ngayVaoLam = "",
+    diaChiTamTru = "",
+    emailCaNhan = "",
+    tinhTrangHoSo = "",
     soDienThoai,
     khoi = "",
     ban = "",
@@ -2271,6 +2278,9 @@ function processAndSaveRecord(body: any, userEmail: string) {
 
   if (!hoVaTen || !soCCCD) {
     throw new Error("Họ và tên và Số CCCD là các trường bắt buộc.");
+  }
+  if (String(emailCaNhan || "").trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(emailCaNhan).trim())) {
+    throw new Error("Email cá nhân chưa đúng định dạng.");
   }
 
   // Tra cứu Sheet "TieuChuanLuong" dựa theo chức vụ/công việc
@@ -2353,6 +2363,10 @@ function processAndSaveRecord(body: any, userEmail: string) {
     ghiChuSapNhap: ghiChuSapNhap || "",
     diemLamViec: diemLamViec || "",
     loaiHopDong: loaiHopDong || "Toàn thời gian (Chính thức)",
+    ngayVaoLam: String(ngayVaoLam || "").trim(),
+    diaChiTamTru: String(diaChiTamTru || "").trim(),
+    emailCaNhan: String(emailCaNhan || "").trim(),
+    tinhTrangHoSo: String(tinhTrangHoSo || "").trim(),
     soDienThoai: soDienThoai || "",
     khoi: khoi || "",
     ban: ban || "",

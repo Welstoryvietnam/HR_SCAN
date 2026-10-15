@@ -467,6 +467,18 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
               </div>
             </div>
 
+            <section className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs">
+              <h4 className="mb-3 font-bold text-slate-800">Thông tin tiếp nhận bổ sung</h4>
+              <dl className="grid gap-3 sm:grid-cols-2">
+                {[
+                  ['Ngày vào làm việc', selectedRecord.ngayVaoLam?.split('-').reverse().join('/')],
+                  ['Địa chỉ tạm trú hiện tại', selectedRecord.diaChiTamTru],
+                  ['Email cá nhân', selectedRecord.emailCaNhan],
+                  ['Tình trạng hồ sơ', selectedRecord.tinhTrangHoSo],
+                ].map(([label,value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words font-medium text-slate-800">{value || 'Chưa nhập'}</dd></div>)}
+              </dl>
+            </section>
+
             {/* Bảng lương chi tiết */}
             <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs space-y-2">
               <div className="flex items-center justify-between">

@@ -15,7 +15,8 @@ import {
   Users,
   Image as ImageIcon
 } from 'lucide-react';
-import { OptimizedImageFile, BatchEmployeeDraft } from '../types';
+import { OptimizedImageFile, BatchEmployeeDraft, EmployeeDocumentGroup } from '../types';
+import { BatchDocumentUploader } from './BatchDocumentUploader';
 import { formatBytes, optimizeImageFile } from '../utils/imageOptimizer';
 
 interface DocumentUploaderProps {
@@ -27,6 +28,8 @@ interface DocumentUploaderProps {
   batchEmployees?: BatchEmployeeDraft[];
   onBatchEmployeesChange?: (employees: BatchEmployeeDraft[]) => void;
   onProceedToStep2WithBatch?: (employees: BatchEmployeeDraft[]) => void;
+  employeeGroups: EmployeeDocumentGroup[];
+  onEmployeeGroupsChange: (groups: EmployeeDocumentGroup[]) => void;
 }
 
 export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
@@ -38,7 +41,11 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
   batchEmployees,
   onBatchEmployeesChange,
   onProceedToStep2WithBatch,
+  employeeGroups,
+  onEmployeeGroupsChange,
 }) => {
+  const [batchMode, setBatchMode] = useState(employeeGroups.length > 0);
+  const [batchBusy, setBatchBusy] = useState(false);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<OptimizedImageFile | null>(null);
@@ -176,6 +183,11 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm space-y-5">
+      <div className="flex flex-wrap gap-2" aria-label="Chế độ nhập hồ sơ">
+        <button type="button" disabled={isProcessingAI || batchBusy} aria-pressed={!batchMode} onClick={() => setBatchMode(false)} className={`rounded-lg px-4 py-2 text-xs font-bold ${!batchMode ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Một nhân viên</button>
+        <button type="button" disabled={isProcessingAI || batchBusy} aria-pressed={batchMode} onClick={() => { stopCamera(); setBatchMode(true); if (!employeeGroups.length) onEmployeeGroupsChange([{id:crypto.randomUUID(),label:'',documents:[]}]); }} className={`rounded-lg px-4 py-2 text-xs font-bold ${batchMode ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Nhiều nhân viên</button>
+      </div>
+      {batchMode && onProceedToStep2WithBatch ? <BatchDocumentUploader groups={employeeGroups} employees={batchEmployees || []} onChange={onEmployeeGroupsChange} onProceed={onProceedToStep2WithBatch} onBusyChange={setBatchBusy} /> : <>
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
         <div>
@@ -617,6 +629,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
           </button>
         </div>
       </div>
+      </>}
     </div>
   );
 };

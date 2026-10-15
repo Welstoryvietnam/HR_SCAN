@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { GeminiExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, NhanSuRecord, BatchEmployeeDraft, KhoiNode } from '../types';
+import { GeminiExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, NhanSuRecord, BatchEmployeeDraft, KhoiNode, EmployeeIntakeInfo } from '../types';
+import { EmployeeReviewGrid } from './EmployeeReviewGrid';
+import { EmployeeIntakeFields } from './EmployeeIntakeFields';
+import { EmployeeSalaryGrid } from './EmployeeSalaryGrid';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from '../data/organizationHierarchy';
 import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
 import { findTieuChuanLuong, DEFAULT_TIEU_CHUAN_LUONG } from '../data/tieuChuanLuongData';
@@ -65,6 +68,8 @@ interface ExtractedFormProps {
   onBatchEmployeesChange?: (employees: BatchEmployeeDraft[]) => void;
   onSaveBatchToSheet?: (batchList: BatchEmployeeDraft[]) => Promise<boolean>;
   organizationHierarchy?: KhoiNode[];
+  intakeInfo?: EmployeeIntakeInfo;
+  onIntakeInfoChange?: (updates: Partial<EmployeeIntakeInfo>) => void;
 }
 
 // Hàm format tiền tệ an toàn tuyệt đối chống crash unhandled TypeError
@@ -94,6 +99,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   onBatchEmployeesChange,
   onSaveBatchToSheet,
   organizationHierarchy = DEFAULT_ORGANIZATION_HIERARCHY,
+  intakeInfo = {},
+  onIntakeInfoChange,
 }) => {
   // Cơ cấu tổ chức động do Admin cấu hình (hoặc mặc định)
   const orgHierarchy = organizationHierarchy && organizationHierarchy.length > 0 ? organizationHierarchy : DEFAULT_ORGANIZATION_HIERARCHY;
@@ -198,9 +205,33 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   useEffect(() => {
     if (batchEmployees && batchEmployees.length > 0) {
       setBatchList(batchEmployees);
-      setSelectedBatchIds(batchEmployees.map((e) => e.id));
+      setSelectedBatchIds(previous => batchEmployees
+        .filter(employee => !batchList.some(item => item.id === employee.id) || previous.includes(employee.id))
+        .map(employee => employee.id));
     }
   }, [batchEmployees]);
+
+  const handleReviewChange = (id: string, updates: Partial<BatchEmployeeDraft>) => {
+    if (batchList.length) {
+      handleUpdateBatchEmployeeRow(id, updates);
+      if (batchList.length > 1) return;
+    }
+    if (updates.hoVaTen !== undefined) setHoVaTen(updates.hoVaTen);
+    if (updates.ngaySinh !== undefined) setNgaySinh(updates.ngaySinh);
+    if (updates.gioiTinh !== undefined) setGioiTinh(updates.gioiTinh);
+    if (updates.soCCCD !== undefined) setSoCCCD(updates.soCCCD);
+    if (updates.ngayCap !== undefined) setNgayCap(updates.ngayCap);
+    if (updates.noiCap !== undefined) setNoiCap(updates.noiCap);
+    if (updates.queQuan !== undefined) setQueQuan(updates.queQuan);
+    if (updates.diaChiThuongTru !== undefined) setDiaChiThuongTru(updates.diaChiThuongTru);
+    if ('nguonDiaChi' in updates) setNguonDiaChi(updates.nguonDiaChi || 'CCCD');
+    if (updates.ghiChuSapNhap !== undefined) setGhiChuSapNhap(updates.ghiChuSapNhap);
+    if (updates.soDienThoai !== undefined) setSoDienThoai(updates.soDienThoai);
+    if (updates.thongTinGiaDinh !== undefined) setThongTinGiaDinh(updates.thongTinGiaDinh);
+    if (updates.ghiChu !== undefined) setGhiChu(updates.ghiChu);
+    const intakeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => ['ngayVaoLam','diaChiTamTru','emailCaNhan','tinhTrangHoSo'].includes(key)));
+    if (Object.keys(intakeUpdates).length) onIntakeInfoChange?.(intakeUpdates);
+  };
 
   // Điền dữ liệu khi Gemini AI hoàn thành trích xuất đơn lẻ
   useEffect(() => {
@@ -298,6 +329,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     chucVu: chucVu || 'Nhân viên',
     diemLamViec,
     loaiHopDong,
+    ...intakeInfo,
+    emailCaNhan: intakeInfo.emailCaNhan ?? initialData?.emailCaNhan ?? '',
     luongCoBan: Number(luongCoBan) || 0,
     phuCapChucVu: Number(phuCapChucVu) || 0,
     phuCapDienThoai: Number(phuCapDienThoai) || 0,
@@ -317,7 +350,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     phuCapPhatSinh: Number(phuCapPhatSinh) || 0,
     tongPhuCap,
     tongThuNhapDuKien,
-    luongDongBHXH: Number(luongDongBHXH) || ((Number(luongCoBan) || 0) + (Number(phuCapChucVu) || 0)),
+    luongDongBHXH: Number(luongDongBHXH) || 0,
     thongTinGiaDinh,
     ghiChu,
     soTaiLieuDinhKem: uploadedImagesCount || 1,
@@ -330,13 +363,13 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     if (batchList.length === 0) return [currentRecordObject];
     return batchList.map((emp, idx) => {
       const std = findTieuChuanLuong(emp.congViecDuKien, emp.chucVu);
-      const lcb = Number(emp.luongCoBan) || std?.luongCoBan || 7683000;
-      const pcCV = Number(emp.phuCapChucVu) || std?.phuCapChucVu || 1500000;
-      const pcDT = Number(emp.phuCapDienThoai) || std?.phuCapDienThoai || 0;
-      const pcTN = Number(emp.troCapTayNghe) || std?.troCapTayNghe || 500000;
-      const pcGD = Number(emp.troCapGiaDinh) || std?.troCapGiaDinh || 150000;
-      const pcCC = Number(emp.thuongChuyenCan) || std?.thuongChuyenCan || 200000;
-      const pcSK = Number(emp.thuongSangKien) || std?.thuongSangKien || 200000;
+      const lcb = Number(emp.luongCoBan ?? std?.luongCoBan ?? 0);
+      const pcCV = Number(emp.phuCapChucVu ?? std?.phuCapChucVu ?? 0);
+      const pcDT = Number(emp.phuCapDienThoai ?? std?.phuCapDienThoai ?? 0);
+      const pcTN = Number(emp.troCapTayNghe ?? std?.troCapTayNghe ?? 0);
+      const pcGD = Number(emp.troCapGiaDinh ?? std?.troCapGiaDinh ?? 0);
+      const pcCC = Number(emp.thuongChuyenCan ?? std?.thuongChuyenCan ?? 0);
+      const pcSK = Number(emp.thuongSangKien ?? std?.thuongSangKien ?? 0);
       const pcCoDinh = pcCV + pcDT + pcTN + pcGD + pcCC + pcSK;
 
       const pcXX = Number(emp.phuCapXangXe) || 0;
@@ -356,24 +389,28 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         id: emp.id || `NS_BATCH_${idx + 1}`,
         timestamp: new Date().toISOString(),
         userEmail,
-        hoVaTen: (emp.hoVaTen || 'CHƯA ĐẶT TÊN').toUpperCase(),
+        hoVaTen: (emp.hoVaTen || '').toUpperCase(),
         ngaySinh: emp.ngaySinh || '',
-        gioiTinh: emp.gioiTinh || 'Nam',
+        gioiTinh: emp.gioiTinh || '',
         soCCCD: emp.soCCCD || '',
-        ngayCap: emp.ngayCap || '01/01/2022',
-        noiCap: emp.noiCap || 'Cục Cảnh sát QLHC về TTXH',
+        ngayCap: emp.ngayCap || '',
+        noiCap: emp.noiCap || '',
         queQuan: emp.queQuan || '',
         diaChiThuongTru: emp.diaChiThuongTru || '',
-        nguonDiaChi: emp.nguonDiaChi || 'VNeID',
+        nguonDiaChi: emp.nguonDiaChi,
         ghiChuSapNhap: emp.ghiChuSapNhap || '',
         soDienThoai: emp.soDienThoai || '',
-        khoi: emp.khoi || 'FS MANAGEMENT',
-        ban: emp.ban || 'FS1',
-        phong: emp.phong || 'FPT TOWER',
-        congViecDuKien: emp.congViecDuKien || 'Đầu Bếp',
-        chucVu: emp.chucVu || 'Bếp Trưởng',
-        diemLamViec: emp.diemLamViec || 'Hà Nội - FPT Tower',
-        loaiHopDong: emp.loaiHopDong || 'Toàn thời gian (Chính thức)',
+        khoi: emp.khoi || '',
+        ban: emp.ban || '',
+        phong: emp.phong || '',
+        congViecDuKien: emp.congViecDuKien || '',
+        chucVu: emp.chucVu || '',
+        diemLamViec: emp.diemLamViec || '',
+        loaiHopDong: emp.loaiHopDong || '',
+        ngayVaoLam: emp.ngayVaoLam || '',
+        diaChiTamTru: emp.diaChiTamTru || '',
+        emailCaNhan: emp.emailCaNhan || '',
+        tinhTrangHoSo: emp.tinhTrangHoSo || '',
         luongCoBan: lcb,
         phuCapChucVu: pcCV,
         phuCapDienThoai: pcDT,
@@ -393,10 +430,11 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         phuCapPhatSinh: pcPS,
         tongPhuCap: pcTong,
         tongThuNhapDuKien: tongThuNhap,
-        luongDongBHXH: Number(emp.luongDongBHXH) || (lcb + pcCV),
+        luongDongBHXH: Number(emp.luongDongBHXH ?? (lcb + pcCV)),
+        isManualSalary: emp.isManualSalary ?? !std,
         thongTinGiaDinh: emp.thongTinGiaDinh || [],
-        ghiChu: emp.ghiChu || 'Đã kiểm tra & gán vị trí hàng loạt',
-        soTaiLieuDinhKem: uploadedImagesCount || 1,
+        ghiChu: emp.ghiChu || '',
+        soTaiLieuDinhKem: emp.soTaiLieuDinhKem ?? 0,
         trangThaiEmail: 'Đã gửi',
         thoiGianGuiEmail: new Date().toISOString(),
       };
@@ -467,14 +505,14 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         chucVu: bulkChucVu,
         diemLamViec: bulkDiemLamViec,
         loaiHopDong: bulkLoaiHopDong,
-        luongCoBan: std?.luongCoBan || emp.luongCoBan || 7683000,
-        phuCapChucVu: std?.phuCapChucVu || emp.phuCapChucVu || 1500000,
-        phuCapDienThoai: std?.phuCapDienThoai || emp.phuCapDienThoai || 0,
-        troCapTayNghe: std?.troCapTayNghe || emp.troCapTayNghe || 500000,
-        troCapGiaDinh: std?.troCapGiaDinh || emp.troCapGiaDinh || 150000,
-        thuongChuyenCan: std?.thuongChuyenCan || emp.thuongChuyenCan || 200000,
-        thuongSangKien: std?.thuongSangKien || emp.thuongSangKien || 200000,
-        luongDongBHXH: (std?.luongCoBan || 7683000) + (std?.phuCapChucVu || 1500000),
+        luongCoBan: std?.luongCoBan ?? emp.luongCoBan ?? 0,
+        phuCapChucVu: std?.phuCapChucVu ?? emp.phuCapChucVu ?? 0,
+        phuCapDienThoai: std?.phuCapDienThoai ?? emp.phuCapDienThoai ?? 0,
+        troCapTayNghe: std?.troCapTayNghe ?? emp.troCapTayNghe ?? 0,
+        troCapGiaDinh: std?.troCapGiaDinh ?? emp.troCapGiaDinh ?? 0,
+        thuongChuyenCan: std?.thuongChuyenCan ?? emp.thuongChuyenCan ?? 0,
+        thuongSangKien: std?.thuongSangKien ?? emp.thuongSangKien ?? 0,
+        luongDongBHXH: (std?.luongCoBan ?? emp.luongCoBan ?? 0) + (std?.phuCapChucVu ?? emp.phuCapChucVu ?? 0),
       };
     });
 
@@ -507,6 +545,31 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     if (onBatchEmployeesChange) {
       onBatchEmployeesChange(updated);
     }
+  };
+
+  const handleSalaryChange = (id: string, updates: Partial<BatchEmployeeDraft>) => {
+    const employee = batchList.length ? getBatchRecordObjects().find(item => item.id === id) : currentRecordObject;
+    if (!employee) return;
+    const adjusted = {...updates, isManualSalary:true};
+    if ((updates.luongCoBan !== undefined || updates.phuCapChucVu !== undefined) &&
+      employee.luongDongBHXH === employee.luongCoBan + (employee.phuCapChucVu || 0)) {
+      adjusted.luongDongBHXH = (updates.luongCoBan ?? employee.luongCoBan) + (updates.phuCapChucVu ?? employee.phuCapChucVu ?? 0);
+    }
+    if (batchList.length) {
+      handleUpdateBatchEmployeeRow(id, adjusted);
+      return;
+    }
+    const setters: Partial<Record<keyof BatchEmployeeDraft, (value:number) => void>> = {
+      luongCoBan:setLuongCoBan, phuCapChucVu:setPhuCapChucVu, phuCapDienThoai:setPhuCapDienThoai,
+      troCapTayNghe:setTroCapTayNghe, troCapGiaDinh:setTroCapGiaDinh, thuongChuyenCan:setThuongChuyenCan,
+      thuongSangKien:setThuongSangKien, phuCapMoiTruong:setPhuCapMoiTruong, phuCapXangXe:setPhuCapXangXe,
+      anToanVeSinhVien:setAnToanVeSinhVien, phuCapKinhDoanh:setPhuCapKinhDoanh, phuCapNangNhoc:setPhuCapNangNhoc,
+      troCapDacThuFPT:setTroCapDacThuFPT, thuongNangLucAM:setThuongNangLucAM, phuCapLuuDong:setPhuCapLuuDong,
+      phuCapPhatSinh:setPhuCapPhatSinh, luongDongBHXH:setLuongDongBHXH,
+    };
+    Object.entries(adjusted).forEach(([key,value]) => setters[key as keyof BatchEmployeeDraft]?.(Number(value)));
+    if (updates.ghiChu !== undefined) setGhiChu(updates.ghiChu);
+    setIsManualMode(true);
   };
 
   // Chọn / bỏ chọn tất cả nhân viên trong Bước 3
@@ -586,9 +649,23 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
+    const missingEmployee = batchList.find(employee => !employee.hoVaTen.trim() || !employee.soCCCD.trim());
+    if (missingEmployee) {
+      setValidationError(`Vui lòng bổ sung họ tên và số CCCD cho ${missingEmployee.hoVaTen || 'nhân viên chưa có tên'} tại Bước 2 trước khi lưu danh sách.`);
+      handleSelectStep(2);
+      return;
+    }
+    const invalidEmail = (batchList.length ? batchList : [currentRecordObject]).find(employee =>
+      employee.emailCaNhan?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(employee.emailCaNhan.trim())
+    );
+    if (invalidEmail) {
+      setValidationError(`Email cá nhân của ${invalidEmail.hoVaTen || 'nhân viên'} chưa đúng định dạng. Vui lòng kiểm tra tại Bước 3.`);
+      handleSelectStep(3);
+      return;
+    }
 
-    if (batchList.length > 1 && onSaveBatchToSheet) {
-      const ok = await onSaveBatchToSheet(batchList);
+    if (batchList.length > 0 && onSaveBatchToSheet) {
+      const ok = await onSaveBatchToSheet(getBatchRecordObjects());
       if (ok) {
         setIsSavedSuccess(true);
         setSavedSummary({
@@ -807,405 +884,11 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               </div>
             </div>
 
-            {/* AI Clarification Dialog: Nếu có thông tin chưa rõ hoặc câu hỏi làm rõ */}
-            {cauHoiLamRo.length > 0 || thongTinChuaRo.length > 0 ? (
-              <div className="p-4 bg-amber-50 border border-amber-300 rounded-xl text-amber-950 space-y-2.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0" />
-                    <span className="text-xs font-bold uppercase tracking-wide text-amber-900">
-                      Cảnh báo Anti-Hallucination &amp; Yêu cầu xác nhận ({cauHoiLamRo.length} mục)
-                    </span>
-                  </div>
-                  {onReExtractAI && (
-                    <button
-                      type="button"
-                      onClick={onReExtractAI}
-                      disabled={isProcessingAI}
-                      className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50"
-                      title="Chạy lại mô hình AI Vision để quét lại toàn bộ tài liệu"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-200" />
-                      <span>{isProcessingAI ? 'Đang AI quét lại...' : '⚡ Thử lại AI Trích Xuất'}</span>
-                    </button>
-                  )}
-                </div>
-                <p className="text-xs text-amber-800 leading-relaxed">
-                  Để đảm bảo tính chính xác tuyệt đối theo SOP, AI đã từ chối đoán mò các trường mờ/thiếu dưới đây và cần bạn kiểm tra hoặc điền trực tiếp vào biểu mẫu:
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
-                  {cauHoiLamRo.map((q, idx) => (
-                    <div key={idx} className="bg-white p-2.5 rounded-lg border border-amber-200 text-xs flex items-start gap-2 shadow-2xs">
-                      <HelpCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                      <span className="text-slate-800 font-medium">{q}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 flex items-center gap-2 text-xs">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>
-                  <strong>Đã xác thực rõ ràng:</strong> Toàn bộ các thông tin cơ bản trên ảnh đã được AI nhận diện chính xác mà không cần suy đoán.
-                </span>
-              </div>
-            )}
-
-            {/* CẢNH BÁO TRÙNG SỐ CCCD ĐƯỢC YÊU CẦU */}
-            {duplicateCCCDRecord && (
-              <div className="p-4 bg-rose-50 border-2 border-rose-500 rounded-xl text-rose-950 space-y-2 shadow-xs">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
-                  <span className="text-xs sm:text-sm font-black text-rose-700 uppercase tracking-wide">
-                    Cảnh báo: Yêu cầu kiểm tra lại, trùng số căn cước công dân
-                  </span>
-                  <span className="px-2 py-0.5 bg-rose-200 text-rose-900 font-mono font-bold text-xs rounded">
-                    {cleanCurrentCCCD}
-                  </span>
-                </div>
-                <p className="text-xs text-rose-800 leading-relaxed">
-                  Số Căn cước công dân <strong>{cleanCurrentCCCD}</strong> đã tồn tại trong cơ sở dữ liệu nhân sự của <strong>{duplicateCCCDRecord.hoVaTen}</strong> (Mã nhân sự: {duplicateCCCDRecord.id}, Chức vụ: {duplicateCCCDRecord.chucVu || duplicateCCCDRecord.congViecDuKien || 'Chưa rõ'}, Đơn vị: {duplicateCCCDRecord.phong || duplicateCCCDRecord.ban || duplicateCCCDRecord.khoi || 'N/A'}).
-                </p>
-                <div className="text-[11px] text-rose-700 bg-white/90 p-2.5 rounded-lg border border-rose-200 flex items-center gap-2">
-                  <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>
-                    Vui lòng đối chiếu kỹ lại ảnh chụp CCCD hoặc kiểm tra xem ứng viên này đã được khai báo trước đó hay chưa!
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Form Fields: Thông Tin Cá Nhân */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Họ và tên */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-slate-700">
-                      Họ và tên (VIẾT HOA) <span className="text-rose-500">*</span>
-                    </label>
-                    {isFieldUnclear('Họ và tên', hoVaTen) ? (
-                      <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded font-semibold">
-                        ⚠️ Cần xác nhận
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-medium">
-                        ✓ Rõ ràng
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={hoVaTen}
-                    onChange={(e) => setHoVaTen(e.target.value.toUpperCase())}
-                    placeholder="VÍ DỤ: NGUYỄN VĂN AN"
-                    required
-                    className={`w-full text-xs sm:text-sm px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 font-bold uppercase tracking-wide ${
-                      isFieldUnclear('Họ và tên', hoVaTen) ? 'border-amber-400 bg-amber-50/20' : 'border-slate-300 bg-slate-50/50'
-                    }`}
-                  />
-                </div>
-
-                {/* Số CCCD */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-slate-700">
-                      Số CCCD (12 chữ số) <span className="text-rose-500">*</span>
-                    </label>
-                    {duplicateCCCDRecord ? (
-                      <span className="text-[10px] text-rose-700 bg-rose-100 border border-rose-300 px-1.5 py-0.5 rounded font-bold animate-pulse">
-                        ⚠️ Trùng CCCD
-                      </span>
-                    ) : isFieldUnclear('Số CCCD', soCCCD) ? (
-                      <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded font-semibold">
-                        ⚠️ Cần xác nhận
-                      </span>
-                    ) : (
-                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded font-medium">
-                        ✓ 12 số
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={soCCCD}
-                    onChange={(e) => setSoCCCD(e.target.value)}
-                    placeholder="001095012345"
-                    required
-                    className={`w-full text-xs sm:text-sm px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 font-mono ${
-                      duplicateCCCDRecord
-                        ? 'border-rose-500 bg-rose-50 text-rose-900 ring-2 ring-rose-200'
-                        : isFieldUnclear('Số CCCD', soCCCD)
-                        ? 'border-amber-400 bg-amber-50/20'
-                        : 'border-slate-300'
-                    }`}
-                  />
-                  {duplicateCCCDRecord && (
-                    <p className="mt-1 text-[11px] font-bold text-rose-600 flex items-center gap-1">
-                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                      <span>Yêu cầu kiểm tra lại, trùng số căn cước công dân với nhân sự "{duplicateCCCDRecord.hoVaTen}"!</span>
-                    </p>
-                  )}
-                </div>
-
-                {/* Ngày sinh */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-slate-700">Ngày sinh (DD/MM/YYYY)</label>
-                    {isFieldUnclear('Ngày sinh', ngaySinh) && (
-                      <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded font-semibold">
-                        ⚠️ Cần xác nhận
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={ngaySinh}
-                    onChange={(e) => setNgaySinh(e.target.value)}
-                    placeholder="15/04/1995"
-                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                {/* Giới tính */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Giới tính</label>
-                  <select
-                    value={gioiTinh}
-                    onChange={(e) => setGioiTinh(e.target.value)}
-                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-                  >
-                    <option value="Nam">Nam</option>
-                    <option value="Nữ">Nữ</option>
-                    <option value="Khác">Khác</option>
-                  </select>
-                </div>
-
-                {/* Ngày cấp */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Ngày cấp CCCD</label>
-                  <input
-                    type="text"
-                    value={ngayCap}
-                    onChange={(e) => setNgayCap(e.target.value)}
-                    placeholder="20/05/2021"
-                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                {/* Nơi cấp */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Nơi cấp CCCD</label>
-                  <input
-                    type="text"
-                    value={noiCap}
-                    onChange={(e) => setNoiCap(e.target.value)}
-                    placeholder="Cục Cảnh sát QLHC về TTXH"
-                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                {/* Số điện thoại */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-semibold text-slate-700">Số điện thoại</label>
-                    {isFieldUnclear('Số điện thoại', soDienThoai) && (
-                      <span className="text-[10px] text-amber-700 bg-amber-100 px-1.5 py-0.2 rounded font-semibold">
-                        ⚠️ Cần bổ sung
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    type="text"
-                    value={soDienThoai}
-                    onChange={(e) => setSoDienThoai(e.target.value)}
-                    placeholder="0912345678"
-                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono"
-                  />
-                </div>
-
-                {/* Nguồn địa chỉ: VNeID vs CCCD */}
-                <div className="sm:col-span-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-blue-600" />
-                      <label className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                        Nguồn Dữ Liệu Địa Chỉ Cư Trú (Ưu Tiên VNeID Sau Sáp Nhập)
-                      </label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNguonDiaChi('VNeID');
-                          if (!ghiChuSapNhap) setGhiChuSapNhap('Đã lấy theo dữ liệu VNeID mới nhất sau sáp nhập');
-                        }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                          nguonDiaChi === 'VNeID'
-                            ? 'bg-amber-500 text-white shadow-xs'
-                            : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
-                        }`}
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Ưu tiên VNeID (Mới)</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNguonDiaChi('CCCD');
-                          if (!ghiChuSapNhap) setGhiChuSapNhap('Trích xuất từ mặt CCCD - Cần HR rà soát sáp nhập mới');
-                        }}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                          nguonDiaChi === 'CCCD'
-                            ? 'bg-blue-600 text-white shadow-xs'
-                            : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-100'
-                        }`}
-                      >
-                        <CreditCard className="w-3.5 h-3.5" />
-                        <span>Mặt thẻ CCCD</span>
-                      </button>
-                    </div>
-                  </div>
-
-                  {nguonDiaChi === 'VNeID' ? (
-                    <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-2.5 text-xs text-amber-950">
-                      <Sparkles className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                      <div>
-                        <span className="font-bold">⭐ QUY TẮC ƯU TIÊN VNeID ĐANG ĐƯỢC ÁP DỤNG:</span>
-                        <p className="mt-0.5 text-amber-800">
-                          Địa chỉ thường trú và quê quán được ưu tiên lấy trực tiếp từ màn hình ứng dụng VNeID, đảm bảo tên phường/xã/quận/huyện đã được cập nhật đúng theo các nghị quyết sáp nhập hành chính mới nhất của Nhà nước.
-                        </p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2.5 text-xs text-blue-950">
-                      <Info className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
-                      <div>
-                        <span className="font-bold">📍 NGUỒN ĐỊA CHỈ: MẶT THẺ CCCD</span>
-                        <p className="mt-0.5 text-blue-800">
-                          Hồ sơ không có ảnh màn hình VNeID hoặc đang sử dụng dữ liệu in trên phôi thẻ CCCD. HR vui lòng rà soát lại nếu địa chỉ cũ chưa đổi tên sau đợt sáp nhập hành chính.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Ghi chú đơn vị hành chính sau sáp nhập */}
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Ghi chú đơn vị hành chính sau sáp nhập (Lưu vào Cột 13 Excel):
-                    </label>
-                    <input
-                      type="text"
-                      value={ghiChuSapNhap}
-                      onChange={(e) => setGhiChuSapNhap(e.target.value)}
-                      placeholder="Ví dụ: Đã đối chiếu theo VNeID: Phường Dịch Vọng sáp nhập mới"
-                      className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Quê quán */}
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Quê quán</label>
-                  <input
-                    type="text"
-                    value={queQuan}
-                    onChange={(e) => setQueQuan(e.target.value)}
-                    placeholder="Xã Kim Chung, Huyện Hoài Đức, TP Hà Nội"
-                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                {/* Địa chỉ thường trú */}
-                <div className="sm:col-span-3">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Địa chỉ thường trú</label>
-                  <input
-                    type="text"
-                    value={diaChiThuongTru}
-                    onChange={(e) => setDiaChiThuongTru(e.target.value)}
-                    placeholder="Số 28, Ngõ 195 Cầu Giấy, Phường Dịch Vọng, Quận Cầu Giấy, Hà Nội"
-                    className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* Thành phần gia đình */}
-              <div className="pt-3 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">
-                    Thành phần gia đình (Trích xuất từ Sơ yếu lý lịch)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={addFamilyMember}
-                    className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Thêm người thân</span>
-                  </button>
-                </div>
-
-                {thongTinGiaDinh.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic bg-slate-50 p-2.5 rounded-lg">
-                    Chưa có thông tin người thân hoặc tài liệu không đề cập. Bạn có thể bấm "Thêm người thân" để bổ sung.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {thongTinGiaDinh.map((member, idx) => (
-                      <div
-                        key={idx}
-                        className="flex flex-wrap sm:flex-nowrap items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs"
-                      >
-                        <select
-                          value={member.quanHe}
-                          onChange={(e) => updateFamilyMember(idx, 'quanHe', e.target.value)}
-                          className="w-24 border border-slate-300 rounded px-2 py-1.5 bg-white font-medium"
-                        >
-                          <option value="Bố">Bố</option>
-                          <option value="Mẹ">Mẹ</option>
-                          <option value="Vợ">Vợ</option>
-                          <option value="Chồng">Chồng</option>
-                          <option value="Con">Con</option>
-                          <option value="Anh/Chị/Em">Anh/Chị/Em</option>
-                        </select>
-
-                        <input
-                          type="text"
-                          placeholder="Họ và tên người thân"
-                          value={member.hoTen}
-                          onChange={(e) => updateFamilyMember(idx, 'hoTen', e.target.value)}
-                          className="flex-1 min-w-[130px] border border-slate-300 rounded px-2 py-1.5 bg-white uppercase font-medium"
-                        />
-
-                        <input
-                          type="text"
-                          placeholder="Năm sinh"
-                          value={member.namSinh || ''}
-                          onChange={(e) => updateFamilyMember(idx, 'namSinh', e.target.value)}
-                          className="w-20 border border-slate-300 rounded px-2 py-1.5 bg-white"
-                        />
-
-                        <input
-                          type="text"
-                          placeholder="Nghề nghiệp"
-                          value={member.ngheNghiep || ''}
-                          onChange={(e) => updateFamilyMember(idx, 'ngheNghiep', e.target.value)}
-                          className="flex-1 min-w-[120px] border border-slate-300 rounded px-2 py-1.5 bg-white"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={() => removeFamilyMember(idx)}
-                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
+            <EmployeeReviewGrid
+              employees={batchList.length ? batchList : [{...currentRecordObject, id: 'single-review', hoVaTen, cauHoiLamRo: initialData?.cauHoiLamRo, thongTinChuaRo: initialData?.thongTinChuaRo}]}
+              existingRecords={existingRecords}
+              onChange={handleReviewChange}
+            />
 
             {/* Điều hướng Bước 2 */}
             {activeTabStep === 2 && (
@@ -1225,8 +908,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    if (!hoVaTen.trim()) {
-                      setValidationError('Vui lòng kiểm tra và nhập Họ và tên ứng viên trước khi chuyển sang Bước 3.');
+                    if (batchList.length ? batchList.some(employee => !employee.hoVaTen.trim()) : !hoVaTen.trim()) {
+                      setValidationError('Vui lòng nhập họ tên cho tất cả nhân viên trước khi chuyển sang Bước 3.');
                       return;
                     }
                     setValidationError(null);
@@ -1247,6 +930,10 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         {/* ========================================================================= */}
         {activeTabStep === 3 && (
           <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/20 p-4 sm:p-5 animate-fade-in">
+            <EmployeeIntakeFields
+              employees={batchList.length ? batchList : [{...currentRecordObject, id: 'single-review', hoVaTen}]}
+              onChange={handleReviewChange}
+            />
             {/* Header Bước 3 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-100 pb-3">
               <div>
@@ -1994,497 +1681,17 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                     Bảng 12 Khoản Lương &amp; Phụ Cấp (HR Điền Tay / Hiệu Chỉnh) &amp; Xuất File Excel
                   </h3>
                 </div>
-                <p className="text-xs text-slate-600 mt-1">
-                  HR tự do điều chỉnh hoặc điền tay trực tiếp từng khoản lương và phụ cấp theo thỏa thuận, sau đó vừa lưu vào Google Sheets vừa có thể bấm xuất file Excel chuẩn 43 cột.
-                </p>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-[11px] bg-amber-100 text-amber-900 border border-amber-300 font-bold px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
-                  <Edit3 className="w-3.5 h-3.5 text-amber-700" />
-                  <span>Chế độ: HR Điền tay trực tiếp</span>
-                </span>
-              </div>
             </div>
 
-            {/* Khối Tổng Hợp Tài Chính Tổng Quan */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <span className="text-xs text-slate-500 font-medium block mb-1">1. Lương Cơ Bản</span>
-                <div className="flex items-baseline gap-1">
-                  <input
-                    type="number"
-                    step="50000"
-                    value={luongCoBan}
-                    onChange={(e) => {
-                      const val = Number(e.target.value) || 0;
-                      setLuongCoBan(val);
-                      setLuongDongBHXH(val + Number(phuCapChucVu || 0));
-                    }}
-                    className="w-full text-lg font-black text-slate-900 font-mono border-b-2 border-indigo-500 bg-indigo-50/40 px-1 py-0.5 rounded-t"
-                  />
-                  <span className="text-xs font-bold text-slate-500">đ</span>
-                </div>
-                <span className="text-[10px] text-slate-400 block mt-1">Lương ký HĐLĐ</span>
-              </div>
+            <EmployeeSalaryGrid
+              employees={getBatchRecordObjects().map(employee => batchList.length ? employee : {...employee,id:'single-salary'})}
+              onChange={handleSalaryChange}
+              disabled={isSaving || isSavedSuccess}
+            />
 
-              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <span className="text-xs text-slate-500 font-medium block mb-1">2. Tổng Phụ Cấp (12+ khoản)</span>
-                <span className="text-lg font-black text-amber-700 font-mono block">
-                  {formatVND(tongPhuCap)} đ
-                </span>
-                <span className="text-[10px] text-slate-400 block mt-1">Gồm cố định &amp; biến động</span>
-              </div>
-
-              <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs">
-                <span className="text-xs text-slate-500 font-medium block mb-1">3. Mức Lương Đóng BHXH</span>
-                <div className="flex items-baseline gap-1">
-                  <input
-                    type="number"
-                    step="50000"
-                    value={luongDongBHXH}
-                    onChange={(e) => setLuongDongBHXH(Number(e.target.value) || 0)}
-                    className="w-full text-lg font-bold text-slate-800 font-mono border-b-2 border-emerald-500 bg-emerald-50/40 px-1 py-0.5 rounded-t"
-                  />
-                  <span className="text-xs font-bold text-slate-500">đ</span>
-                </div>
-                <span className="text-[10px] text-slate-400 block mt-1">Lương CB + PC Chức vụ</span>
-              </div>
-
-              <div className="p-3.5 bg-gradient-to-br from-indigo-700 to-indigo-900 text-white rounded-xl shadow-md flex flex-col justify-between">
-                <span className="text-xs text-indigo-200 font-bold uppercase tracking-wider block">
-                  TỔNG THU NHẬP DỰ KIẾN
-                </span>
-                <div className="my-1">
-                  <span className="text-xl sm:text-2xl font-black font-mono tracking-tight text-yellow-300">
-                    {formatVND(tongThuNhapDuKien)} đ
-                  </span>
-                </div>
-                <span className="text-[10px] text-indigo-200 block">
-                  Lương CB + Toàn bộ 12+ khoản phụ cấp
-                </span>
-              </div>
-            </div>
-
-            {/* Form Điền Tay 12+ Khoản Lương & Phụ Cấp Chia Thành 3 Nhóm Rõ Ràng */}
-            <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs space-y-5">
-              {/* Nhóm A: Các khoản lương & phụ cấp cố định theo chức danh */}
-              <div>
-                <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-950 uppercase tracking-wide">
-                    <Award className="w-4 h-4 text-indigo-600" />
-                    <span>A. Các Khoản Lương &amp; Phụ Cấp Cố Định (Theo Tiêu Chuẩn &amp; Chức Danh)</span>
-                  </div>
-                  <span className="text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
-                    Tổng: {formatVND(phuCapCoDinh)} đ
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Chức vụ</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={phuCapChucVu}
-                      onChange={(e) => {
-                        const val = Number(e.target.value) || 0;
-                        setPhuCapChucVu(val);
-                        setLuongDongBHXH(luongCoBan + val);
-                      }}
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Điện thoại</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={phuCapDienThoai}
-                      onChange={(e) => setPhuCapDienThoai(Number(e.target.value) || 0)}
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">TC Tay nghề</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={troCapTayNghe}
-                      onChange={(e) => setTroCapTayNghe(Number(e.target.value) || 0)}
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">TC Gia đình</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={troCapGiaDinh}
-                      onChange={(e) => setTroCapGiaDinh(Number(e.target.value) || 0)}
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">Thưởng Chuyên cần</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={thuongChuyenCan}
-                      onChange={(e) => setThuongChuyenCan(Number(e.target.value) || 0)}
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">Thưởng Sáng kiến</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={thuongSangKien}
-                      onChange={(e) => setThuongSangKien(Number(e.target.value) || 0)}
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Nhóm B: Phụ cấp điều kiện làm việc & công việc */}
-              <div>
-                <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-950 uppercase tracking-wide">
-                    <Coins className="w-4 h-4 text-emerald-600" />
-                    <span>B. Phụ Cấp Môi Trường &amp; Điều Kiện Công Việc (HR Điền Tay)</span>
-                  </div>
-                  <span className="text-[11px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                    Tổng: {formatVND(
-                      (Number(phuCapXangXe) || 0) +
-                      (Number(phuCapMoiTruong) || 0) +
-                      (Number(anToanVeSinhVien) || 0) +
-                      (Number(phuCapKinhDoanh) || 0) +
-                      (Number(phuCapNangNhoc) || 0)
-                    )} đ
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Xăng xe</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={phuCapXangXe}
-                      onChange={(e) => setPhuCapXangXe(Number(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Môi trường</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={phuCapMoiTruong}
-                      onChange={(e) => setPhuCapMoiTruong(Number(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">ATVSV</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={anToanVeSinhVien}
-                      onChange={(e) => setAnToanVeSinhVien(Number(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Kinh doanh</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={phuCapKinhDoanh}
-                      onChange={(e) => setPhuCapKinhDoanh(Number(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded-lg border border-slate-200">
-                    <label className="text-[10px] text-slate-500 font-semibold block mb-1">PC Nặng nhọc / Độc hại</label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={phuCapNangNhoc}
-                      onChange={(e) => setPhuCapNangNhoc(Number(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Nhóm C: Các khoản biến động điền tay đặc thù (FPT / AM / Lưu động / Phát sinh) */}
-              <div>
-                <div className="flex items-center justify-between mb-2 pb-1 border-b border-slate-100">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-950 uppercase tracking-wide">
-                    <Sparkles className="w-4 h-4 text-amber-600" />
-                    <span>C. Các Khoản Biến Động Điền Tay Đặc Thù (FPT / AM / Lưu Động / Phát Sinh)</span>
-                  </div>
-                  <span className="text-[11px] font-mono font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded">
-                    Tổng: {formatVND(
-                      (Number(troCapDacThuFPT) || 0) +
-                      (Number(thuongNangLucAM) || 0) +
-                      (Number(phuCapLuuDong) || 0) +
-                      (Number(phuCapPhatSinh) || 0)
-                    )} đ
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  <div className="p-2.5 bg-amber-50/60 rounded-lg border border-amber-200">
-                    <label className="text-[10px] text-amber-900 font-bold block mb-1">
-                      Trợ cấp đặc thù (FPT)
-                    </label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={troCapDacThuFPT}
-                      onChange={(e) => setTroCapDacThuFPT(Number(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-amber-900 bg-white border border-amber-300 rounded px-2 py-1"
-                    />
-                    <span className="text-[9px] text-amber-700 mt-1 block">Khoản HR tự điền</span>
-                  </div>
-
-                  <div className="p-2.5 bg-amber-50/60 rounded-lg border border-amber-200">
-                    <label className="text-[10px] text-amber-900 font-bold block mb-1">
-                      Thưởng năng lực AM
-                    </label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={thuongNangLucAM}
-                      onChange={(e) => setThuongNangLucAM(Number(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-amber-900 bg-white border border-amber-300 rounded px-2 py-1"
-                    />
-                    <span className="text-[9px] text-amber-700 mt-1 block">Đánh giá AM thực tế</span>
-                  </div>
-
-                  <div className="p-2.5 bg-amber-50/60 rounded-lg border border-amber-200">
-                    <label className="text-[10px] text-amber-900 font-bold block mb-1">
-                      Phụ cấp lưu động
-                    </label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={phuCapLuuDong}
-                      onChange={(e) => setPhuCapLuuDong(Number(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-amber-900 bg-white border border-amber-300 rounded px-2 py-1"
-                    />
-                    <span className="text-[9px] text-amber-700 mt-1 block">Di chuyển nhiều điểm</span>
-                  </div>
-
-                  <div className="p-2.5 bg-amber-50/60 rounded-lg border border-amber-200">
-                    <label className="text-[10px] text-amber-900 font-bold block mb-1">
-                      Phụ cấp phát sinh khác
-                    </label>
-                    <input
-                      type="number"
-                      step="50000"
-                      value={phuCapPhatSinh}
-                      onChange={(e) => setPhuCapPhatSinh(Number(e.target.value) || 0)}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-amber-900 bg-white border border-amber-300 rounded px-2 py-1"
-                    />
-                    <span className="text-[9px] text-amber-700 mt-1 block">Khoản thỏa thuận riêng</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* BẢNG DỮ LIỆU ĐẦY ĐỦ CHUẨN 43 CỘT (MASTER HR SPREADSHEET 43 COLUMNS - 4 MÀU HEADER) */}
-            <div className="bg-white rounded-xl border-2 border-indigo-400 shadow-md overflow-hidden">
-              <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-900 p-4 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <FileSpreadsheet className="w-5 h-5 text-indigo-400" />
-                    <h4 className="font-bold text-sm sm:text-base">
-                      BẢNG TỔNG HỢP HỒ SƠ NHÂN SỰ CHUẨN 43 CỘT (HR MASTER RECORD)
-                    </h4>
-                  </div>
-                  <p className="text-[11px] text-slate-300 mt-0.5">
-                    Hệ thống đã tự động gom nhóm 43 cột theo 4 dải màu chuẩn: Navy Blue (Cá nhân) • Light Blue (Tổ chức) • Olive Green (Lương) • Vàng Chanh FPT (Hệ thống).
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2 self-start sm:self-auto">
-                  <button
-                    type="button"
-                    onClick={handleExportSingleExcel}
-                    disabled={isExportingExcel}
-                    className="px-3.5 py-1.5 bg-yellow-400 hover:bg-yellow-300 text-slate-900 rounded-lg text-xs font-bold shadow transition flex items-center gap-1.5 disabled:opacity-50"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>{isExportingExcel ? 'Đang xuất Excel...' : 'Tải File Excel 43 Cột (.xlsx)'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Dải 4 màu Header Indicator */}
-              <div className="grid grid-cols-4 text-center text-[10px] font-bold py-1.5 text-white">
-                <div className="bg-[#1E3A8A] py-1 px-2 border-r border-white/20">
-                  NHÓM 1: CỘT 1 - 13 (NAVY BLUE)<br /><span className="font-normal opacity-90">Thông Tin Cá Nhân &amp; VNeID/CCCD</span>
-                </div>
-                <div className="bg-[#0284C7] py-1 px-2 border-r border-white/20">
-                  NHÓM 2: CỘT 14 - 20 (LIGHT BLUE)<br /><span className="font-normal opacity-90">Tổ Chức, Chức Danh &amp; HĐLĐ</span>
-                </div>
-                <div className="bg-[#4D7C0F] py-1 px-2 border-r border-white/20">
-                  NHÓM 3: CỘT 21 - 36 (OLIVE GREEN)<br /><span className="font-normal opacity-90">12 Khoản Lương &amp; Phụ Cấp</span>
-                </div>
-                <div className="bg-[#FACC15] py-1 px-2 text-slate-900 font-black">
-                  NHÓM 4: CỘT 37 - 43 (VÀNG CHANH FPT)<br /><span className="font-normal text-slate-800">Gia Đình &amp; Trạng Thái Hệ Thống</span>
-                </div>
-              </div>
-
-              {/* Master Summary Grid */}
-              <div className="p-4 sm:p-5 space-y-4 text-xs">
-                {/* Phần 1: Thông tin cá nhân & VNeID */}
-                <div>
-                  <div className="text-[11px] font-bold text-[#1E3A8A] uppercase tracking-wider mb-2 flex items-center justify-between border-b border-blue-100 pb-1">
-                    <span className="flex items-center gap-1.5">
-                      <User className="w-3.5 h-3.5 text-blue-700" />
-                      1. Thông Tin Cá Nhân &amp; Giấy Tờ (Cột 1 - 13: Navy Blue)
-                    </span>
-                    <span className="text-[10px] bg-blue-100 text-blue-900 px-2 py-0.2 rounded font-mono font-bold">
-                      Nguồn: {nguonDiaChi} {nguonDiaChi === 'VNeID' ? '⭐ Ưu tiên' : ''}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-blue-50/40 p-3 rounded-lg border border-blue-200">
-                    <div>
-                      <span className="text-slate-400 block text-[10px]">Cột 4 - Họ và tên:</span>
-                      <strong className="text-slate-900 text-sm font-black">{hoVaTen || '---'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px]">Cột 7 - Số CCCD (12 số):</span>
-                      <strong className="font-mono text-slate-800">{soCCCD || '---'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px]">Cột 5 &amp; 6 - Ngày sinh &amp; Phái:</span>
-                      <span className="text-slate-800 font-medium">{ngaySinh || '---'} ({gioiTinh})</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px]">Cột 12 - Số điện thoại:</span>
-                      <span className="font-mono text-slate-800 font-medium">{soDienThoai || '---'}</span>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <span className="text-slate-400 block text-[10px]">Cột 10 - Quê quán:</span>
-                      <span className="text-slate-700">{queQuan || '---'}</span>
-                    </div>
-                    <div className="sm:col-span-2">
-                      <span className="text-slate-400 block text-[10px]">Cột 11 - Địa chỉ thường trú ({nguonDiaChi}):</span>
-                      <span className="text-slate-700">{diaChiThuongTru || '---'}</span>
-                    </div>
-                    {ghiChuSapNhap && (
-                      <div className="sm:col-span-4 bg-white p-2 rounded border border-blue-200 text-slate-600">
-                        <span className="text-[10px] text-blue-700 font-bold block">Cột 13 - Ghi chú sáp nhập:</span>
-                        <span>{ghiChuSapNhap}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Phần 2: Vị trí & Phòng ban */}
-                <div>
-                  <div className="text-[11px] font-bold text-[#0284C7] uppercase tracking-wider mb-2 flex items-center gap-1.5 border-b border-sky-100 pb-1">
-                    <Building className="w-3.5 h-3.5 text-sky-600" />
-                    <span>2. Cơ Cấu Tổ Chức, Chức Vụ &amp; HĐLĐ (Cột 14 - 20: Light Blue)</span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-sky-50/40 p-3 rounded-lg border border-sky-200">
-                    <div>
-                      <span className="text-slate-400 block text-[10px]">Cột 14 - Cấp Khối:</span>
-                      <strong className="text-slate-800">{khoi}</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px]">Cột 15 &amp; 16 - Ban / Phòng:</span>
-                      <span className="text-slate-800 font-medium">{ban} / {phong}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px]">Cột 17 &amp; 18 - Công việc &amp; Chức vụ:</span>
-                      <strong className="text-indigo-900 font-bold">{chucVu}</strong>
-                      <span className="block text-[10px] text-slate-500">({congViecDuKien})</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block text-[10px]">Cột 19 &amp; 20 - Địa điểm &amp; Loại HĐ:</span>
-                      <span className="text-slate-800 font-medium block">{diemLamViec}</span>
-                      <span className="text-[10px] text-slate-500">{loaiHopDong}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Phần 3: Chế độ Lương & Phụ cấp */}
-                <div>
-                  <div className="text-[11px] font-bold text-[#4D7C0F] uppercase tracking-wider mb-2 flex items-center gap-1.5 border-b border-lime-100 pb-1">
-                    <DollarSign className="w-3.5 h-3.5 text-lime-700" />
-                    <span>3. Định Mức Lương &amp; 12+ Khoản Phụ Cấp (Cột 21 - 36: Olive Green)</span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-lime-50/30 p-3 rounded-lg border border-lime-300">
-                    <div>
-                      <span className="text-slate-500 block text-[10px]">Cột 21 - Lương cơ bản:</span>
-                      <strong className="text-slate-900 font-mono text-sm">{formatVND(luongCoBan)} đ</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block text-[10px]">Cột 33 - Tổng phụ cấp:</span>
-                      <strong className="text-slate-900 font-mono text-sm">{formatVND(tongPhuCap)} đ</strong>
-                    </div>
-                    <div>
-                      <span className="text-slate-500 block text-[10px]">Cột 35 - Lương đóng BHXH:</span>
-                      <span className="text-slate-800 font-mono font-bold">{formatVND(luongDongBHXH)} đ</span>
-                    </div>
-                    <div className="bg-[#4D7C0F] text-white p-2.5 rounded-lg text-center flex flex-col justify-center">
-                      <span className="text-[10px] uppercase font-semibold text-lime-100">Cột 34 - Tổng thu nhập:</span>
-                      <strong className="text-base font-black font-mono text-yellow-300">
-                        {formatVND(tongThuNhapDuKien)} đ
-                      </strong>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Phần 4: Thành viên gia đình & Ghi chú */}
-                <div>
-                  <div className="text-[11px] font-bold text-amber-700 uppercase tracking-wider mb-2 flex items-center gap-1.5 border-b border-amber-100 pb-1">
-                    <FileText className="w-3.5 h-3.5 text-amber-600" />
-                    <span>4. Thành Viên Gia Đình, Ghi Chú &amp; Hồ Sơ (Cột 37 - 43: Vàng Chanh FPT)</span>
-                  </div>
-                  <div className="bg-amber-50/40 p-3 rounded-lg border border-amber-300 space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] text-slate-600 font-semibold">Cột 37 - Người thân (SYLL):</span>
-                      {thongTinGiaDinh.length === 0 ? (
-                        <span className="text-slate-400 italic">Không có</span>
-                      ) : (
-                        thongTinGiaDinh.map((m, i) => (
-                          <span key={i} className="bg-white border border-amber-200 px-2 py-0.5 rounded text-[11px] text-slate-700">
-                            {m.quanHe}: {m.hoTen || '---'} {m.namSinh ? `(${m.namSinh})` : ''}
-                          </span>
-                        ))
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                        Cột 38 - Ghi chú bổ sung (Kinh nghiệm, ghi chú tuyển dụng...)
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={ghiChu}
-                        onChange={(e) => setGhiChu(e.target.value)}
-                        placeholder="Nhập ghi chú thêm cho hồ sơ này..."
-                        className="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 bg-white"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {isSavedSuccess && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800"><span>Đã lưu thành công {savedSummary?.count || 1} hồ sơ trong danh sách.</span><button type="button" onClick={() => handleSelectStep(5)} className="font-bold underline">Xem kết quả tiếp nhận</button></div>}
 
             {/* Điều hướng & Nút Lưu Dữ Liệu Vào Sheet + Nút Xuất File Excel */}
             <div className="pt-3 border-t border-slate-200 flex flex-col lg:flex-row items-center justify-between gap-3">
@@ -2520,7 +1727,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                 {/* NÚT LƯU VÀO GOOGLE SHEETS */}
                 <button
                   type="submit"
-                  disabled={isSaving}
+                  disabled={isSaving || isSavedSuccess}
                   className="w-full sm:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {isSaving ? (
