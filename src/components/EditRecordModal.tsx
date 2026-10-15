@@ -52,6 +52,10 @@ export const EditRecordModal: React.FC<EditRecordModalProps> = ({
       (Number(formData.anToanVeSinhVien) || 0) +
       (Number(formData.phuCapKinhDoanh) || 0) +
       (Number(formData.phuCapNangNhoc) || 0) +
+      (Number(formData.troCapDacThuFPT) || 0) +
+      (Number(formData.thuongNangLucAM) || 0) +
+      (Number(formData.phuCapLuuDong) || 0) +
+      (Number(formData.phuCapNangLuc) || 0) +
       (Number(formData.phuCapPhatSinh) || 0);
     return (Number(formData.luongCoBan) || 0) + fixed + manual;
   };
@@ -438,6 +442,10 @@ export const EditRecordModal: React.FC<EditRecordModalProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:outline-blue-600"
                 />
               </div>
+
+              <label className="block text-slate-600 font-medium">Phụ cấp năng lực
+                <input type="number" min="0" aria-label="Phụ cấp năng lực" value={formData.phuCapNangLuc ?? 0} onChange={event => handleChange('phuCapNangLuc',Number(event.target.value)||0)} className="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:outline-blue-600" />
+              </label>
 
               <div>
                 <label className="block text-slate-600 font-medium mb-1">PC Môi trường</label>

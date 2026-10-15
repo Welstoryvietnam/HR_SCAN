@@ -558,6 +558,7 @@ export const HR_43_COLUMNS: ColumnDefinition[] = [
         (Number(r.phuCapNangNhoc) || 0) +
         (Number(r.troCapDacThuFPT) || 0) +
         (Number(r.thuongNangLucAM) || 0) +
+        (Number(r.phuCapNangLuc) || 0) +
         (Number(r.phuCapLuuDong) || 0) +
         (Number(r.phuCapPhatSinh) || 0);
       return sum;
@@ -659,6 +660,23 @@ export const HR_43_COLUMNS: ColumnDefinition[] = [
  * - 21-36: Olive Green (#4D7C0F)
  * - 37-43: Vàng chanh FPT (#FACC15)
  */
+export function addPersonnelSupplement(workbook: ExcelJS.Workbook, records: NhanSuRecord[]) {
+  const sheet = workbook.addWorksheet('Thong_Tin_Bo_Sung',{views:[{state:'frozen',ySplit:1}]});
+  sheet.columns = [
+    {header:'Mã hồ sơ',key:'id',width:42},{header:'Họ và tên',key:'hoVaTen',width:30},
+    {header:'Tình trạng hôn nhân',key:'tinhTrangHonNhan',width:25},{header:'Ngày hết hạn CCCD',key:'ngayHetHanCCCD',width:24},
+    {header:'Thẩm quyền',key:'thamQuyen',width:28},{header:'Phụ cấp năng lực (VNĐ)',key:'phuCapNangLuc',width:26},
+    {header:'Ngày vào làm việc',key:'ngayVaoLam',width:22},{header:'Địa chỉ tạm trú hiện tại',key:'diaChiTamTru',width:45},
+    {header:'Email cá nhân',key:'emailCaNhan',width:32},{header:'Tình trạng hồ sơ',key:'tinhTrangHoSo',width:30},
+  ];
+  sheet.getRow(1).font = {bold:true,color:{argb:'FFFFFFFF'}};
+  sheet.getRow(1).fill = {type:'pattern',pattern:'solid',fgColor:{argb:'FF1E3A8A'}};
+  for (const record of records) sheet.addRow({...record,phuCapNangLuc:Number(record.phuCapNangLuc)||0});
+  sheet.getColumn('phuCapNangLuc').numFmt = '#,##0" đ"';
+  sheet.autoFilter = 'A1:J1';
+  return sheet;
+}
+
 export async function generateExcel43Columns(records: NhanSuRecord[], customFileName?: string): Promise<void> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'FPT HR AI Automation';
@@ -797,6 +815,7 @@ export async function generateExcel43Columns(records: NhanSuRecord[], customFile
   });
 
   // 4. Xuất file về máy tính người dùng
+  addPersonnelSupplement(workbook,records);
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

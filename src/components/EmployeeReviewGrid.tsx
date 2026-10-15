@@ -44,7 +44,7 @@ export function EmployeeReviewGrid({ employees, existingRecords, onChange }: Pro
       <div className="max-h-[65vh] overflow-auto">
         <table className="w-full min-w-[1400px] border-separate border-spacing-0 text-left text-xs" aria-label="Thông tin nhân viên Bước 2">
           <thead className="sticky top-0 z-20 bg-blue-50 text-blue-950">
-            <tr>{['STT', 'Họ và tên', 'Ngày sinh / Giới tính', 'Giấy tờ CCCD', 'Liên hệ / Địa chỉ', 'Nguồn cư trú', 'Gia đình / Ghi chú'].map((title, index) => <th key={title} scope="col" className={`border-b border-blue-200 px-3 py-3 ${index === 1 ? 'sticky left-0 z-30 min-w-56 bg-blue-50' : ''}`}>{title}</th>)}</tr>
+            <tr>{['STT', 'Họ và tên', 'Thông tin cá nhân', 'Giấy tờ CCCD', 'Liên hệ / Địa chỉ', 'Gia đình / Ghi chú'].map((title, index) => <th key={title} scope="col" className={`border-b border-blue-200 px-3 py-3 ${index === 1 ? 'sticky left-0 z-30 min-w-56 bg-blue-50' : ''}`}>{title}</th>)}</tr>
           </thead>
           <tbody>
             {visibleEmployees.map(employee => {
@@ -62,15 +62,11 @@ export function EmployeeReviewGrid({ employees, existingRecords, onChange }: Pro
                 </td>
                 <td className="min-w-40 space-y-2 border-b border-slate-200 p-3">
                   {field('ngaySinh', 'Ngày sinh', 'DD/MM/YYYY')}
+                  {field('tinhTrangHonNhan', 'Tình trạng hôn nhân', 'AI trích xuất hoặc nhập bổ sung')}
                   <label className="block space-y-1"><span className="text-[10px] text-slate-500">Giới tính</span><select aria-label={`Giới tính nhân viên ${index + 1}`} value={employee.gioiTinh} onChange={event => onChange(employee.id, {gioiTinh:event.target.value})} className={inputClass}><option value="">Chưa rõ</option>{['Nam','Nữ','Khác'].map(value => <option key={value}>{value}</option>)}</select></label>
                 </td>
-                <td className="min-w-56 space-y-2 border-b border-slate-200 p-3">{field('soCCCD','Số CCCD')}{field('ngayCap','Ngày cấp','DD/MM/YYYY')}{field('noiCap','Nơi cấp')}</td>
+                <td className="min-w-56 space-y-2 border-b border-slate-200 p-3">{field('soCCCD','Số CCCD')}{field('ngayCap','Ngày cấp','DD/MM/YYYY')}{field('ngayHetHanCCCD','Ngày hết hạn CCCD','DD/MM/YYYY hoặc Không thời hạn')}{field('noiCap','Nơi cấp')}</td>
                 <td className="min-w-64 space-y-2 border-b border-slate-200 p-3">{field('soDienThoai','Số điện thoại')}{field('queQuan','Quê quán')}{field('diaChiThuongTru','Địa chỉ thường trú')}</td>
-                <td className="min-w-48 space-y-2 border-b border-slate-200 p-3">
-                  <label className="block space-y-1"><span className="text-[10px] text-slate-500">Nguồn địa chỉ</span><select aria-label={`Nguồn địa chỉ nhân viên ${index + 1}`} value={employee.nguonDiaChi || ''} onChange={event => onChange(employee.id, {nguonDiaChi:event.target.value as BatchEmployeeDraft['nguonDiaChi'] || undefined})} className={inputClass}><option value="">Chưa xác nhận</option><option>VNeID</option><option>CCCD</option></select></label>
-                  {field('ghiChuSapNhap','Ghi chú địa chỉ')}
-                  <p className="text-[10px] text-slate-400">{employee.soTaiLieuDinhKem || 0} tài liệu đính kèm</p>
-                </td>
                 <td className="min-w-64 space-y-2 border-b border-slate-200 p-3">
                   {field('ghiChu','Ghi chú hồ sơ')}
                   <details><summary className="cursor-pointer font-semibold text-blue-700">Gia đình ({employee.thongTinGiaDinh?.length || 0})</summary>
@@ -82,7 +78,7 @@ export function EmployeeReviewGrid({ employees, existingRecords, onChange }: Pro
                 </td>
               </tr>;
             })}
-            {!visibleEmployees.length && <tr><td colSpan={7} className="p-8 text-center text-slate-500">Không có nhân viên phù hợp với bộ lọc.</td></tr>}
+            {!visibleEmployees.length && <tr><td colSpan={6} className="p-8 text-center text-slate-500">Không có nhân viên phù hợp với bộ lọc.</td></tr>}
           </tbody>
         </table>
       </div>

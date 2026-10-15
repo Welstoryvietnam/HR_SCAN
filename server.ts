@@ -1607,6 +1607,8 @@ function safeParseExtractedJson(raw: string): any {
     "gioiTinh",
     "soCCCD",
     "ngayCap",
+    "ngayHetHanCCCD",
+    "tinhTrangHonNhan",
     "noiCap",
     "queQuan",
     "diaChiThuongTru",
@@ -1713,6 +1715,8 @@ QUY TẮC BẮT BUỘC VỀ ĐỘ CHÍNH XÁC (ANTI-HALLUCINATION):
 Yêu cầu định dạng:
 - hoVaTen: VIẾT HOA toàn bộ tiếng Việt có dấu (nếu rõ), nếu mờ/không rõ thì để "".
 - ngaySinh, ngayCap: định dạng DD/MM/YYYY.
+- ngayHetHanCCCD: đọc trực tiếp ngày hết hạn / Có giá trị đến trên CCCD theo DD/MM/YYYY. Chỉ ghi "Không thời hạn" khi tài liệu ghi rõ; không tính hạn từ tuổi hoặc ngày cấp. Không thấy thì để "".
+- tinhTrangHonNhan: đọc tình trạng hôn nhân ghi rõ trong sơ yếu lý lịch hoặc tài liệu của chính nhân viên. Không suy luận từ người thân, vợ/chồng, tuổi hay giới tính. Không thấy thì để "".
 - gioiTinh: "Nam" hoặc "Nữ" (nếu có căn cứ rõ).
 - soCCCD: chuỗi 12 chữ số (chỉ ghi khi nhận diện đầy đủ 12 số, không đoán mò).
 - nguonDiaChi: "VNeID" hoặc "CCCD".
@@ -1730,6 +1734,8 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
   "gioiTinh": "Nam",
   "soCCCD": "",
   "ngayCap": "",
+  "ngayHetHanCCCD": "",
+  "tinhTrangHonNhan": "",
   "noiCap": "",
   "queQuan": "",
   "diaChiThuongTru": "",
@@ -1823,6 +1829,9 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
     const responseText = response.text || "{}";
     const extractedData: any = safeParseExtractedJson(responseText);
     extractedData.emailCaNhan = typeof extractedData.emailCaNhan === "string" ? extractedData.emailCaNhan.trim() : "";
+    for (const field of ['ngayHetHanCCCD','tinhTrangHonNhan']) {
+      extractedData[field] = typeof extractedData[field] === 'string' ? extractedData[field].trim() : '';
+    }
 
     // Đảm bảo Họ tên được viết hoa
     if (extractedData.hoVaTen) {
@@ -2051,6 +2060,7 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     gioiTinh,
     soCCCD,
     ngayCap,
+    ngayHetHanCCCD = "",
     noiCap,
     queQuan,
     diaChiThuongTru,
@@ -2072,10 +2082,12 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     phuCapPhatSinh = 0,
     troCapDacThuFPT = 0,
     thuongNangLucAM = 0,
+    phuCapNangLuc = 0,
     phuCapLuuDong = 0,
     luongDongBHXH,
     maNhanVien = "",
-    tinhTrangHonNhan = "Độc thân",
+    tinhTrangHonNhan = "",
+    thamQuyen = "",
     trinhDoHocVan = "Trung cấp / Cao đẳng / Đại học",
     ghiChu = "",
     soTaiLieuDinhKem = 1,
@@ -2084,6 +2096,7 @@ function buildPersonnelRecord(body: any, userEmail: string) {
   if (!hoVaTen || !soCCCD) {
     throw new Error("Họ và tên và Số CCCD là các trường bắt buộc.");
   }
+  if (thamQuyen && !['Trưởng địa điểm','Dinh dưỡng viên trưởng','Giám sát trưởng'].includes(thamQuyen)) throw new Error('Thẩm quyền không hợp lệ.');
   if (String(emailCaNhan || "").trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(emailCaNhan).trim())) {
     throw new Error("Email cá nhân chưa đúng định dạng.");
   }
@@ -2133,6 +2146,8 @@ function buildPersonnelRecord(body: any, userEmail: string) {
   const phuCapPhatSinhNum = Number(phuCapPhatSinh) || 0;
   const troCapDacThuFPTNum = Number(troCapDacThuFPT) || 0;
   const thuongNangLucAMNum = Number(thuongNangLucAM) || 0;
+  const phuCapNangLucNum = Number(phuCapNangLuc);
+  if (!Number.isFinite(phuCapNangLucNum) || phuCapNangLucNum < 0) throw new Error('Phụ cấp năng lực phải là số không âm.');
   const phuCapLuuDongNum = Number(phuCapLuuDong) || 0;
 
   // Phụ cấp cố định: lấy từ client nếu có, hoặc tính tổng các khoản phụ cấp chuẩn
@@ -2146,10 +2161,8 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     : (luongCoBan + phuCapChucVu);
 
   // Tự động tính toán: Tổng thu nhập dự kiến = Lương cơ bản + tất cả các khoản phụ cấp
-  const tongPhuCapAll = phuCapCoDinh + phuCapMoiTruong + phuCapXangXe + anToanVeSinhVien + phuCapKinhDoanh + phuCapNangNhoc + troCapDacThuFPTNum + thuongNangLucAMNum + phuCapLuuDongNum + phuCapPhatSinhNum;
-  const tongThuNhapDuKien = body.tongThuNhapDuKien !== undefined
-    ? Number(body.tongThuNhapDuKien)
-    : (luongCoBan + tongPhuCapAll);
+  const tongPhuCapAll = phuCapCoDinh + phuCapMoiTruong + phuCapXangXe + anToanVeSinhVien + phuCapKinhDoanh + phuCapNangNhoc + troCapDacThuFPTNum + thuongNangLucAMNum + phuCapNangLucNum + phuCapLuuDongNum + phuCapPhatSinhNum;
+  const tongThuNhapDuKien = luongCoBan + tongPhuCapAll;
 
   const timestamp = new Date().toISOString();
   const newRecord = {
@@ -2161,6 +2174,7 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     gioiTinh: gioiTinh || "Nam",
     soCCCD: String(soCCCD).trim(),
     ngayCap: ngayCap || "",
+    ngayHetHanCCCD: String(ngayHetHanCCCD || '').trim(),
     noiCap: noiCap || "",
     queQuan: queQuan || "",
     diaChiThuongTru: diaChiThuongTru || "",
@@ -2194,6 +2208,7 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     phuCapNangNhoc,
     troCapDacThuFPT: troCapDacThuFPTNum,
     thuongNangLucAM: thuongNangLucAMNum,
+    phuCapNangLuc: phuCapNangLucNum,
     phuCapLuuDong: phuCapLuuDongNum,
     phuCapCoDinh,
     phuCapPhatSinh: phuCapPhatSinhNum,
@@ -2201,7 +2216,8 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     tongThuNhapDuKien,
     luongDongBHXH: finalLuongDongBHXH,
     maNhanVien: maNhanVien || "",
-    tinhTrangHonNhan: tinhTrangHonNhan || "Độc thân",
+    tinhTrangHonNhan: String(tinhTrangHonNhan || '').trim(),
+    thamQuyen,
     trinhDoHocVan: trinhDoHocVan || "Trung cấp / Cao đẳng / Đại học",
     ghiChu: ghiChu || "",
     soTaiLieuDinhKem: Number(soTaiLieuDinhKem) || 1,
@@ -2269,6 +2285,7 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", async (req, res) => {
     const { id } = req.params;
     const {record:existing,version} = await recordStore.get(id);
     const body = personnelFields(req.body);
+    if (body.thamQuyen && !['Trưởng địa điểm','Dinh dưỡng viên trưởng','Giám sát trưởng'].includes(body.thamQuyen)) throw new StorageError('Thẩm quyền không hợp lệ.',400);
 
     // Tính toán lại các khoản phụ cấp và tổng thu nhập nếu có chỉnh sửa số tiền
     const luongCoBan = body.luongCoBan !== undefined ? Number(body.luongCoBan) : existing.luongCoBan;
@@ -2287,17 +2304,17 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", async (req, res) => {
     const phuCapPhatSinh = body.phuCapPhatSinh !== undefined ? Number(body.phuCapPhatSinh) : (existing.phuCapPhatSinh || 0);
     const troCapDacThuFPT = Number(body.troCapDacThuFPT ?? existing.troCapDacThuFPT) || 0;
     const thuongNangLucAM = Number(body.thuongNangLucAM ?? existing.thuongNangLucAM) || 0;
+    const phuCapNangLuc = Number(body.phuCapNangLuc ?? existing.phuCapNangLuc ?? 0);
+    if (!Number.isFinite(phuCapNangLuc) || phuCapNangLuc < 0) throw new StorageError('Phụ cấp năng lực phải là số không âm.',400);
     const phuCapLuuDong = Number(body.phuCapLuuDong ?? existing.phuCapLuuDong) || 0;
 
     const phuCapCoDinh = body.phuCapCoDinh !== undefined
       ? Number(body.phuCapCoDinh)
       : (phuCapChucVu + phuCapDienThoai + troCapTayNghe + troCapGiaDinh + thuongChuyenCan + thuongSangKien);
 
-    const tongPhuCap = phuCapCoDinh + phuCapMoiTruong + phuCapXangXe + anToanVeSinhVien + phuCapKinhDoanh + phuCapNangNhoc + troCapDacThuFPT + thuongNangLucAM + phuCapLuuDong + phuCapPhatSinh;
+    const tongPhuCap = phuCapCoDinh + phuCapMoiTruong + phuCapXangXe + anToanVeSinhVien + phuCapKinhDoanh + phuCapNangNhoc + troCapDacThuFPT + thuongNangLucAM + phuCapNangLuc + phuCapLuuDong + phuCapPhatSinh;
     
-    const tongThuNhapDuKien = body.tongThuNhapDuKien !== undefined
-      ? Number(body.tongThuNhapDuKien)
-      : (luongCoBan + tongPhuCap);
+    const tongThuNhapDuKien = luongCoBan + tongPhuCap;
 
     const luongDongBHXH = body.luongDongBHXH !== undefined
       ? Number(body.luongDongBHXH)
@@ -2311,6 +2328,7 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", async (req, res) => {
       userEmail: existing.userEmail,
       troCapDacThuFPT,
       thuongNangLucAM,
+      phuCapNangLuc,
       phuCapLuuDong,
       luongCoBan,
       phuCapChucVu,
@@ -2411,6 +2429,7 @@ app.get("/api/export/csv", async (req, res) => {
       "Thông Tin Gia Đình",
       "Ghi Chú",
       "Trạng Thái Email",
+      "Tình Trạng Hôn Nhân", "Ngày Hết Hạn CCCD", "Thẩm Quyền", "Phụ Cấp Năng Lực (VNĐ)",
     ];
 
     const escapeCsv = (str: any) => {
@@ -2461,6 +2480,7 @@ app.get("/api/export/csv", async (req, res) => {
         escapeCsv(familyStr),
         escapeCsv(ns.ghiChu),
         escapeCsv(ns.trangThaiEmail),
+        escapeCsv(ns.tinhTrangHonNhan), escapeCsv(ns.ngayHetHanCCCD), escapeCsv(ns.thamQuyen), escapeCsv(ns.phuCapNangLuc || 0),
       ].join(",");
     });
 

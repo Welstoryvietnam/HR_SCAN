@@ -333,7 +333,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                     </td>
 
                     <td className="p-3 text-right font-mono text-slate-700">
-                      <div>{(item.phuCapCoDinh + item.phuCapPhatSinh).toLocaleString('vi-VN')} đ</div>
+                      <div>{(item.tongPhuCap ?? (item.phuCapCoDinh + item.phuCapPhatSinh + (item.phuCapNangLuc || 0))).toLocaleString('vi-VN')} đ</div>
                       {item.phuCapPhatSinh > 0 && (
                         <div className="text-[10px] text-amber-700">
                           (PS: +{item.phuCapPhatSinh.toLocaleString('vi-VN')})
@@ -473,6 +473,10 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
               <dl className="grid gap-3 sm:grid-cols-2">
                 {[
                   ['Ngày vào làm việc', selectedRecord.ngayVaoLam?.split('-').reverse().join('/')],
+                  ['Tình trạng hôn nhân',selectedRecord.tinhTrangHonNhan],
+                  ['Ngày hết hạn CCCD',selectedRecord.ngayHetHanCCCD],
+                  ['Thẩm quyền',selectedRecord.thamQuyen],
+                  ['Phụ cấp năng lực',(selectedRecord.phuCapNangLuc || 0).toLocaleString('vi-VN') + ' đ'],
                   ['Địa chỉ tạm trú hiện tại', selectedRecord.diaChiTamTru],
                   ['Email cá nhân', selectedRecord.emailCaNhan],
                   ['Tình trạng hồ sơ', selectedRecord.tinhTrangHoSo],

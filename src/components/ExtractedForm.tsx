@@ -141,6 +141,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   const [gioiTinh, setGioiTinh] = useState('Nam');
   const [soCCCD, setSoCCCD] = useState('');
   const [ngayCap, setNgayCap] = useState('');
+  const [ngayHetHanCCCD, setNgayHetHanCCCD] = useState('');
+  const [tinhTrangHonNhan, setTinhTrangHonNhan] = useState('');
   const [noiCap, setNoiCap] = useState('');
   const [queQuan, setQueQuan] = useState('');
   const [diaChiThuongTru, setDiaChiThuongTru] = useState('');
@@ -178,6 +180,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   // Các khoản biến động điền tay đặc thù
   const [troCapDacThuFPT, setTroCapDacThuFPT] = useState<number>(0);
   const [thuongNangLucAM, setThuongNangLucAM] = useState<number>(0);
+  const [phuCapNangLuc, setPhuCapNangLuc] = useState<number>(0);
   const [phuCapLuuDong, setPhuCapLuuDong] = useState<number>(0);
   const [phuCapPhatSinh, setPhuCapPhatSinh] = useState<number>(0);
   const [luongDongBHXH, setLuongDongBHXH] = useState<number>(9183000);
@@ -221,6 +224,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     if (updates.gioiTinh !== undefined) setGioiTinh(updates.gioiTinh);
     if (updates.soCCCD !== undefined) setSoCCCD(updates.soCCCD);
     if (updates.ngayCap !== undefined) setNgayCap(updates.ngayCap);
+    if (updates.ngayHetHanCCCD !== undefined) setNgayHetHanCCCD(updates.ngayHetHanCCCD);
+    if (updates.tinhTrangHonNhan !== undefined) setTinhTrangHonNhan(updates.tinhTrangHonNhan);
     if (updates.noiCap !== undefined) setNoiCap(updates.noiCap);
     if (updates.queQuan !== undefined) setQueQuan(updates.queQuan);
     if (updates.diaChiThuongTru !== undefined) setDiaChiThuongTru(updates.diaChiThuongTru);
@@ -229,7 +234,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     if (updates.soDienThoai !== undefined) setSoDienThoai(updates.soDienThoai);
     if (updates.thongTinGiaDinh !== undefined) setThongTinGiaDinh(updates.thongTinGiaDinh);
     if (updates.ghiChu !== undefined) setGhiChu(updates.ghiChu);
-    const intakeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => ['ngayVaoLam','diaChiTamTru','emailCaNhan','tinhTrangHoSo'].includes(key)));
+    const intakeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => ['ngayVaoLam','diaChiTamTru','emailCaNhan','tinhTrangHoSo','thamQuyen'].includes(key)));
     if (Object.keys(intakeUpdates).length) onIntakeInfoChange?.(intakeUpdates);
   };
 
@@ -243,6 +248,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       setGioiTinh(initialData.gioiTinh || 'Nam');
       setSoCCCD(initialData.soCCCD || '');
       setNgayCap(initialData.ngayCap || '');
+      setNgayHetHanCCCD(initialData.ngayHetHanCCCD || '');
+      setTinhTrangHonNhan(initialData.tinhTrangHonNhan || '');
       setNoiCap(initialData.noiCap || '');
       setQueQuan(initialData.queQuan || '');
       setDiaChiThuongTru(initialData.diaChiThuongTru || '');
@@ -301,6 +308,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     (Number(phuCapNangNhoc) || 0) +
     (Number(troCapDacThuFPT) || 0) +
     (Number(thuongNangLucAM) || 0) +
+    (Number(phuCapNangLuc) || 0) +
     (Number(phuCapLuuDong) || 0) +
     (Number(phuCapPhatSinh) || 0);
 
@@ -315,6 +323,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     ngaySinh,
     gioiTinh,
     soCCCD: soCCCD.trim(),
+    ngayHetHanCCCD,
+    tinhTrangHonNhan,
     ngayCap,
     noiCap,
     queQuan,
@@ -345,6 +355,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     thuongSangKien: Number(thuongSangKien) || 0,
     troCapDacThuFPT: Number(troCapDacThuFPT) || 0,
     thuongNangLucAM: Number(thuongNangLucAM) || 0,
+    phuCapNangLuc: Number(phuCapNangLuc) || 0,
     phuCapLuuDong: Number(phuCapLuuDong) || 0,
     phuCapCoDinh,
     phuCapPhatSinh: Number(phuCapPhatSinh) || 0,
@@ -379,10 +390,11 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       const pcNN = Number(emp.phuCapNangNhoc) || 0;
       const pcFPT = Number(emp.troCapDacThuFPT) || 0;
       const pcAM = Number(emp.thuongNangLucAM) || 0;
+      const pcNL = Number(emp.phuCapNangLuc) || 0;
       const pcLD = Number(emp.phuCapLuuDong) || 0;
       const pcPS = Number(emp.phuCapPhatSinh) || 0;
 
-      const pcTong = pcCoDinh + pcXX + pcMT + pcAT + pcKD + pcNN + pcFPT + pcAM + pcLD + pcPS;
+      const pcTong = pcCoDinh + pcXX + pcMT + pcAT + pcKD + pcNN + pcFPT + pcAM + pcNL + pcLD + pcPS;
       const tongThuNhap = lcb + pcTong;
 
       return {
@@ -394,6 +406,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         gioiTinh: emp.gioiTinh || '',
         soCCCD: emp.soCCCD || '',
         ngayCap: emp.ngayCap || '',
+        ngayHetHanCCCD: emp.ngayHetHanCCCD || '',
+        tinhTrangHonNhan: emp.tinhTrangHonNhan || '',
         noiCap: emp.noiCap || '',
         queQuan: emp.queQuan || '',
         diaChiThuongTru: emp.diaChiThuongTru || '',
@@ -411,6 +425,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         diaChiTamTru: emp.diaChiTamTru || '',
         emailCaNhan: emp.emailCaNhan || '',
         tinhTrangHoSo: emp.tinhTrangHoSo || '',
+        thamQuyen: emp.thamQuyen || '',
         luongCoBan: lcb,
         phuCapChucVu: pcCV,
         phuCapDienThoai: pcDT,
@@ -425,6 +440,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         thuongSangKien: pcSK,
         troCapDacThuFPT: pcFPT,
         thuongNangLucAM: pcAM,
+        phuCapNangLuc: pcNL,
         phuCapLuuDong: pcLD,
         phuCapCoDinh: pcCoDinh,
         phuCapPhatSinh: pcPS,
@@ -565,6 +581,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       thuongSangKien:setThuongSangKien, phuCapMoiTruong:setPhuCapMoiTruong, phuCapXangXe:setPhuCapXangXe,
       anToanVeSinhVien:setAnToanVeSinhVien, phuCapKinhDoanh:setPhuCapKinhDoanh, phuCapNangNhoc:setPhuCapNangNhoc,
       troCapDacThuFPT:setTroCapDacThuFPT, thuongNangLucAM:setThuongNangLucAM, phuCapLuuDong:setPhuCapLuuDong,
+      phuCapNangLuc:setPhuCapNangLuc,
       phuCapPhatSinh:setPhuCapPhatSinh, luongDongBHXH:setLuongDongBHXH,
     };
     Object.entries(adjusted).forEach(([key,value]) => setters[key as keyof BatchEmployeeDraft]?.(Number(value)));

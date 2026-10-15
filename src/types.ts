@@ -52,13 +52,20 @@ export interface ThanhVienGiaDinh {
 }
 
 export interface EmployeeIntakeInfo {
+  thamQuyen?: '' | 'Trưởng địa điểm' | 'Dinh dưỡng viên trưởng' | 'Giám sát trưởng';
   ngayVaoLam?: string;
   diaChiTamTru?: string;
   emailCaNhan?: string;
   tinhTrangHoSo?: string;
 }
 
-export interface NhanSuRecord extends EmployeeIntakeInfo {
+export interface EmployeeIdentityInfo {
+  tinhTrangHonNhan?: string;
+  ngayHetHanCCCD?: string;
+}
+
+export interface NhanSuRecord extends EmployeeIntakeInfo, EmployeeIdentityInfo {
+  phuCapNangLuc?: number;
   id: string;
   timestamp: string;
   userEmail: string;
@@ -112,7 +119,8 @@ export interface NhanSuRecord extends EmployeeIntakeInfo {
   thoiGianGuiEmail?: string;
 }
 
-export interface BatchEmployeeDraft extends EmployeeIntakeInfo {
+export interface BatchEmployeeDraft extends EmployeeIntakeInfo, EmployeeIdentityInfo {
+  phuCapNangLuc?: number;
   id: string;
   hoVaTen: string;
   ngaySinh: string;
@@ -181,7 +189,7 @@ export interface OptimizedImageFile {
   docType: 'cccd_truoc' | 'cccd_sau' | 'vneid_cu_tru' | 'so_yeu_ly_lich' | 'xac_nhan_cu_tru' | 'khac';
 }
 
-export interface GeminiExtractionResult {
+export interface GeminiExtractionResult extends EmployeeIdentityInfo {
   emailCaNhan?: string;
   hoVaTen: string;
   ngaySinh: string;

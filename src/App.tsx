@@ -571,21 +571,6 @@ export default function App() {
                   </div>
                 )}
                 <DocumentUploader
-                  images={images}
-                  onImagesChange={(newImgs) => {
-                    setImages(newImgs);
-                  }}
-                  onExtractAI={handleExtractAI}
-                  isProcessingAI={isProcessingAI}
-                  onProceedToStep2Direct={() => {
-                    if (images.length === 0) {
-                      showNotification('error', 'Vui lòng chọn hoặc chụp ít nhất một ảnh tài liệu.');
-                      return;
-                    }
-                    setBatchEmployees([]);
-                    setCurrentSopStep(2);
-                    showNotification('success', 'Đã chuyển sang Bước 2. Bạn có thể xem ảnh và biểu mẫu song song.');
-                  }}
                   batchEmployees={batchEmployees}
                   onBatchEmployeesChange={setBatchEmployees}
                   employeeGroups={employeeGroups}
@@ -601,6 +586,8 @@ export default function App() {
                         gioiTinh: first.gioiTinh,
                         soCCCD: first.soCCCD,
                         ngayCap: first.ngayCap,
+                        ngayHetHanCCCD: first.ngayHetHanCCCD,
+                        tinhTrangHonNhan: first.tinhTrangHonNhan,
                         noiCap: first.noiCap,
                         queQuan: first.queQuan,
                         diaChiThuongTru: first.diaChiThuongTru,

@@ -14,6 +14,7 @@ const fixedFields = [
   ['thuongChuyenCan','Thưởng chuyên cần'], ['thuongSangKien','Thưởng sáng kiến'],
 ] as const;
 const variableFields = [
+  ['phuCapNangLuc','Phụ cấp năng lực'],
   ['phuCapMoiTruong','PC môi trường'], ['phuCapXangXe','PC xăng xe'],
   ['anToanVeSinhVien','An toàn vệ sinh viên'], ['phuCapKinhDoanh','PC kinh doanh'],
   ['phuCapNangNhoc','PC nặng nhọc'], ['troCapDacThuFPT','Trợ cấp đặc thù FPT'],
@@ -50,6 +51,7 @@ export function EmployeeSalaryGrid({ employees, onChange, disabled }: Props) {
                 <details className="mt-2 text-[11px]"><summary className="cursor-pointer font-semibold text-indigo-700">Thông tin đã nhập</summary><dl className="mt-2 space-y-2 text-slate-600">
                   {[
                     ['Ngày sinh',employee.ngaySinh],['Giới tính',employee.gioiTinh],['Điện thoại',employee.soDienThoai],
+                    ['Tình trạng hôn nhân',employee.tinhTrangHonNhan],['Ngày hết hạn CCCD',employee.ngayHetHanCCCD],['Thẩm quyền',employee.thamQuyen],
                     ['Email cá nhân',employee.emailCaNhan],['Thường trú',employee.diaChiThuongTru],['Tạm trú',employee.diaChiTamTru],
                     ['Tình trạng hồ sơ',employee.tinhTrangHoSo],['Loại hợp đồng',employee.loaiHopDong],['Điểm làm việc',employee.diemLamViec],
                   ].map(([label,value]) => <div key={label}><dt className="text-slate-400">{label}</dt><dd className="break-words whitespace-pre-wrap">{value || 'Chưa nhập'}</dd></div>)}

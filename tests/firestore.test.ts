@@ -73,7 +73,7 @@ function headers(token: string) { return {'Content-Type':'application/json',Auth
 
 test('Step 4 save survives independent store instances and another device login, excluding uploads',async () => {
   const token = await login('tuyendung','tuyendung123');
-  const response = await fetch(`${urls[0]}/api/sheets/danh-sach-nhan-su`,{method:'POST',headers:headers(token),body:JSON.stringify({hoVaTen:'TEST FIRESTORE',soCCCD:'000000000001',ngayVaoLam:'2026-10-15',emailCaNhan:'test@example.com',luongCoBan:6000000,phuCapCoDinh:0,images:[{base64Data:'PRIVATE_IMAGE'}],pdf:'PRIVATE_PDF',thongTinGiaDinh:[{hoTen:'TEST FAMILY',quanHe:'Anh',image:'PRIVATE_IMAGE'}]})});
+  const response = await fetch(`${urls[0]}/api/sheets/danh-sach-nhan-su`,{method:'POST',headers:headers(token),body:JSON.stringify({hoVaTen:'TEST FIRESTORE',soCCCD:'000000000001',ngayVaoLam:'2026-10-15',emailCaNhan:'test@example.com',tinhTrangHonNhan:'Đã kết hôn',ngayHetHanCCCD:'15/04/2035',thamQuyen:'Trưởng địa điểm',phuCapNangLuc:250000,tongThuNhapDuKien:1,luongCoBan:6000000,phuCapCoDinh:0,images:[{base64Data:'PRIVATE_IMAGE'}],pdf:'PRIVATE_PDF',thongTinGiaDinh:[{hoTen:'TEST FAMILY',quanHe:'Anh',image:'PRIVATE_IMAGE'}]})});
   assert.equal(response.status,200);
   const saved = (await response.json()).record;
   const newDevice = await login('tuyendung','tuyendung123',1);
@@ -84,6 +84,11 @@ test('Step 4 save survives independent store instances and another device login,
   assert.equal(restored.ngayVaoLam,'2026-10-15');
   assert.equal(restored.phuCapCoDinh,0);
   assert.equal(restored.emailCaNhan,'test@example.com');
+  assert.equal(restored.tinhTrangHonNhan,'Đã kết hôn');
+  assert.equal(restored.ngayHetHanCCCD,'15/04/2035');
+  assert.equal(restored.thamQuyen,'Trưởng địa điểm');
+  assert.equal(restored.phuCapNangLuc,250000);
+  assert.equal(restored.tongThuNhapDuKien,6250000);
   assert.doesNotMatch(JSON.stringify([...documents.values()]),/PRIVATE_|base64|images|pdf/);
 });
 
@@ -131,6 +136,8 @@ test('admin update, CSV export and delete use the same durable Firestore records
   assert.equal(stored.hoVaTen,'UPDATED TEST');
   assert.equal(stored.userEmail,'tuyendung@congty.com');
   assert.equal(stored.images,undefined);
+  assert.equal(stored.phuCapNangLuc,250000);
+  assert.equal(stored.ngayHetHanCCCD,'15/04/2035');
   assert.equal(stored.thongTinGiaDinh[0].hoTen,'TEST FAMILY');
   const freshStore = new FirestoreRecordStore();
   const snapshot = await freshStore.get(id);
