@@ -136,6 +136,9 @@ export interface NhanSuRecord extends EmployeeIntakeInfo, EmployeeIdentityInfo, 
 }
 
 export interface BatchEmployeeDraft extends EmployeeIntakeInfo, EmployeeIdentityInfo, EmployeeHouseholdInfo {
+  extractionDocumentKey?: string;
+  extractionStatus?: 'waiting' | 'running' | 'success' | 'failed';
+  extractionError?: string;
   phuCapNangLuc?: number;
   id: string;
   hoVaTen: string;
@@ -220,6 +223,7 @@ export interface IntakeDraftSummary {
 }
 
 export interface OptimizedImageFile {
+  extractedText?: string;
   id: string;
   fileName: string;
   originalSize: number;

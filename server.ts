@@ -4,6 +4,7 @@ import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { randomUUID } from "node:crypto";
+import { extractWithFallback, openAIVision, ExtractionError } from "./backend/aiExtraction.js";
 import { recordStore, personnelFields, firestoreConfigured, StorageError } from "./backend/recordStore.js";
 import { draftStore } from './backend/draftStore.js';
 import { normalizeHouseholdMembers } from './src/utils/household.js';
@@ -1563,15 +1564,6 @@ app.post("/api/settings/admins", (req, res) => {
   }
 });
 
-// Danh sách các model Gemini hợp lệ theo hướng dẫn nền tảng (ưu tiên model có độ sẵn sàng cao)
-const GEMINI_CANDIDATE_MODELS = [
-  "gemini-3.8-flash",      // Model chính tiêu chuẩn, đa phương thức tốt nhất
-  "gemini-3.1-flash-lite", // Khả năng đa phương thức cao, tốc độ phản hồi nhanh
-  "gemini-flash-latest",   // Model alias mới nhất
-];
-
-let activeGeminiModel = "gemini-3.8-flash";
-
 // Hàm phân tích và tự động vá lỗi JSON khi Gemini phản hồi bị cắt ngắn hoặc lẫn ký tự lạ
 function safeParseExtractedJson(raw: string): any {
   if (!raw || typeof raw !== "string" || !raw.trim()) return {};
@@ -1655,12 +1647,13 @@ app.post("/api/ai/extract-documents", async (req, res) => {
       });
     }
 
-    const ai = getGeminiClient();
+    const ai = process.env.GEMINI_API_KEY ? getGeminiClient() : undefined;
+    if (!ai && !process.env.OPENAI_API_KEY) throw new ExtractionError("Chưa cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trên máy chủ.",503);
 
     // Chuẩn bị các image parts cho Gemini
     const parts: any[] = [];
 
-    images.forEach((img: { base64Data: string; mimeType?: string; docType?: string; fileName?: string }) => {
+    images.forEach((img: { base64Data: string; mimeType?: string; docType?: string; fileName?: string;extractedText?:string }) => {
       if (img && img.base64Data) {
         let cleanBase64 = String(img.base64Data);
         let mimeType = img.mimeType || "image/jpeg";
@@ -1695,6 +1688,7 @@ app.post("/api/ai/extract-documents", async (req, res) => {
         cleanBase64 = cleanBase64.replace(/[\r\n\s]+/g, "");
 
         if (cleanBase64.length > 20) {
+          if(mimeType==='application/pdf' && typeof img.extractedText==='string' && img.extractedText.length<=60_000) parts.push({text:`Văn bản tham khảo từ PDF (đối chiếu lại bố cục trong bản gốc):\n${img.extractedText}`});
           parts.push({
             inlineData: {
               mimeType,
@@ -1778,74 +1772,19 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
 
     parts.push({ text: promptText });
 
-    // Tự động thử qua danh sách model dự phòng (High-Availability Fallback) nếu gặp lỗi 503 UNAVAILABLE / 429
-    const modelsToTry = [
-      activeGeminiModel,
-      ...GEMINI_CANDIDATE_MODELS.filter((m) => m !== activeGeminiModel),
-    ];
-
-    let response: any = null;
-    let successfulModel = activeGeminiModel;
-    let lastError: any = null;
-    const deadline = Date.now() + 45_000;
-
-    for (const model of modelsToTry) {
-      if (Date.now() >= deadline) break;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        if (Date.now() >= deadline) break;
-        try {
-          console.log(`[Gemini Vision] Đang gọi model: ${model} (thử lần ${attempt + 1})...`);
-          const res = await ai.models.generateContent({
-            model,
-            contents: { parts },
-            config: {
-              httpOptions: { timeout: Math.max(1_000, Math.min(15_000, deadline - Date.now())) },
-              responseMimeType: "application/json",
-              maxOutputTokens: 8192,
-              temperature: 0.1,
-            },
-          });
-
-          if (res && res.text) {
-            response = res;
-            successfulModel = model;
-            activeGeminiModel = model; // Cập nhật model thành công cho các lần gọi kế tiếp
-            console.log(`[Gemini Vision] Trích xuất thành công với model: ${model}`);
-            break;
-          }
-        } catch (err: any) {
-          lastError = err;
-          const errMsg = String(err?.message || "");
-          console.warn(`[Gemini Vision] Model ${model} tạm thời bận (attempt ${attempt + 1}):`, errMsg);
-
-          const isTransient =
-            errMsg.includes("503") ||
-            errMsg.includes("UNAVAILABLE") ||
-            errMsg.includes("high demand") ||
-            errMsg.includes("429") ||
-            errMsg.includes("RESOURCE_EXHAUSTED") ||
-            errMsg.includes("overloaded");
-
-          if (isTransient && attempt < 2) {
-            // Chờ tăng dần: 500ms -> 1200ms rồi thử lại
-            await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
-            continue;
-          }
-          // Chuyển sang model dự phòng tiếp theo
-          break;
-        }
-      }
-
-      if (response) {
-        break;
-      }
-    }
-
-    if (!response) {
-      throw lastError || new Error("Gemini không trả về kết quả trích xuất. Vui lòng thử lại.");
-    }
-
-    const responseText = response.text || "{}";
+    const requestId = randomUUID();
+    const result = await extractWithFallback({
+      parts,
+      gemini: ai ? async (model,timeout) => {
+        const response = await ai.models.generateContent({model,contents:{parts},config:{httpOptions:{timeout},responseMimeType:"application/json",maxOutputTokens:8192}});
+        return response.text || '';
+      } : undefined,
+      openai: process.env.OPENAI_API_KEY ? (model,timeout) => openAIVision(parts,model,process.env.OPENAI_API_KEY!,timeout) : undefined,
+      openaiModel:process.env.OPENAI_VISION_MODEL,
+      log:event => console.info('[AI extraction]',JSON.stringify({requestId,...event})),
+    });
+    const successfulModel = result.model;
+    const responseText = result.text;
     const extractedData: any = safeParseExtractedJson(responseText);
     extractedData.thanhVienHoGiaDinh = normalizeHouseholdMembers(extractedData.thanhVienHoGiaDinh);
     extractedData.emailCaNhan = typeof extractedData.emailCaNhan === "string" ? extractedData.emailCaNhan.trim() : "";
@@ -1902,30 +1841,14 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
         matchedChucVu: salaryLookup.matchedChucVu,
       },
       modelUsed: successfulModel,
+      providerUsed: result.provider,
+      requestId,
       rawResponse: responseText,
     });
   } catch (error) {
-    const rawError = (error as Error)?.message || "";
-    console.warn("[Gemini Vision Handled Warning]:", rawError);
-    let friendlyMessage = "Không thể trích xuất tự động toàn bộ thông tin.";
-
-    if (rawError.includes("503") || rawError.includes("high demand") || rawError.includes("UNAVAILABLE")) {
-      friendlyMessage = "Hệ thống AI Gemini hiện đang có lượng truy cập cao.";
-    } else if (rawError.includes("429") || rawError.includes("RESOURCE_EXHAUSTED")) {
-      friendlyMessage = "Hạn mức yêu cầu AI tạm thời đạt giới hạn (Mã 429).";
-    } else if (rawError.includes("GEMINI_API_KEY")) {
-      friendlyMessage = "Chưa cấu hình biến môi trường GEMINI_API_KEY hợp lệ.";
-    } else if (rawError.includes("API_KEY_INVALID") || rawError.includes("API key not valid") || rawError.includes("401") || rawError.includes("403")) {
-      friendlyMessage = "Gemini API key không hợp lệ hoặc không có quyền truy cập. Vui lòng kiểm tra cấu hình GEMINI_API_KEY trên Vercel.";
-    } else if (/timeout|timed out|aborted/i.test(rawError)) {
-      friendlyMessage = "AI phản hồi quá thời gian chờ. Vui lòng thử lại với ít tài liệu hơn.";
-    } else if (rawError.includes("Unexpected end of JSON input") || rawError.includes("JSON") || rawError.includes("pattern")) {
-      friendlyMessage = "Ảnh chụp có dung lượng lớn hoặc định dạng đặc thù.";
-    } else {
-      friendlyMessage = "Gemini không xử lý được tài liệu. Vui lòng thử lại hoặc kiểm tra nhật ký máy chủ.";
-    }
-
-    res.status(rawError.includes("GEMINI_API_KEY") ? 503 : 502).json({ success: false, error: friendlyMessage });
+    const failure = error instanceof ExtractionError ? error : new ExtractionError('Không đọc được phản hồi AI. Hãy thử lại riêng hồ sơ này.',502,true);
+    if (failure.retryAfterSeconds) res.set('Retry-After',String(failure.retryAfterSeconds));
+    res.status(failure.status).json({success:false,error:failure.message,retryable:failure.retryable,retryAfterSeconds:failure.retryAfterSeconds});
   }
 });
 

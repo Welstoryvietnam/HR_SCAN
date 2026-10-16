@@ -1,16 +1,17 @@
 import { OptimizedImageFile } from '../types';
+import { readPDFText } from './pdfText';
 
 /**
  * Tối ưu hóa ảnh phía Client trước khi gửi lên Gemini API:
- * - Resize chiều rộng tối đa 1024px (giữ đúng tỉ lệ khung hình)
- * - Nén sang định dạng JPEG với chất lượng 0.8 (80%)
+ * - Giữ chữ nhỏ: tối đa 1800px ngang / 3200px dọc, giữ tỉ lệ
+ * - JPEG thích ứng, giữ PNG khi PNG nhỏ hơn; PDF giữ bản gốc
  * - Chuyển sang Base64 chuẩn và đo lường dung lượng tiết kiệm
  */
 export async function optimizeImageFile(
   file: File,
   docType: OptimizedImageFile['docType'] = 'khac',
-  maxWidth: number = 1024,
-  quality: number = 0.8
+  maxWidth: number = 1800,
+  quality: number = 0.85
 ): Promise<OptimizedImageFile> {
   return new Promise((resolve, reject) => {
     try {
@@ -18,7 +19,7 @@ export async function optimizeImageFile(
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
         const reader = new FileReader();
         reader.onerror = () => reject(new Error(`Không thể đọc file PDF: ${file.name}`));
-        reader.onload = (event) => {
+        reader.onload = async (event) => {
           try {
             const dataUrl = event.target?.result as string;
             const rawBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
@@ -34,6 +35,7 @@ export async function optimizeImageFile(
               base64Data: base64Data,
               dataUrl: dataUrl,
               docType: docType,
+              extractedText: await readPDFText(file),
             };
             resolve(result);
           } catch (err) {
@@ -62,13 +64,14 @@ export async function optimizeImageFile(
             let width = img.width;
             let height = img.height;
 
-            // Tính toán tỉ lệ sao cho chiều rộng tối đa 1024px
-            // Nếu là ảnh tài liệu khổ dọc có chiều cao quá lớn, vẫn đảm bảo chiều rộng <= 1024px
+            // Preserve aspect ratio and enough detail for Vietnamese diacritics.
             if (width > maxWidth) {
               const ratio = maxWidth / width;
               width = maxWidth;
               height = Math.round(height * ratio);
             }
+            // Bound tall screenshots too, while preserving their aspect ratio.
+            if(height>3200) {width=Math.round(width*3200/height);height=3200;}
 
             // Tạo canvas để nén
             const canvas = document.createElement('canvas');
@@ -87,8 +90,15 @@ export async function optimizeImageFile(
             // Vẽ ảnh lên canvas với kích thước mới
             ctx.drawImage(img, 0, 0, width, height);
 
-            // Xuất ra định dạng JPEG chất lượng 0.8
-            const dataUrl = canvas.toDataURL('image/jpeg', quality);
+            // Adapt quality to bytes while preserving readable resolution.
+            let dataUrl = canvas.toDataURL('image/jpeg', quality);
+            // Keep small screenshots lossless when PNG is smaller than JPEG.
+            if(file.type==='image/png') {
+              const png=canvas.toDataURL('image/png');
+              if(png.length<dataUrl.length) dataUrl=png;
+            }
+            // Adaptive JPEG compression without shrinking tiny text further.
+            for(let nextQuality=quality-0.08;dataUrl.length>850_000 && nextQuality>=0.65;nextQuality-=0.08) dataUrl=canvas.toDataURL('image/jpeg',nextQuality);
             // Tách phần Base64 thuần túy an toàn trên mọi trình duyệt (Safari/Chrome/Firefox)
             const rawBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
             const base64Data = rawBase64.replace(/[\r\n\s]+/g, '');
@@ -103,7 +113,7 @@ export async function optimizeImageFile(
               compressedSize: compressedSize,
               width: width,
               height: height,
-              mimeType: 'image/jpeg',
+              mimeType: dataUrl.startsWith('data:image/png') ? 'image/png' : 'image/jpeg',
               base64Data: base64Data,
               dataUrl: dataUrl,
               docType: docType,

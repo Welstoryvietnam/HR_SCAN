@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test tests/vercel-api.test.ts tests/api-helper.test.ts tests/firestore.test.ts tests/personnel-export.test.ts tests/dashboard-stats.test.ts tests/household-export.test.ts",
+    "test": "node --import tsx --test tests/ai-resilience.test.ts tests/vercel-api.test.ts tests/api-helper.test.ts tests/firestore.test.ts tests/personnel-export.test.ts tests/dashboard-stats.test.ts tests/household-export.test.ts",
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
@@ -20,6 +20,7 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "pdfjs-dist": "^6.4.299",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",

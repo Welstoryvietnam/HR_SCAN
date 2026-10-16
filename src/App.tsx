@@ -70,6 +70,8 @@ export default function App() {
   const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [activeDraft,setActiveDraft] = useState<ActiveDraft|null>(null);
+  const activeDraftRef = useRef<ActiveDraft|null>(null);
+  activeDraftRef.current=activeDraft;
   const [drafts,setDrafts] = useState<IntakeDraftSummary[]>([]);
   const [draftBusy,setDraftBusy] = useState(false);
   const [draftStatus,setDraftStatus] = useState('');
@@ -110,6 +112,23 @@ export default function App() {
       showNotification('success','Đã lưu tạm cả thông tin và tài liệu lên cloud. Bạn có thể mở trên thiết bị khác.');
     } catch (error) {if (draftOwner.current === owner) setDraftError((error as Error).message);}
     finally {if (draftOwner.current === owner) setDraftBusy(false);}
+  };
+  const saveExtractionCheckpoint = async (employees:BatchEmployeeDraft[]) => {
+    const owner=currentUser?.email;
+    if(!owner || draftCompleted || draftOwner.current!==owner) throw new Error('Phiên làm việc đã thay đổi.');
+    setDraftStatus('Đang lưu kết quả quét lên cloud…');setDraftSavedAt('');setDraftError('');
+    try {
+      const saved=await saveIntakeDraft({step:1,employees,groups:employeeGroups,form:draftFormState},activeDraftRef.current,
+        draft=>{if(draftOwner.current===owner) {activeDraftRef.current=draft;setActiveDraft(draft);}},
+        message=>{if(draftOwner.current===owner) setDraftStatus(message);});
+      if(draftOwner.current!==owner) return;
+      const active={id:saved.id,version:saved.version};activeDraftRef.current=active;setActiveDraft(active);
+      setDraftSavedAt(saved.timestamp);setDraftStatus('Đã tự lưu tiến độ quét lên cloud.');
+      setDrafts(previous=>[saved,...previous.filter(item=>item.id!==saved.id)]);
+    } catch(error) {
+      if(draftOwner.current===owner) setDraftError((error as Error).message);
+      throw error;
+    }
   };
   const openDraft = async (draft: IntakeDraftSummary) => {
     if ((batchEmployees.length || employeeGroups.some(group => group.label || group.documents.length)) && !window.confirm('Mở bản nháp sẽ thay nội dung đang nhập trên màn hình. Bạn đã lưu tạm các thay đổi cần giữ chưa?')) return;
@@ -566,7 +585,7 @@ export default function App() {
         currentUser={currentUser}
         onLogout={handleLogout}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={tab=>{if(uploaderBusy) {showNotification('error','Hãy tạm dừng quét trước khi chuyển màn hình.');return;}setActiveTab(tab);}}
         recordsCount={records.length}
       />
 
@@ -637,6 +656,7 @@ export default function App() {
             <SopProgressHeader
               currentStep={currentSopStep}
               onSelectStep={(step) => {
+                if(uploaderBusy) {showNotification('error','Hãy tạm dừng quét trước khi chuyển bước.');return;}
                 changeSopStep(step);
               }}
               hasImages={images.length > 0}
@@ -670,6 +690,7 @@ export default function App() {
                   onBusyChange={setUploaderBusy}
                   batchEmployees={batchEmployees}
                   onBatchEmployeesChange={setBatchEmployees}
+                  onCheckpoint={saveExtractionCheckpoint}
                   employeeGroups={employeeGroups}
                   onEmployeeGroupsChange={setEmployeeGroups}
                   onProceedToStep2WithBatch={(list) => {
