@@ -74,6 +74,7 @@ export interface EmployeeIntakeInfo {
 }
 
 export interface EmployeeIdentityInfo {
+  extractionMethod?: 'ocr' | 'vision' | 'manual';
   aiVisionExtracted?: boolean;
   tinhTrangHonNhan?: string;
   ngayHetHanCCCD?: string;
@@ -223,6 +224,7 @@ export interface IntakeDraftSummary {
 }
 
 export interface OptimizedImageFile {
+  ocrPages?: {page:number;text:string;confidence:number;lines:{text:string;x:number;y:number;width:number;height:number}[]}[];
   extractedText?: string;
   id: string;
   fileName: string;
@@ -236,7 +238,7 @@ export interface OptimizedImageFile {
   docType: 'cccd_truoc' | 'cccd_sau' | 'vneid_cu_tru' | 'so_yeu_ly_lich' | 'xac_nhan_cu_tru' | 'khac';
 }
 
-export interface GeminiExtractionResult extends EmployeeIdentityInfo, EmployeeHouseholdInfo {
+export interface DocumentExtractionResult extends EmployeeIdentityInfo, EmployeeHouseholdInfo {
   emailCaNhan?: string;
   hoVaTen: string;
   ngaySinh: string;

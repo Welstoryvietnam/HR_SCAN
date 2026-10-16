@@ -1,5 +1,5 @@
-import type { BatchEmployeeDraft, EmployeeDocumentGroup, GeminiExtractionResult } from '../types';
-export const documentKey = (group:EmployeeDocumentGroup) => JSON.stringify(group.documents.map(doc=>[doc.id,doc.docType,doc.base64Data.length]));
+import type { BatchEmployeeDraft, EmployeeDocumentGroup, DocumentExtractionResult } from '../types';
+export const documentKey = (group:EmployeeDocumentGroup) => 'ocr-v1:'+JSON.stringify(group.documents.map(doc=>[doc.id,doc.docType,doc.base64Data.length]));
 export function prepareEmployees(groups:EmployeeDocumentGroup[],previous:BatchEmployeeDraft[]):BatchEmployeeDraft[] {
   return groups.map(group=>{
     const old = previous.find(employee=>employee.id===group.id);
@@ -9,7 +9,7 @@ export function prepareEmployees(groups:EmployeeDocumentGroup[],previous:BatchEm
       aiVisionExtracted:unchanged ? old?.aiVisionExtracted : false};
   });
 }
-export type ExtractReply = {ok:boolean;data?:{success:boolean;data?:GeminiExtractionResult;error?:string;retryable?:boolean;retryAfterSeconds?:number};error?:string};
+export type ExtractReply = {ok:boolean;data?:{success:boolean;data?:DocumentExtractionResult;error?:string;retryable?:boolean;retryAfterSeconds?:number};error?:string};
 export async function runBatchExtraction(options:{groups:EmployeeDocumentGroup[];previous:BatchEmployeeDraft[];
   extract:(group:EmployeeDocumentGroup)=>Promise<ExtractReply>;
   progress:(employees:BatchEmployeeDraft[],message:string)=>Promise<void>|void;
@@ -30,16 +30,16 @@ export async function runBatchExtraction(options:{groups:EmployeeDocumentGroup[]
     for(let attempt=0;attempt<3;attempt++) {
       if(options.cancelled?.()) break;
       employees[index]={...employees[index],extractionStatus:'running',extractionError:''};
-      await publish(`Đang quét nhân viên ${index+1}/${options.groups.length}${attempt ? ` (thử lại ${attempt})` : ''}…`);
+      await publish(`Đang OCR nhân viên ${index+1}/${options.groups.length}${attempt ? ` (thử lại ${attempt})` : ''}…`);
       let reply:ExtractReply;
       try { reply=await options.extract(group); } catch {reply={ok:false,error:'Mất kết nối. Hãy thử lại riêng hồ sơ này.'};}
       if(reply.ok && reply.data?.success && reply.data.data) {
         employees[index]={...employees[index],...reply.data.data,id:group.id,hoVaTen:reply.data.data.hoVaTen || employees[index].hoVaTen,
-          extractionStatus:'success',extractionError:'',extractionDocumentKey:documentKey(group),aiVisionExtracted:true};
+          extractionStatus:'success',extractionError:'',extractionDocumentKey:documentKey(group),aiVisionExtracted:reply.data.data.extractionMethod!=='ocr'};
         await publish(`Đã quét xong nhân viên ${index+1}/${options.groups.length}.`);break;
       }
-      const message=reply.data?.error || reply.error || 'Không nhận được kết quả AI.';
-      employees[index]={...employees[index],extractionStatus:'failed',extractionError:message,cauHoiLamRo:[`AI chưa hoàn thành: ${message}`]};
+      const message=reply.data?.error || reply.error || 'Không nhận được kết quả OCR.';
+      employees[index]={...employees[index],extractionStatus:'failed',extractionError:message,cauHoiLamRo:[`OCR chưa hoàn thành: ${message}`]};
       const retryAfter=reply.data?.retryAfterSeconds || 0;
       if(!reply.data?.retryable || attempt===2 || retryAfter>30) {await publish(message);break;}
       const delay=Math.max(retryAfter*1000,2000*2**attempt+Math.round((options.random || Math.random)()*1000));

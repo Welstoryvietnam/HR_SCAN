@@ -1,10 +1,10 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { randomUUID } from "node:crypto";
-import { extractWithFallback, openAIVision, ExtractionError } from "./backend/aiExtraction.js";
+import { recognizeImage, OCRError } from "./backend/ocrService.js";
+import { parseOCRProfile } from "./backend/ocrProfile.js";
 import { recordStore, personnelFields, firestoreConfigured, StorageError } from "./backend/recordStore.js";
 import { draftStore } from './backend/draftStore.js';
 import { normalizeHouseholdMembers } from './src/utils/household.js';
@@ -18,7 +18,7 @@ const PORT = 3000;
 
 app.get("/api/health", (_req, res) => {
   res.set("Cache-Control", "no-store");
-  res.json({ success: true, service: "hr-scan-api", geminiConfigured: Boolean(process.env.GEMINI_API_KEY) });
+  res.json({ success: true, service: "hr-scan-api", ocrEngine: "tesseract", ocrLanguages: ["vie","eng"] });
 });
 
 app.get("/api/storage/status", (_req, res) => {
@@ -41,22 +41,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-// Lazy/safe initialization for GoogleGenAI
-function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Biến môi trường GEMINI_API_KEY chưa được cấu hình. Vui lòng kiểm tra Secrets.");
-  }
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
-    },
-  });
-}
 
 // -------------------------------------------------------------
 // DỮ LIỆU BẢNG TÍNH MÔ PHỎNG (SHEETS IN-MEMORY DATABASE)
@@ -1564,293 +1548,33 @@ app.post("/api/settings/admins", (req, res) => {
   }
 });
 
-// Hàm phân tích và tự động vá lỗi JSON khi Gemini phản hồi bị cắt ngắn hoặc lẫn ký tự lạ
-function safeParseExtractedJson(raw: string): any {
-  if (!raw || typeof raw !== "string" || !raw.trim()) return {};
-  const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+// Dedicated, authenticated OCR. Images never go to a generative AI provider.
+app.use('/api/ocr',requirePersonnelSession);
+app.post('/api/ocr/recognize',async(req,res)=>{
+  const requestId=randomUUID();const start=Date.now();
   try {
-    return JSON.parse(cleaned);
-  } catch (e) {}
-
-  // Tìm cặp ngoặc { ... } đầy đủ
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    try {
-      return JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
-    } catch (e) {}
-  }
-
-  // Xử lý JSON bị cắt ngắn (Truncated JSON) bằng cách cân bằng dấu ngoặc và chuỗi
-  let candidate = cleaned;
-  if (firstBrace !== -1) {
-    candidate = cleaned.substring(firstBrace);
-  }
-  // Cắt bỏ thuộc tính dở dang ở cuối
-  candidate = candidate.replace(/,\s*"[^"]*":?\s*$/, "").replace(/,\s*$/, "");
-
-  // Cân bằng dấu ngoặc kép
-  const quotes = (candidate.match(/"/g) || []).length;
-  if (quotes % 2 !== 0) {
-    candidate += '"';
-  }
-
-  // Cân bằng dấu ngoặc vuông và nhọn
-  const openBrackets = (candidate.match(/\[/g) || []).length;
-  const closeBrackets = (candidate.match(/\]/g) || []).length;
-  for (let i = 0; i < Math.max(0, openBrackets - closeBrackets); i++) candidate += "]";
-
-  const openBraces = (candidate.match(/\{/g) || []).length;
-  const closeBraces = (candidate.match(/\}/g) || []).length;
-  for (let i = 0; i < Math.max(0, openBraces - closeBraces); i++) candidate += "}";
-
-  try {
-    return JSON.parse(candidate);
-  } catch (e) {}
-
-  // Trích xuất fallback bằng Regex cho các trường chính
-  const data: any = {};
-  const regexFields = [
-    "hoVaTen",
-    "ngaySinh",
-    "gioiTinh",
-    "soCCCD",
-    "ngayCap",
-    "ngayHetHanCCCD",
-    "tinhTrangHonNhan",
-    "noiCap",
-    "queQuan",
-    "diaChiThuongTru",
-    "nguonDiaChi",
-    "ghiChuSapNhap",
-    "soDienThoai",
-    "khoi",
-    "ban",
-    "phong",
-    "chucVu",
-    "congViecDuKien"
-  ];
-  for (const f of regexFields) {
-    const m = cleaned.match(new RegExp(`"${f}"\\s*:\\s*"([^"]*)"`));
-    if (m) data[f] = m[1];
-  }
-  return data;
-}
-
-// 1. GỌI GEMINI API TRÍCH XUẤT HỒ SƠ NHÂN SỰ TỪ MẢNG ẢNH ĐÃ NÉN (MULTIMODAL) CÓ CƠ CHẾ DỰ PHÒNG CHỐNG LỖI 503
-app.post("/api/ai/extract-documents", async (req, res) => {
-  try {
-    const { images } = req.body;
-    if (!images || !Array.isArray(images) || images.length === 0) {
-      return res.status(400).json({
-        error: "Danh sách hình ảnh không hợp lệ. Vui lòng gửi ít nhất 1 hình ảnh.",
-      });
-    }
-
-    const ai = process.env.GEMINI_API_KEY ? getGeminiClient() : undefined;
-    if (!ai && !process.env.OPENAI_API_KEY) throw new ExtractionError("Chưa cấu hình GEMINI_API_KEY hoặc OPENAI_API_KEY trên máy chủ.",503);
-
-    // Chuẩn bị các image parts cho Gemini
-    const parts: any[] = [];
-
-    images.forEach((img: { base64Data: string; mimeType?: string; docType?: string; fileName?: string;extractedText?:string }) => {
-      if (img && img.base64Data) {
-        let cleanBase64 = String(img.base64Data);
-        let mimeType = img.mimeType || "image/jpeg";
-
-        // Tách bỏ tiền tố Data URI nếu còn sót (data:image/...;base64,)
-        if (cleanBase64.includes(",")) {
-          const match = cleanBase64.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
-            mimeType = match[1];
-            cleanBase64 = match[2];
-          } else {
-            cleanBase64 = cleanBase64.split(",")[1];
-          }
-        }
-
-        // Chuẩn hóa MIME type chuẩn theo Google GenAI
-        if (mimeType.toLowerCase().includes("pdf")) {
-          mimeType = "application/pdf";
-        } else if (mimeType.toLowerCase().includes("png")) {
-          mimeType = "image/png";
-        } else if (mimeType.toLowerCase().includes("webp")) {
-          mimeType = "image/webp";
-        } else if (mimeType.toLowerCase().includes("heic")) {
-          mimeType = "image/heic";
-        } else if (mimeType.toLowerCase().includes("heif")) {
-          mimeType = "image/heif";
-        } else {
-          mimeType = "image/jpeg";
-        }
-
-        // Loại bỏ khoảng trắng, dấu xuống dòng hoặc ký tự rác
-        cleanBase64 = cleanBase64.replace(/[\r\n\s]+/g, "");
-
-        if (cleanBase64.length > 20) {
-          if(mimeType==='application/pdf' && typeof img.extractedText==='string' && img.extractedText.length<=60_000) parts.push({text:`Văn bản tham khảo từ PDF (đối chiếu lại bố cục trong bản gốc):\n${img.extractedText}`});
-          parts.push({
-            inlineData: {
-              mimeType,
-              data: cleanBase64,
-            },
-          });
-        }
-      }
-    });
-
-    if (parts.length === 0) {
-      return res.status(400).json({ error: "Không tìm thấy dữ liệu ảnh Base64 hợp lệ." });
-    }
-
-    // Prompt ngắn gọn, súc tích, tuân thủ nghiêm ngặt SOP Bước 2: KHÔNG TỰ SUY ĐOÁN & ƯU TIÊN VNeID
-    const promptText = `Bạn là Trợ lý AI chuyên môn trích xuất hồ sơ nhân sự theo chuẩn quy trình SOP.
-NHIỆM VỤ BƯỚC 2: Trích xuất thông tin của nhân viên từ các tài liệu đính kèm (Ảnh chụp màn hình ứng dụng VNeID, CCCD 2 mặt, Sơ yếu lý lịch, Giấy xác nhận cư trú, CV ứng tuyển, hoặc tệp PDF tài liệu giấy nhiều trang).
-
-QUY TẮC ĐỐI VỚI TỆP PDF / CV NHIỀU TRANG:
-- Hãy rà soát TOÀN BỘ CÁC TRANG của tệp PDF (bao gồm CV ứng tuyển hoặc hồ sơ xin việc nhiều trang) để tìm kiếm và tổng hợp đầy đủ các trường thông tin cần thiết.
-- Trích xuất thông tin cá nhân cơ bản như Họ tên, ngày sinh, số điện thoại, email, địa chỉ từ các trang thông tin liên hệ.
-- Trích xuất vị trí ứng tuyển / công việc dự kiến ("congViecDuKien" hoặc "chucVu") từ tiêu đề CV hoặc phần định hướng nghề nghiệp.
-- Trích xuất thông tin người thân / gia đình ("thongTinGiaDinh") nếu có liệt kê trong sơ yếu lý lịch hoặc CV.
-
-QUY TẮC ĐẶC BIỆT VỀ VNeID & ĐỊA CHỈ HÀNH CHÍNH (ƯU TIÊN VNeID):
-- NGUYÊN TẮC BẮT BUỘC: Nếu trong danh sách ảnh có ảnh chụp màn hình ứng dụng VNeID (mục cư trú, quê quán, thông tin định danh), BẮT BUỘC ƯU TIÊN TUYỆT ĐỐI lấy "diaChiThuongTru" và "queQuan" từ màn hình VNeID, vì VNeID chứa thông tin đã cập nhật theo đơn vị hành chính mới nhất sau các đợt sáp nhập cấp xã/phường/quận/huyện/tỉnh.
-- Nếu KHÔNG có ảnh VNeID mà chỉ có CCCD, đọc địa chỉ trên mặt CCCD và HR sẽ kiểm tra/cập nhật theo đơn vị hành chính mới.
-- Thiết lập trường "nguonDiaChi": "VNeID" (nếu có ảnh màn hình VNeID) hoặc "CCCD" (nếu chỉ đọc từ mặt thẻ CCCD).
-- Thiết lập trường "ghiChuSapNhap": ghi chú rõ nguồn gốc (ví dụ: "Đã cập nhật theo VNeID đơn vị mới sau sáp nhập" hoặc "Từ mặt CCCD - Cần HR rà soát sáp nhập mới").
-
-QUY TẮC BẮT BUỘC VỀ ĐỘ CHÍNH XÁC (ANTI-HALLUCINATION):
-- Nếu có bất kỳ thông tin nào bị mờ, bị che khuất, không đọc được hoặc KHÔNG CÓ trong tài liệu: TUYỆT ĐỐI KHÔNG ĐƯỢC TỰ SUY ĐOÁN hay bịa đặt kết quả.
-- Khi một thông tin không rõ hoặc thiếu: để giá trị là chuỗi rỗng "", đồng thời thêm tên trường vào mảng "thongTinChuaRo" và đặt câu hỏi cụ thể trong mảng "cauHoiLamRo" để hỏi lại người dùng.
-
-Yêu cầu định dạng:
-- hoVaTen: VIẾT HOA toàn bộ tiếng Việt có dấu (nếu rõ), nếu mờ/không rõ thì để "".
-- ngaySinh, ngayCap: định dạng DD/MM/YYYY.
-- ngayHetHanCCCD: đọc trực tiếp ngày hết hạn / Có giá trị đến trên CCCD theo DD/MM/YYYY. Chỉ ghi "Không thời hạn" khi tài liệu ghi rõ; không tính hạn từ tuổi hoặc ngày cấp. Không thấy thì để "".
-- tinhTrangHonNhan: đọc tình trạng hôn nhân ghi rõ trong sơ yếu lý lịch hoặc tài liệu của chính nhân viên. Không suy luận từ người thân, vợ/chồng, tuổi hay giới tính. Không thấy thì để "".
-- gioiTinh: "Nam" hoặc "Nữ" (nếu có căn cứ rõ).
-- soCCCD: chuỗi 12 chữ số (chỉ ghi khi nhận diện đầy đủ 12 số, không đoán mò).
-- nguonDiaChi: "VNeID" hoặc "CCCD".
-- ghiChuSapNhap: tóm tắt đơn vị hành chính sau sáp nhập.
-- chucVu: tên chức vụ cụ thể phát hiện trong hồ sơ/CV nếu có, không có thì để "".
-- emailCaNhan: chỉ lấy email liên hệ của chính nhân viên nhìn thấy rõ trong ảnh hoặc CV; không lấy email nhà tuyển dụng, không suy đoán; không có thì để "".
-- khoi, ban, phong: phân cấp phòng ban nếu có trong đơn/CV/tài liệu, nếu không có thì để "".
-- thongTinGiaDinh: mảng người thân gồm { "quanHe", "hoTen", "namSinh", "ngheNghiep" } nếu có trong Sơ yếu lý lịch hoặc CV.
-- thanhVienHoGiaDinh: mảng thành viên hộ gia đình chỉ lấy từ thông tin cư trú/hộ gia đình trên VNeID. Rà soát tất cả ảnh/trang VNeID của cùng nhân viên; gộp các dòng trùng của cùng một người, không bỏ sót thành viên được liệt kê (kể cả chủ hộ và chính nhân viên nếu xuất hiện). Mỗi dòng gồm { "hoTen", "ngaySinh", "quanHeVoiChuHo", "gioiTinh", "diaChiThuongTru", "quocTich", "danToc" }. Ngày sinh đủ ngày/tháng/năm ghi DD/MM/YYYY; nếu chỉ thấy năm thì giữ đúng năm, không thêm 01/01. quanHeVoiChuHo là quan hệ với CHỦ HỘ ghi trên VNeID, tuyệt đối không lấy quan hệ người thân với nhân viên từ sơ yếu lý lịch/CV để thay thế. Không suy đoán giới tính từ tên, không mặc định quốc tịch Việt Nam hoặc dân tộc Kinh. diaChiThuongTru của thành viên chỉ ghi khi đọc rõ trên VNeID, không dùng quê quán, nơi sinh hoặc tạm trú. Không có dữ liệu VNeID hộ gia đình thì trả mảng rỗng []. Mọi trường thiếu/mờ để "" và thêm câu hỏi làm rõ; không tự thêm người không được liệt kê. Giữ thongTinGiaDinh và thanhVienHoGiaDinh riêng biệt.
-- mucDoTinCay: "CAO" nếu đọc rõ các trường chính (Họ tên, CCCD hoặc thông tin cá nhân cốt lõi); "CAN_XAC_NHAN" nếu có từ 1-3 trường mờ/thiếu; "CHUA_RO" nếu ảnh/tệp quá mờ hoặc thiếu tài liệu chính.
-
-Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong markdown tick:
-{
-  "hoVaTen": "",
-  "ngaySinh": "",
-  "gioiTinh": "Nam",
-  "soCCCD": "",
-  "ngayCap": "",
-  "ngayHetHanCCCD": "",
-  "tinhTrangHonNhan": "",
-  "noiCap": "",
-  "queQuan": "",
-  "diaChiThuongTru": "",
-  "nguonDiaChi": "VNeID",
-  "ghiChuSapNhap": "",
-  "soDienThoai": "",
-  "emailCaNhan": "",
-  "khoi": "",
-  "ban": "",
-  "phong": "",
-  "congViecDuKien": "",
-  "chucVu": "",
-  "thongTinGiaDinh": [
-    { "quanHe": "", "hoTen": "", "namSinh": "", "ngheNghiep": "" }
-  ],
-  "thanhVienHoGiaDinh": [],
-  "ghiChu": "",
-  "thongTinChuaRo": [],
-  "cauHoiLamRo": [],
-  "mucDoTinCay": "CAO"
-}`;
-
-    parts.push({ text: promptText });
-
-    const requestId = randomUUID();
-    const result = await extractWithFallback({
-      parts,
-      gemini: ai ? async (model,timeout) => {
-        const response = await ai.models.generateContent({model,contents:{parts},config:{httpOptions:{timeout},responseMimeType:"application/json",maxOutputTokens:8192}});
-        return response.text || '';
-      } : undefined,
-      openai: process.env.OPENAI_API_KEY ? (model,timeout) => openAIVision(parts,model,process.env.OPENAI_API_KEY!,timeout) : undefined,
-      openaiModel:process.env.OPENAI_VISION_MODEL,
-      log:event => console.info('[AI extraction]',JSON.stringify({requestId,...event})),
-    });
-    const successfulModel = result.model;
-    const responseText = result.text;
-    const extractedData: any = safeParseExtractedJson(responseText);
-    extractedData.thanhVienHoGiaDinh = normalizeHouseholdMembers(extractedData.thanhVienHoGiaDinh);
-    extractedData.emailCaNhan = typeof extractedData.emailCaNhan === "string" ? extractedData.emailCaNhan.trim() : "";
-    for (const field of ['ngayHetHanCCCD','tinhTrangHonNhan']) {
-      extractedData[field] = typeof extractedData[field] === 'string' ? extractedData[field].trim() : '';
-    }
-
-    // Đảm bảo Họ tên được viết hoa
-    if (extractedData.hoVaTen) {
-      extractedData.hoVaTen = String(extractedData.hoVaTen).toUpperCase().trim();
-    }
-
-    if (!Array.isArray(extractedData.thongTinChuaRo)) {
-      extractedData.thongTinChuaRo = [];
-    }
-    if (!Array.isArray(extractedData.cauHoiLamRo)) {
-      extractedData.cauHoiLamRo = [];
-    }
-
-    // Tự động kiểm tra phát hiện các trường bắt buộc nếu còn thiếu hoặc rỗng
-    const requiredCheck: Array<{ field: string; label: string; question: string }> = [
-      { field: 'hoVaTen', label: 'Họ và tên', question: 'Không phát hiện rõ Họ và tên trên tài liệu, vui lòng xác nhận hoặc nhập chính xác.' },
-      { field: 'soCCCD', label: 'Số CCCD (12 số)', question: 'Ảnh chưa rõ hoặc thiếu số CCCD 12 chữ số, vui lòng kiểm tra lại.' },
-      { field: 'ngaySinh', label: 'Ngày sinh', question: 'Chưa xác định rõ ngày sinh (DD/MM/YYYY), vui lòng bổ sung.' },
-      { field: 'diaChiThuongTru', label: 'Địa chỉ thường trú', question: 'Địa chỉ thường trú bị mờ hoặc chưa có, vui lòng xác nhận lại.' },
-      { field: 'ngayCap', label: 'Ngày cấp CCCD', question: 'Mặt sau CCCD không thấy rõ ngày cấp, vui lòng cung cấp ngày cấp.' },
-      { field: 'noiCap', label: 'Nơi cấp CCCD', question: 'Chưa rõ nơi cấp CCCD, vui lòng xác nhận lại.' }
-    ];
-
-    requiredCheck.forEach((item) => {
-      if (!extractedData[item.field] || String(extractedData[item.field]).trim() === '') {
-        if (!extractedData.thongTinChuaRo.includes(item.label)) {
-          extractedData.thongTinChuaRo.push(item.label);
-          extractedData.cauHoiLamRo.push(item.question);
-        }
-      }
-    });
-
-    if (extractedData.thongTinChuaRo.length > 0) {
-      extractedData.mucDoTinCay = extractedData.thongTinChuaRo.length > 2 ? 'CHUA_RO' : 'CAN_XAC_NHAN';
-    } else {
-      extractedData.mucDoTinCay = 'CAO';
-    }
-
-    // Tra cứu lương tiêu chuẩn dự kiến theo chức vụ trích xuất được
-    const salaryLookup = timLuongTheoChucVu(extractedData.chucVu || extractedData.congViecDuKien || "");
-
-    res.json({
-      success: true,
-      data: {
-        ...extractedData,
-        suggestedLuongCoBan: salaryLookup.luongCoBan,
-        suggestedPhuCapCoDinh: salaryLookup.phuCapCoDinh,
-        matchedChucVu: salaryLookup.matchedChucVu,
-      },
-      modelUsed: successfulModel,
-      providerUsed: result.provider,
-      requestId,
-      rawResponse: responseText,
-    });
-  } catch (error) {
-    const failure = error instanceof ExtractionError ? error : new ExtractionError('Không đọc được phản hồi AI. Hãy thử lại riêng hồ sơ này.',502,true);
-    if (failure.retryAfterSeconds) res.set('Retry-After',String(failure.retryAfterSeconds));
-    res.status(failure.status).json({success:false,error:failure.message,retryable:failure.retryable,retryAfterSeconds:failure.retryAfterSeconds});
+    const data=await recognizeImage(req.body);
+    console.info('[OCR]',JSON.stringify({requestId,status:200,durationMs:Date.now()-start}));
+    res.json({success:true,data,engine:'tesseract',requestId});
+  } catch(error) {
+    const failure=error instanceof OCRError ? error : new OCRError('OCR tạm thời không khả dụng.',503,true);
+    console.info('[OCR]',JSON.stringify({requestId,status:failure.status,durationMs:Date.now()-start}));
+    if(failure.retryable) res.set('Retry-After','2');
+    res.status(failure.status).json({success:false,error:failure.message,retryable:failure.retryable,retryAfterSeconds:failure.retryable ? 2 : 0,requestId});
   }
 });
+app.post('/api/ocr/extract-profile',(req,res)=>{
+  try {
+    const data=parseOCRProfile(req.body?.documents);
+    const salary=timLuongTheoChucVu(data.chucVu || data.congViecDuKien || '');
+    res.json({success:true,data:{...data,suggestedLuongCoBan:salary.luongCoBan,suggestedPhuCapCoDinh:salary.phuCapCoDinh,matchedChucVu:salary.matchedChucVu},engine:'ocr-rules'});
+  } catch(error) {
+    const failure=error instanceof OCRError ? error : new OCRError('Không tách được thông tin từ văn bản OCR.',422);
+    res.status(failure.status).json({success:false,error:failure.message,retryable:false});
+  }
+});
+// Old browser builds must refresh; do not silently fall back to Gemini.
+app.post('/api/ai/extract-documents',(_req,res)=>res.status(410).json({success:false,error:'Ứng dụng đã chuyển sang OCR độc lập. Hãy tải lại trang rồi thử lại.',retryable:false}));
 
 // 2. SHEET: TIEUCHUANLUONG (Lấy danh sách)
 app.get("/api/sheets/tieu-chuan-luong", (req, res) => {
@@ -2113,7 +1837,8 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     timestamp,
     userEmail,
     nguoiNhap:userAccounts.find(account => account.email.toLowerCase() === userEmail)?.fullName || userEmail,
-    aiVisionExtracted:body.aiVisionExtracted === true,
+    aiVisionExtracted:body.aiVisionExtracted === true && body.extractionMethod!=='ocr',
+    extractionMethod:body.extractionMethod==='ocr' ? 'ocr' : body.extractionMethod==='vision' ? 'vision' : 'manual',
     hoVaTen: String(hoVaTen).toUpperCase().trim(),
     ngaySinh: ngaySinh || "",
     gioiTinh: gioiTinh || "Nam",
@@ -2279,6 +2004,7 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", async (req, res) => {
       timestamp: existing.timestamp,
       nguoiNhap:existing.nguoiNhap,
       aiVisionExtracted:existing.aiVisionExtracted,
+      extractionMethod:existing.extractionMethod,
       userEmail: existing.userEmail,
       troCapDacThuFPT,
       thuongNangLucAM,

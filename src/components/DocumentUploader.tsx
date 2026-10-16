@@ -6,7 +6,7 @@ interface DocumentUploaderProps {
   onBusyChange?: (busy: boolean) => void;
   batchEmployees?: BatchEmployeeDraft[];
   onBatchEmployeesChange?: (employees: BatchEmployeeDraft[]) => void;
-  onCheckpoint?: (employees:BatchEmployeeDraft[]) => Promise<void>;
+  onCheckpoint?: (employees:BatchEmployeeDraft[],groups:EmployeeDocumentGroup[]) => Promise<void>;
   onProceedToStep2WithBatch: (employees: BatchEmployeeDraft[]) => void;
   employeeGroups: EmployeeDocumentGroup[];
   onEmployeeGroupsChange: (groups: EmployeeDocumentGroup[]) => void;

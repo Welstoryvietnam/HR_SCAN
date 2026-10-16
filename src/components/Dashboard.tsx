@@ -10,7 +10,7 @@ export function Dashboard({records}: {records: NhanSuRecord[]}) {
   const monthLabel = `${report.currentMonth.slice(5,7)}/${report.currentMonth.slice(0,4)}`;
   const cards = [
     {label:'Tổng số hồ sơ',value:report.total,unit:'hồ sơ',icon:Files,color:'bg-blue-50 text-blue-700',note:'Hồ sơ đã lưu trong kỳ'},
-    {label:'Đã số hóa qua AI Vision',value:report.ai,unit:'hồ sơ',icon:ScanLine,color:'bg-violet-50 text-violet-700',note:'Đã trích xuất AI thành công'},
+    {label:'Đã số hóa tự động',value:report.ai,unit:'hồ sơ',icon:ScanLine,color:'bg-violet-50 text-violet-700',note:'Đã trích xuất OCR hoặc AI thành công'},
     {label:'Hồ sơ xử lý trong tháng',value:report.monthly,unit:'hồ sơ',icon:CalendarDays,color:'bg-amber-50 text-amber-700',note:`Tháng hiện tại ${monthLabel}, trong kỳ đã chọn`},
     {label:'Đơn vị tiếp nhận',value:report.units,unit:'đơn vị',icon:Building2,color:'bg-emerald-50 text-emerald-700',note:'Đếm riêng theo Khối / Ban / Phòng'},
   ];
@@ -39,7 +39,7 @@ export function Dashboard({records}: {records: NhanSuRecord[]}) {
         <div className={`shrink-0 rounded-xl p-2.5 ${color}`}><Icon className="h-5 w-5" /></div>
       </article>)}
     </section>
-    {report.unknownAI > 0 && <p className="text-xs text-slate-500">{report.unknownAI} hồ sơ cũ chưa có dấu xác nhận trích xuất AI nên chưa được tính vào chỉ số AI Vision.</p>}
+    {report.unknownAI > 0 && <p className="text-xs text-slate-500">{report.unknownAI} hồ sơ cũ chưa có dấu xác nhận trích xuất nên chưa được tính vào chỉ số số hóa tự động.</p>}
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-label="Thống kê nhân viên mới">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 p-4">
         <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900"><Users className="h-4 w-4 text-indigo-600" />Thống kê nhân viên mới</h3>

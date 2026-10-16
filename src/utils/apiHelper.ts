@@ -6,7 +6,7 @@ export async function safeFetchJson<T = any>(
   init?: RequestInit
 ): Promise<{ ok: boolean; data?: T; error?: string }> {
   try {
-    if (String(input).includes('/api/ai/extract-documents') && typeof init?.body === 'string' && new TextEncoder().encode(init.body).byteLength > 4_000_000) {
+    if ((String(input).includes('/api/ai/extract-documents') || String(input).includes('/api/ocr/')) && typeof init?.body === 'string' && new TextEncoder().encode(init.body).byteLength > 4_000_000) {
       return { ok: false, error: 'Tổng dung lượng tài liệu quá lớn cho một lần trích xuất. Vui lòng giảm dung lượng hoặc số trang PDF/ảnh của nhân viên này rồi thử lại.' };
     }
     const headers = new Headers(init?.headers);

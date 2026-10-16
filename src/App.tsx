@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   UserProfile,
   OptimizedImageFile,
-  GeminiExtractionResult,
+  DocumentExtractionResult,
   TieuChuanLuongItem,
   NhanSuRecord,
   EmailLogItem,
@@ -62,12 +62,11 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<AppTab>('upload');
   const [images, setImages] = useState<OptimizedImageFile[]>([]);
-  const [extractedData, setExtractedData] = useState<GeminiExtractionResult | null>(null);
+  const [extractedData, setExtractedData] = useState<DocumentExtractionResult | null>(null);
   const [batchEmployees, setBatchEmployees] = useState<BatchEmployeeDraft[]>([]);
   const [employeeGroups, setEmployeeGroups] = useState<EmployeeDocumentGroup[]>([]);
   const [singleIntakeInfo, setSingleIntakeInfo] = useState<EmployeeIntakeInfo>({});
   const [currentSopStep, setCurrentSopStep] = useState<number>(1);
-  const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [activeDraft,setActiveDraft] = useState<ActiveDraft|null>(null);
   const activeDraftRef = useRef<ActiveDraft|null>(null);
@@ -113,12 +112,12 @@ export default function App() {
     } catch (error) {if (draftOwner.current === owner) setDraftError((error as Error).message);}
     finally {if (draftOwner.current === owner) setDraftBusy(false);}
   };
-  const saveExtractionCheckpoint = async (employees:BatchEmployeeDraft[]) => {
+  const saveExtractionCheckpoint = async (employees:BatchEmployeeDraft[],groups:EmployeeDocumentGroup[]) => {
     const owner=currentUser?.email;
     if(!owner || draftCompleted || draftOwner.current!==owner) throw new Error('Phiên làm việc đã thay đổi.');
     setDraftStatus('Đang lưu kết quả quét lên cloud…');setDraftSavedAt('');setDraftError('');
     try {
-      const saved=await saveIntakeDraft({step:1,employees,groups:employeeGroups,form:draftFormState},activeDraftRef.current,
+      const saved=await saveIntakeDraft({step:1,employees,groups,form:draftFormState},activeDraftRef.current,
         draft=>{if(draftOwner.current===owner) {activeDraftRef.current=draft;setActiveDraft(draft);}},
         message=>{if(draftOwner.current===owner) setDraftStatus(message);});
       if(draftOwner.current!==owner) return;
@@ -139,7 +138,7 @@ export default function App() {
       if (draftOwner.current !== owner) return;
       setImages(snapshot.groups.flatMap(group => group.documents));setEmployeeGroups(snapshot.groups);
       setBatchEmployees(snapshot.employees);
-      setExtractedData(snapshot.employees[0] as GeminiExtractionResult || null);
+      setExtractedData(snapshot.employees[0] as DocumentExtractionResult || null);
       setSingleIntakeInfo(snapshot.form?.employee || {});setDraftFormState(snapshot.form);setActiveDraft(active);setDraftSavedAt(draft.timestamp);setDraftCompleted(false);
       setFormGeneration(previous => previous+1);setCurrentSopStep(snapshot.step);setActiveTab('upload');
     } catch (error) {if (draftOwner.current === owner) setDraftError((error as Error).message);}
@@ -321,60 +320,6 @@ export default function App() {
       }
     }
   }, [activeTab, currentUser]);
-
-  // Gọi Gemini Multimodal AI trích xuất thông tin
-  const handleExtractAI = async () => {
-    if (images.length === 0) {
-      showNotification('error', 'Vui lòng chọn hoặc chụp ít nhất một ảnh tài liệu.');
-      return;
-    }
-
-    setIsProcessingAI(true);
-    try {
-      const payload = {
-        images: images.map((img) => ({
-          fileName: img.fileName,
-          docType: img.docType,
-          mimeType: img.mimeType,
-          base64Data: img.base64Data || (img.dataUrl ? (img.dataUrl.includes(',') ? img.dataUrl.split(',')[1] : img.dataUrl) : ''),
-        })),
-      };
-
-      const res = await safeFetchJson<{ success: boolean; data?: any; error?: string }>(
-        '/api/ai/extract-documents',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        }
-      );
-
-      if (!res.ok || !res.data?.success || !res.data?.data) {
-        throw new Error(res.data?.error || res.error || 'Không thể trích xuất AI. Vui lòng thử lại hoặc chọn nhập thủ công.');
-      }
-
-      const extractedInfo = res.data.data;
-      setBatchEmployees([]);
-      setExtractedData({...extractedInfo,aiVisionExtracted:true});
-      setCurrentSopStep(2);
-
-      if (extractedInfo.cauHoiLamRo && extractedInfo.cauHoiLamRo.length > 0) {
-        showNotification(
-          'success',
-          `AI đã trích xuất theo Bước 2 SOP. Phát hiện ${extractedInfo.cauHoiLamRo.length} câu hỏi làm rõ theo nguyên tắc chống suy đoán!`
-        );
-      } else {
-        showNotification(
-          'success',
-          `AI Vision đã trích xuất thành công hồ sơ: ${extractedInfo.hoVaTen || 'Ứng viên'}!`
-        );
-      }
-    } catch (err) {
-      showNotification('error', (err as Error).message || 'Không thể kết nối API trích xuất ảnh.');
-    } finally {
-      setIsProcessingAI(false);
-    }
-  };
 
   // Lưu hồ sơ vào Sheet "DanhSachNhanSu" và kích hoạt gửi email
   const handleSaveToSheet = async (formData: any): Promise<boolean> => {
@@ -641,7 +586,7 @@ export default function App() {
               </div>
             </div>
 
-            <IntakeDraftBar busy={draftBusy} disabled={isSaving || uploaderBusy || isProcessingAI} completed={draftCompleted}
+            <IntakeDraftBar busy={draftBusy} disabled={isSaving || uploaderBusy} completed={draftCompleted}
               status={draftStatus} activeId={activeDraft?.id} savedAt={draftSavedAt} drafts={drafts} error={draftError}
               onSave={() => void saveDraft()} onRefresh={() => void refreshDrafts()}
               onOpen={draft => void openDraft(draft)} onDiscard={draft => void discardDraft(draft)}
@@ -681,7 +626,7 @@ export default function App() {
                       onClick={() => setCurrentSopStep(2)}
                       className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer"
                     >
-                      <span>Tiếp tục xử lý Bước 2 (AI Trích Xuất Form)</span>
+                      <span>Tiếp tục xử lý Bước 2 (OCR Trích Xuất Form)</span>
                       <ArrowRight className="w-3.5 h-3.5" />
                     </button>
                   </div>
@@ -702,6 +647,7 @@ export default function App() {
                       setExtractedData({
                         hoVaTen: first.hoVaTen,
                         aiVisionExtracted:first.aiVisionExtracted,
+                        extractionMethod:first.extractionMethod,
                         ngaySinh: first.ngaySinh,
                         gioiTinh: first.gioiTinh,
                         soCCCD: first.soCCCD,
@@ -719,8 +665,8 @@ export default function App() {
                         chucVu: first.chucVu || 'Bếp Trưởng',
                         thongTinGiaDinh: first.thongTinGiaDinh || [],
                         thanhVienHoGiaDinh:first.thanhVienHoGiaDinh || [],
-                        thongTinChuaRo: [],
-                        cauHoiLamRo: [],
+                        thongTinChuaRo: first.thongTinChuaRo || [],
+                        cauHoiLamRo: first.cauHoiLamRo || [],
                       });
                     }
                     setCurrentSopStep(2);
@@ -754,13 +700,13 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => batchEmployees.length ? changeSopStep(1) : handleExtractAI()}
-                      disabled={isProcessingAI || images.length === 0}
+                      onClick={() => changeSopStep(1)}
+                      disabled={images.length === 0}
                       className="px-3 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
-                      title={batchEmployees.length ? 'Quay lại Bước 1 để quét riêng tài liệu của từng nhân viên' : 'Quét lại toàn bộ tài liệu bằng AI Vision'}
+                      title="Quay lại Bước 1 để OCR tài liệu theo từng nhân viên"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>{isProcessingAI ? 'Đang AI quét...' : batchEmployees.length ? 'Quét lại theo nhân viên' : '⚡ Quét lại bằng AI'}</span>
+                      <span>Quét lại bằng OCR</span>
                     </button>
                     <button
                       type="button"
@@ -787,8 +733,6 @@ export default function App() {
                   onStepChange={changeSopStep}
                   currentStep={currentSopStep}
                   onBackToStep1={() => changeSopStep(1)}
-                  onReExtractAI={handleExtractAI}
-                  isProcessingAI={isProcessingAI}
                   onResetNewRecord={() => {
                     setImages([]);
                     setExtractedData(null);

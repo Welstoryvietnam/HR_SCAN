@@ -1,8 +1,7 @@
 import { OptimizedImageFile } from '../types';
-import { readPDFText } from './pdfText';
 
 /**
- * Tối ưu hóa ảnh phía Client trước khi gửi lên Gemini API:
+ * Tối ưu hóa ảnh phía Client trước khi gửi lên API OCR:
  * - Giữ chữ nhỏ: tối đa 1800px ngang / 3200px dọc, giữ tỉ lệ
  * - JPEG thích ứng, giữ PNG khi PNG nhỏ hơn; PDF giữ bản gốc
  * - Chuyển sang Base64 chuẩn và đo lường dung lượng tiết kiệm
@@ -35,7 +34,6 @@ export async function optimizeImageFile(
               base64Data: base64Data,
               dataUrl: dataUrl,
               docType: docType,
-              extractedText: await readPDFText(file),
             };
             resolve(result);
           } catch (err) {

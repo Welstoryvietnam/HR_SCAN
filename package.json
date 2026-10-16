@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test tests/ai-resilience.test.ts tests/vercel-api.test.ts tests/api-helper.test.ts tests/firestore.test.ts tests/personnel-export.test.ts tests/dashboard-stats.test.ts tests/household-export.test.ts",
+    "test": "node --import tsx --test tests/ocr.test.ts tests/ai-resilience.test.ts tests/vercel-api.test.ts tests/api-helper.test.ts tests/firestore.test.ts tests/personnel-export.test.ts tests/dashboard-stats.test.ts tests/household-export.test.ts",
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
@@ -12,8 +12,9 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@tesseract.js-data/eng": "^1.0.0",
+    "@tesseract.js-data/vie": "^1.0.0",
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
@@ -24,6 +25,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
+    "tesseract.js": "^7.0.0",
     "vite": "^6.2.3"
   },
   "devDependencies": {

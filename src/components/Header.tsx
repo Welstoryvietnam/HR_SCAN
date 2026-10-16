@@ -47,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
                   WELV Document AI Automator
                 </h1>
                 <span className="bg-emerald-100 text-emerald-800 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                  v2.5 Vision
+                  v2.5 OCR
                 </span>
               </div>
             </div>

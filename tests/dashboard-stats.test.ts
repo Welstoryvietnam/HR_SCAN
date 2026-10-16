@@ -5,6 +5,10 @@ import type { NhanSuRecord } from '../src/types.js';
 
 const record = (timestamp:string,overrides:Partial<NhanSuRecord> = {}) => ({timestamp,userEmail:'recruiter-a@example.com',nguoiNhap:'Tuyển dụng A',khoi:'K',ban:'B',phong:'P',...overrides} as NhanSuRecord);
 const now = new Date('2026-10-16T01:00:00Z');
+test('OCR records count as digitized without mislabeling them as AI Vision',()=>{
+  const report=dashboardReport([record('2026-10-16T01:00:00Z',{extractionMethod:'ocr',aiVisionExtracted:false})],'','',now);
+  assert.equal(report.ai,1);assert.equal(report.unknownAI,0);assert.equal(report.people[0].ai,1);
+});
 
 test('inclusive Vietnam date boundaries apply equally to metrics and recruiter rows',() => {
   const records = [

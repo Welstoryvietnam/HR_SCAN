@@ -9,6 +9,7 @@ type FirestoreValue = Record<string, any>;
 const RECORD_FIELDS = new Set(`id timestamp userEmail hoVaTen ngaySinh gioiTinh soCCCD ngayCap ngayHetHanCCCD noiCap queQuan diaChiThuongTru nguonDiaChi ghiChuSapNhap diemLamViec loaiHopDong ngayVaoLam diaChiTamTru emailCaNhan tinhTrangHoSo soDienThoai khoi ban phong congViecDuKien chucVu isManualSalary thongTinGiaDinh luongCoBan phuCapChucVu phuCapDienThoai troCapTayNghe troCapGiaDinh thuongChuyenCan thuongSangKien phuCapMoiTruong phuCapXangXe anToanVeSinhVien phuCapKinhDoanh phuCapNangNhoc troCapDacThuFPT thuongNangLucAM phuCapNangLuc phuCapLuuDong phuCapCoDinh phuCapPhatSinh tongPhuCap tongThuNhapDuKien luongDongBHXH maNhanVien tinhTrangHonNhan thamQuyen trinhDoHocVan ghiChu soTaiLieuDinhKem trangThaiEmail thoiGianGuiEmail capNhatLuc`.split(' '));
 
 RECORD_FIELDS.add('aiVisionExtracted');
+RECORD_FIELDS.add('extractionMethod');
 RECORD_FIELDS.add('nguoiNhap');
 RECORD_FIELDS.add('thanhVienHoGiaDinh');
 

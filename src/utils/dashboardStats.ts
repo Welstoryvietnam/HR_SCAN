@@ -38,7 +38,7 @@ export function dashboardReport(records: NhanSuRecord[],from: string,to: string,
       people.set(key,person);
     }
     person.total++;
-    if (record.aiVisionExtracted === true) person.ai++;
+    if ((record.aiVisionExtracted === true || record.extractionMethod === 'ocr')) person.ai++;
     if (inMonth(record)) person.monthly++;
     const unit = receivingUnit(record);
     if (unit) {units.add(unit);person.units.add(unit);}
@@ -48,8 +48,8 @@ export function dashboardReport(records: NhanSuRecord[],from: string,to: string,
       if (record.nguoiNhap?.trim()) person.name=record.nguoiNhap.trim();
     }
   }
-  return {error,currentMonth,total:filtered.length,ai:filtered.filter(record => record.aiVisionExtracted === true).length,
-    unknownAI:filtered.filter(record => typeof record.aiVisionExtracted !== 'boolean').length,
+  return {error,currentMonth,total:filtered.length,ai:filtered.filter(record => (record.aiVisionExtracted === true || record.extractionMethod === 'ocr')).length,
+    unknownAI:filtered.filter(record => typeof record.aiVisionExtracted !== 'boolean' && record.extractionMethod !== 'ocr').length,
     monthly:filtered.filter(inMonth).length,units:units.size,
     people:[...people.values()].map(person => ({...person,units:person.units.size})).sort((a,b) => b.total-a.total || a.name.localeCompare(b.name,'vi'))};
 }

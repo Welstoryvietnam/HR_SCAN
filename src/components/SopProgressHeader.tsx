@@ -40,7 +40,7 @@ export const SopProgressHeader: React.FC<SopProgressHeaderProps> = ({
     {
       id: 2,
       name: 'Bước 2',
-      title: 'AI Trích Xuất Form',
+      title: 'OCR Trích Xuất Form',
       desc: 'Không tự suy đoán, hỏi lại nếu thông tin chưa rõ',
       icon: Sparkles,
       status:

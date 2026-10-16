@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useImperativeHandle } from 'react';
-import { GeminiExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, ThanhVienHoGiaDinh, NhanSuRecord, BatchEmployeeDraft, KhoiNode, EmployeeIntakeInfo, IntakeFormDraft } from '../types';
+import { DocumentExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, ThanhVienHoGiaDinh, NhanSuRecord, BatchEmployeeDraft, KhoiNode, EmployeeIntakeInfo, IntakeFormDraft } from '../types';
 import { EmployeeReviewGrid } from './EmployeeReviewGrid';
 import { EmployeeIntakeFields } from './EmployeeIntakeFields';
 import { EmployeeSalaryGrid } from './EmployeeSalaryGrid';
@@ -54,7 +54,7 @@ import {
 interface ExtractedFormProps {
   initialDraftState?: IntakeFormDraft;
   draftReader?: React.Ref<{read: () => IntakeFormDraft}>;
-  initialData: GeminiExtractionResult | null;
+  initialData: DocumentExtractionResult | null;
   existingRecords?: NhanSuRecord[];
   tieuChuanLuongList: TieuChuanLuongItem[];
   userEmail: string;
@@ -63,8 +63,6 @@ interface ExtractedFormProps {
   onStepChange?: (step: number) => void;
   currentStep?: number;
   onBackToStep1?: () => void;
-  onReExtractAI?: () => void;
-  isProcessingAI?: boolean;
   onResetNewRecord?: () => void;
   onViewRecordsTab?: () => void;
   uploadedImagesCount?: number;
@@ -96,8 +94,6 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   onStepChange,
   currentStep,
   onBackToStep1,
-  onReExtractAI,
-  isProcessingAI,
   onResetNewRecord,
   onViewRecordsTab,
   uploadedImagesCount = 0,
@@ -275,7 +271,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     if (Object.keys(intakeUpdates).length) onIntakeInfoChange?.(intakeUpdates);
   };
 
-  // Điền dữ liệu khi Gemini AI hoàn thành trích xuất đơn lẻ
+  // Điền dữ liệu OCR đã được xác nhận
   useEffect(() => {
     setIsSavedSuccess(false);
     setSavedSummary(null);
@@ -369,6 +365,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     timestamp: new Date().toISOString(),
     userEmail,
     aiVisionExtracted:initialData?.aiVisionExtracted,
+    extractionMethod:initialData?.extractionMethod,
     hoVaTen: hoVaTen.trim().toUpperCase() || 'CHƯA ĐẶT TÊN',
     ngaySinh,
     gioiTinh,
@@ -459,6 +456,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         timestamp: new Date().toISOString(),
         userEmail,
         aiVisionExtracted:emp.aiVisionExtracted,
+        extractionMethod:emp.extractionMethod,
         hoVaTen: (emp.hoVaTen || '').toUpperCase(),
         ngaySinh: emp.ngaySinh || '',
         gioiTinh: emp.gioiTinh || '',
@@ -829,7 +827,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                 {activeTabStep === 5 ? 'HOÀN TẤT' : `BƯỚC ${activeTabStep} / 4`}
               </span>
               <h2 className="text-lg font-bold text-slate-900">
-                {activeTabStep === 2 && 'Bước 2: AI Trích Xuất Form'}
+                {activeTabStep === 2 && 'Bước 2: OCR Trích Xuất Form'}
                 {activeTabStep === 3 && 'Bước 3: Con Người Chọn Đơn Vị & Chức Vụ'}
                 {activeTabStep === 4 && 'Bước 4: Bảng Tiêu Chuẩn Tiền Lương & Lưu Hồ Sơ'}
                 {activeTabStep === 5 && 'Bước Sau Bước 4: Đã Lưu Hồ Sơ Thành Công'}
@@ -869,7 +867,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
             }`}>
               2
             </span>
-            <span>Bước 2: AI Trích Xuất Form</span>
+            <span>Bước 2: OCR Trích Xuất Form</span>
             {duplicateCCCDRecord && (
               <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black animate-pulse">
                 Trùng CCCD
@@ -955,11 +953,11 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                     BƯỚC 2 (SOP)
                   </span>
                   <h3 className="text-base font-bold text-slate-900">
-                    AI Trả Ra Thông Tin Nhân Viên Theo Form Tiêu Chuẩn
+                    OCR Trả Ra Thông Tin Nhân Viên Theo Form Tiêu Chuẩn
                   </h3>
                 </div>
                 <p className="text-xs text-slate-600 mt-1">
-                  <strong>Quy định nghiệp vụ SOP:</strong> Nếu có thông tin không rõ hoặc mờ trên ảnh, AI tuyệt đối <strong>không tự suy đoán</strong> mà hỏi lại để bạn xác nhận hoặc bổ sung.
+                  <strong>Quy định nghiệp vụ SOP:</strong> Nếu có thông tin không rõ hoặc mờ trên ảnh, Hệ thống tuyệt đối <strong>không tự suy đoán</strong> mà hỏi lại để bạn xác nhận hoặc bổ sung.
                 </p>
               </div>
 

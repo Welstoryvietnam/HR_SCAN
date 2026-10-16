@@ -21,30 +21,22 @@ after(async () => { await new Promise<void>((resolve,reject) => server.close(err
 test('Vercel handler serves JSON API routes rather than the SPA', async () => {
   const health = await fetch(`${baseUrl}/api/health`);
   assert.match(health.headers.get('content-type') || '', /application\/json/);
-  assert.deepEqual(await health.json(), {success:true,service:'hr-scan-api',geminiConfigured:false});
+  assert.deepEqual(await health.json(), {success:true,service:'hr-scan-api',ocrEngine:'tesseract',ocrLanguages:['vie','eng']});
   const records = await fetch(`${baseUrl}/api/sheets/tieu-chuan-luong`);
   assert.equal(records.status,200);
   assert.ok(Array.isArray((await records.json()).data));
 });
 
-test('AI accepts POST and validates the request instead of returning HTTP 405', async () => {
-  const response = await fetch(`${baseUrl}/api/ai/extract-documents`, {
-    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({images:[]}),
-  });
-  assert.equal(response.status,400);
-  assert.ok((await response.json()).error);
+test('legacy Gemini route is retired and never returns a blank profile', async () => {
+  const response=await fetch(`${baseUrl}/api/ai/extract-documents`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({images:[]})});
+  assert.equal(response.status,410);assert.equal((await response.json()).success,false);
 });
 
-test('missing Gemini key returns an actionable failure, never a blank successful profile', async () => {
-  const response = await fetch(`${baseUrl}/api/ai/extract-documents`, {
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({images:[{mimeType:'image/png',base64Data:'test'}]}),
-  });
-  assert.equal(response.status,503);
-  const body = await response.json();
-  assert.equal(body.success,false);
-  assert.match(body.error,/GEMINI_API_KEY/);
-  assert.equal(body.data,undefined);
+test('dedicated OCR endpoints require a verified session',async()=>{
+  for(const endpoint of ['recognize','extract-profile']) {
+    const response=await fetch(`${baseUrl}/api/ocr/${endpoint}`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    assert.equal(response.status,401);assert.equal((await response.json()).success,false);
+  }
 });
 
 test('unknown API routes return JSON 404', async () => {
