@@ -176,6 +176,23 @@ export interface EmployeeDocumentGroup {
   documents: OptimizedImageFile[];
 }
 
+export interface IntakeDraftSnapshot {
+  step: number;
+  employees: BatchEmployeeDraft[];
+  groups: EmployeeDocumentGroup[];
+}
+
+export interface IntakeDraftSummary {
+  ready?: boolean;
+  id: string;
+  title: string;
+  step: number;
+  employeeCount: number;
+  documentCount: number;
+  timestamp: string;
+  version: string;
+}
+
 export interface OptimizedImageFile {
   id: string;
   fileName: string;

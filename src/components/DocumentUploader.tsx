@@ -3,6 +3,7 @@ import type { BatchEmployeeDraft, EmployeeDocumentGroup } from '../types';
 import { BatchDocumentUploader } from './BatchDocumentUploader';
 
 interface DocumentUploaderProps {
+  onBusyChange?: (busy: boolean) => void;
   batchEmployees?: BatchEmployeeDraft[];
   onBatchEmployeesChange?: (employees: BatchEmployeeDraft[]) => void;
   onProceedToStep2WithBatch: (employees: BatchEmployeeDraft[]) => void;
@@ -10,12 +11,12 @@ interface DocumentUploaderProps {
   onEmployeeGroupsChange: (groups: EmployeeDocumentGroup[]) => void;
 }
 
-export function DocumentUploader({batchEmployees,onBatchEmployeesChange,onProceedToStep2WithBatch,employeeGroups,onEmployeeGroupsChange}: DocumentUploaderProps) {
+export function DocumentUploader({batchEmployees,onBatchEmployeesChange,onProceedToStep2WithBatch,employeeGroups,onEmployeeGroupsChange,onBusyChange}: DocumentUploaderProps) {
   const [busy,setBusy] = useState(false);
   useEffect(() => {
     if (!employeeGroups.length) onEmployeeGroupsChange([{id:crypto.randomUUID(),label:'',documents:[]}]);
   },[employeeGroups.length,onEmployeeGroupsChange]);
   return <div aria-busy={busy} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-    <BatchDocumentUploader groups={employeeGroups} employees={batchEmployees || []} onChange={onEmployeeGroupsChange} onProceed={onProceedToStep2WithBatch} onBusyChange={setBusy} onDraftsChange={onBatchEmployeesChange} />
+    <BatchDocumentUploader groups={employeeGroups} employees={batchEmployees || []} onChange={onEmployeeGroupsChange} onProceed={onProceedToStep2WithBatch} onBusyChange={value => {setBusy(value);onBusyChange?.(value);}} onDraftsChange={onBatchEmployeesChange} />
   </div>;
 }

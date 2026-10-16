@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   UserProfile,
   OptimizedImageFile,
@@ -9,12 +9,15 @@ import {
   BatchEmployeeDraft,
   EmployeeDocumentGroup,
   EmployeeIntakeInfo,
+  IntakeDraftSummary,
   KhoiNode
 } from './types';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from './data/organizationHierarchy';
 import { Header, AppTab } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
 import { DocumentUploader } from './components/DocumentUploader';
+import { IntakeDraftBar } from './components/IntakeDraftBar';
+import { draftRequest, saveIntakeDraft, openIntakeDraft, type ActiveDraft } from './utils/intakeDraftApi';
 import { ExtractedForm } from './components/ExtractedForm';
 import { NhanSuTable } from './components/NhanSuTable';
 import { TieuChuanLuongManager } from './components/TieuChuanLuongManager';
@@ -65,6 +68,73 @@ export default function App() {
   const [currentSopStep, setCurrentSopStep] = useState<number>(1);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeDraft,setActiveDraft] = useState<ActiveDraft|null>(null);
+  const [drafts,setDrafts] = useState<IntakeDraftSummary[]>([]);
+  const [draftBusy,setDraftBusy] = useState(false);
+  const [draftStatus,setDraftStatus] = useState('');
+  const [draftError,setDraftError] = useState('');
+  const [draftSavedAt,setDraftSavedAt] = useState('');
+  const [draftCompleted,setDraftCompleted] = useState(false);
+  const [uploaderBusy,setUploaderBusy] = useState(false);
+  const [formGeneration,setFormGeneration] = useState(0);
+  const draftOwner = useRef(currentUser?.email);
+  draftOwner.current = currentUser?.email;
+
+  const refreshDrafts = async () => {
+    const owner = currentUser?.email;
+    setDraftBusy(true);setDraftStatus('Đang tải danh sách bản nháp…');setDraftError('');
+    try {
+      const list = await draftRequest<IntakeDraftSummary[]>('');
+      if (draftOwner.current === owner) setDrafts(list);
+    } catch (error) {if (draftOwner.current === owner) setDraftError((error as Error).message);}
+    finally {if (draftOwner.current === owner) setDraftBusy(false);}
+  };
+  const saveDraft = async () => {
+    if (draftBusy || isSaving || uploaderBusy || !currentUser || draftCompleted) return;
+    const owner = currentUser.email;
+    setDraftBusy(true);setDraftStatus('Đang chuẩn bị bản nháp…');setDraftError('');
+    try {
+      const saved = await saveIntakeDraft({step:Math.min(currentSopStep,4),employees:batchEmployees,groups:employeeGroups},activeDraft,
+        draft => {if (draftOwner.current === owner) {setActiveDraft(draft);setDraftSavedAt('');}},
+        message => {if (draftOwner.current === owner) setDraftStatus(message);});
+      if (draftOwner.current !== owner) return;
+      setActiveDraft({id:saved.id,version:saved.version});setDraftSavedAt(saved.timestamp);
+      setDrafts(previous => [saved,...previous.filter(item => item.id !== saved.id)]);
+      showNotification('success','Đã lưu tạm cả thông tin và tài liệu lên cloud. Bạn có thể mở trên thiết bị khác.');
+    } catch (error) {if (draftOwner.current === owner) setDraftError((error as Error).message);}
+    finally {if (draftOwner.current === owner) setDraftBusy(false);}
+  };
+  const openDraft = async (draft: IntakeDraftSummary) => {
+    if ((batchEmployees.length || employeeGroups.some(group => group.label || group.documents.length)) && !window.confirm('Mở bản nháp sẽ thay nội dung đang nhập trên màn hình. Bạn đã lưu tạm các thay đổi cần giữ chưa?')) return;
+    const owner = currentUser?.email;
+    setDraftBusy(true);setDraftError('');setDraftStatus('Đang mở bản nháp…');
+    try {
+      const {active,snapshot} = await openIntakeDraft(draft.id,setDraftStatus);
+      if (draftOwner.current !== owner) return;
+      setImages(snapshot.groups.flatMap(group => group.documents));setEmployeeGroups(snapshot.groups);
+      setBatchEmployees(snapshot.employees);
+      setExtractedData(snapshot.employees[0] as GeminiExtractionResult || null);
+      setSingleIntakeInfo({});setActiveDraft(active);setDraftSavedAt(draft.timestamp);setDraftCompleted(false);
+      setFormGeneration(previous => previous+1);setCurrentSopStep(snapshot.step);setActiveTab('upload');
+    } catch (error) {if (draftOwner.current === owner) setDraftError((error as Error).message);}
+    finally {if (draftOwner.current === owner) setDraftBusy(false);}
+  };
+  const discardDraft = async (draft: IntakeDraftSummary) => {
+    const owner = currentUser?.email;
+    setDraftBusy(true);setDraftError('');setDraftStatus('Đang xóa bản nháp và tài liệu tạm…');
+    try {
+      await draftRequest(`/${draft.id}`,'DELETE',{version:draft.version});
+      if (draftOwner.current !== owner) return;
+      setDrafts(previous => previous.filter(item => item.id !== draft.id));
+      if (activeDraft?.id === draft.id) {setActiveDraft(null);setDraftSavedAt('');}
+    } catch (error) {if (draftOwner.current === owner) setDraftError((error as Error).message);}
+    finally {if (draftOwner.current === owner) setDraftBusy(false);}
+  };
+  const markDraftCompleted = (cleanupPending?: boolean) => {
+    setDraftCompleted(true);setActiveDraft(null);setDraftSavedAt('');
+    if (activeDraft) setDrafts(previous => previous.filter(draft => draft.id !== activeDraft.id));
+    if (cleanupPending) setDraftError('Hồ sơ đã lưu thành công, nhưng chưa dọn hết tài liệu tạm. Mở Bản nháp của tôi → Làm mới → Bỏ bản nháp để thử dọn lại.');
+  };
 
   const [tieuChuanLuong, setTieuChuanLuong] = useState<TieuChuanLuongItem[]>([]);
   const [organizationHierarchy, setOrganizationHierarchy] = useState<KhoiNode[]>(() => {
@@ -212,6 +282,7 @@ export default function App() {
     setEmployeeGroups([]);
     setSingleIntakeInfo({});
     setCurrentSopStep(1);
+    setActiveDraft(null);setDrafts([]);setDraftSavedAt('');setDraftError('');setDraftBusy(false);setDraftCompleted(false);setUploaderBusy(false);
     showNotification('success', 'Đã đăng xuất khỏi hệ thống thành công.');
   };
 
@@ -287,9 +358,10 @@ export default function App() {
         ...formData,
         userEmail: currentUser.email,
         soTaiLieuDinhKem: images.length,
+        draftId:activeDraft?.id,draftVersion:activeDraft?.version,
       };
 
-      const res = await safeFetchJson<{ success: boolean; error?: string }>(
+      const res = await safeFetchJson<{ success: boolean; error?: string; draftCleanupPending?: boolean }>(
         '/api/sheets/danh-sach-nhan-su',
         {
           method: 'POST',
@@ -304,6 +376,8 @@ export default function App() {
       if (!res.ok || !res.data?.success) {
         throw new Error(res.error || res.data?.error || 'Không thể lưu hồ sơ vào Sheet.');
       }
+
+      markDraftCompleted(res.data.draftCleanupPending);
 
       showNotification(
         'success',
@@ -328,7 +402,7 @@ export default function App() {
     if (!currentUser) return false;
     setIsSaving(true);
     try {
-      const res = await safeFetchJson<{ success: boolean; error?: string }>(
+      const res = await safeFetchJson<{ success: boolean; error?: string; draftCleanupPending?: boolean }>(
         '/api/sheets/danh-sach-nhan-su/batch',
         {
           method: 'POST',
@@ -339,6 +413,7 @@ export default function App() {
           body: JSON.stringify({
             employees: batchList,
             userEmail: currentUser.email,
+            draftId:activeDraft?.id,draftVersion:activeDraft?.version,
           }),
         }
       );
@@ -346,6 +421,8 @@ export default function App() {
       if (!res.ok || !res.data?.success) {
         throw new Error(res.error || res.data?.error || 'Không thể lưu danh sách hồ sơ hàng loạt.');
       }
+
+      markDraftCompleted(res.data.draftCleanupPending);
 
       showNotification(
         'success',
@@ -537,6 +614,16 @@ export default function App() {
               </div>
             </div>
 
+            <IntakeDraftBar busy={draftBusy} disabled={isSaving || uploaderBusy || isProcessingAI} completed={draftCompleted}
+              status={draftStatus} activeId={activeDraft?.id} savedAt={draftSavedAt} drafts={drafts} error={draftError}
+              onSave={() => void saveDraft()} onRefresh={() => void refreshDrafts()}
+              onOpen={draft => void openDraft(draft)} onDiscard={draft => void discardDraft(draft)}
+              onNew={() => {
+                if (!window.confirm('Tạo đợt nhập mới? Hãy lưu tạm trước nếu bạn muốn giữ nội dung đang nhập.')) return;
+                setImages([]);setEmployeeGroups([]);setBatchEmployees([]);setExtractedData(null);setSingleIntakeInfo({});
+                setActiveDraft(null);setDraftSavedAt('');setDraftError('');setDraftCompleted(false);setCurrentSopStep(1);
+              }} />
+            <fieldset disabled={draftBusy || isSaving} className="min-w-0 space-y-4">
             {/* Thanh tiến trình SOP 4 Bước (Tối ưu: Chỉ giữ tên bước) */}
             <SopProgressHeader
               currentStep={currentSopStep}
@@ -571,6 +658,7 @@ export default function App() {
                   </div>
                 )}
                 <DocumentUploader
+                  onBusyChange={setUploaderBusy}
                   batchEmployees={batchEmployees}
                   onBatchEmployeesChange={setBatchEmployees}
                   employeeGroups={employeeGroups}
@@ -654,6 +742,7 @@ export default function App() {
 
                 {/* Form chi tiết hiển thị toàn màn hình */}
                 <ExtractedForm
+                  key={formGeneration}
                   initialData={extractedData}
                   existingRecords={records}
                   tieuChuanLuongList={tieuChuanLuong}
@@ -671,6 +760,7 @@ export default function App() {
                     setBatchEmployees([]);
                     setEmployeeGroups([]);
                     setSingleIntakeInfo({});
+                    setActiveDraft(null);setDraftSavedAt('');setDraftCompleted(false);setDraftError('');
                     setCurrentSopStep(1);
                     showNotification(
                       'success',
@@ -691,6 +781,7 @@ export default function App() {
                 />
               </div>
             )}
+            </fieldset>
           </div>
         )}
 

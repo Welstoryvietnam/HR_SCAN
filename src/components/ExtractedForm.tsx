@@ -267,8 +267,10 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       }
 
       // Tự động chuyển về Bước 2 để người dùng kiểm tra thông tin AI trả ra
-      setActiveTabStep(2);
-      if (onStepChange) onStepChange(2);
+      if (!batchEmployees.length) {
+        setActiveTabStep(2);
+        if (onStepChange) onStepChange(2);
+      }
     }
   }, [initialData]);
 

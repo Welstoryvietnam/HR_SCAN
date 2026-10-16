@@ -32,21 +32,27 @@ before(async () => {
       commits++;
       if (failCommit) return json({error:{status:'UNAVAILABLE'}},503);
       for (const write of body.writes) {
-        const existing = documents.get(write.update?.name);
+        const existing = documents.get(write.update?.name || write.verify || write.delete);
         if (write.currentDocument?.exists === false && existing) return json({error:{status:'ALREADY_EXISTS'}},409);
         if (write.currentDocument?.updateTime && write.currentDocument.updateTime !== existing?.updateTime) return json({error:{status:'FAILED_PRECONDITION'}},409);
       }
       for (const write of body.writes) {
+        if (write.verify) continue;
         if (write.delete) documents.delete(write.delete);
         else documents.set(write.update.name,{...write.update,updateTime:`2026-10-15T01:00:${String(commits).padStart(2,'0')}Z`});
       }
-      return json({writeResults:body.writes.map(() => ({}))});
+      return json({writeResults:body.writes.map(() => ({updateTime:`2026-10-15T01:00:${String(commits).padStart(2,'0')}Z`}))});
     }
     if (url.endsWith(':runQuery')) {
       const email = body.structuredQuery.where?.fieldFilter.value.stringValue;
-      return json([...documents.values()].filter(doc => !email || doc.fields.userEmail.stringValue === email).map(document => ({document})));
+      const collection = body.structuredQuery.from[0].collectionId;
+      return json([...documents.values()].filter(doc => doc.name.split('/').at(-2) === collection && (!email || doc.fields.userEmail?.stringValue === email)).map(document => ({document})));
     }
     const name = url.split('/v1/')[1];
+    if (name.includes('/parts?')) {
+      const parent = name.split('?')[0]+'/';
+      return json({documents:[...documents.values()].filter(doc => doc.name.startsWith(parent))});
+    }
     return documents.has(name) ? json(documents.get(name)) : json({error:{status:'NOT_FOUND'}},404);
   };
   const {default:app} = await import('../api/index.js');
@@ -70,6 +76,23 @@ async function login(username: string,password: string,server = 0) {
   return (await response.json()).user.sessionToken as string;
 }
 function headers(token: string) { return {'Content-Type':'application/json',Authorization:`Bearer ${token}`}; }
+
+async function draftCall(token:string,path:string,method='GET',body?:any,device=0) {
+  const response = await fetch(`${urls[device]}/api/drafts${path}`,{method,headers:headers(token),...(body === undefined ? {} : {body:JSON.stringify(body)})});
+  return {status:response.status,...await response.json()};
+}
+const draftSnapshot = (step=1) => ({step,employees:step>1 ? [{id:'employee-a',hoVaTen:'TEST DRAFT',soCCCD:'000000001234',ngaySinh:'',gioiTinh:'',queQuan:'',diaChiThuongTru:'',soDienThoai:'',thamQuyen:'Giám sát trưởng',phuCapNangLuc:345000}] : [],groups:[{id:'employee-a',label:'TEST DRAFT',documents:[{id:'file-a',fileName:'test.pdf',mimeType:'application/pdf',base64Data:Buffer.from('%PDF-test synthetic document').toString('base64'),docType:'khac'}]}]});
+async function uploadDraft(token:string,snapshot:any,active?:any) {
+  const content = JSON.stringify(snapshot);
+  const staged = await draftCall(token,'/stage','POST',{...active,chunkCount:2,byteLength:Buffer.byteLength(content)});
+  assert.equal(staged.status,200);
+  const meta = staged.data;
+  const split = Math.floor(content.length/2);
+  for (const [index,part] of [content.slice(0,split),content.slice(split)].entries()) assert.equal((await draftCall(token,`/${meta.id}/parts/${meta.revision}/${index}`,'PUT',{content:part})).status,200);
+  const finished = await draftCall(token,`/${meta.id}/finish`,'POST',{revision:meta.revision,version:meta.version});
+  assert.equal(finished.status,200,JSON.stringify(finished));
+  return finished.data;
+}
 
 test('Step 4 save survives independent store instances and another device login, excluding uploads',async () => {
   const token = await login('tuyendung','tuyendung123');
@@ -184,4 +207,78 @@ test('configuration errors distinguish missing database, disabled API and missin
     upstreamFailure = {status:403,body:{error:{status:'PERMISSION_DENIED'}}};
     await assert.rejects(() => store.list(),/roles\/datastore.user/);
   } finally {upstreamFailure = null;}
+});
+
+test('draft Step 1 files and Step 3 fields resume on an independent device, private even from other admins',async () => {
+  const token = await login('tuyendung','tuyendung123');
+  let draft = await uploadDraft(token,draftSnapshot());
+  const deviceToken = await login('tuyendung','tuyendung123',1);
+  const listed = await draftCall(deviceToken,'','GET',undefined,1);
+  assert.equal(listed.data[0].documentCount,1);
+  assert.equal(listed.data[0].step,1);
+  assert.doesNotMatch(JSON.stringify(listed),/base64Data|PDF-test/);
+  const meta = (await draftCall(deviceToken,`/${draft.id}`,'GET',undefined,1)).data;
+  let content = '';
+  for (let index=0;index<meta.chunkCount;index++) content += (await draftCall(deviceToken,`/${draft.id}/parts/${meta.revision}/${index}`,'GET',undefined,1)).data;
+  assert.deepEqual(JSON.parse(content),draftSnapshot());
+  const other = await login('admin','admin123');
+  assert.equal((await draftCall(other,`/${draft.id}`)).status,404);
+  assert.equal((await draftCall(other,'')).data.length,0);
+  assert.equal((await draftCall(other,`/${draft.id}/parts/${meta.revision}/0`)).status,404);
+  assert.equal((await draftCall(other,`/${draft.id}`,'DELETE',{version:draft.version})).status,404);
+  assert.equal((await draftCall('', '')).status,401);
+  const previous = {...draft};
+  draft = await uploadDraft(deviceToken,draftSnapshot(3),draft);
+  const stale = await draftCall(token,'/stage','POST',{id:draft.id,version:previous.version,chunkCount:1,byteLength:10});
+  assert.equal(stale.status,409);
+  const current = (await draftCall(token,`/${draft.id}`)).data;
+  assert.equal(current.step,3);
+  assert.ok([...documents.keys()].filter(name => name.includes(`/intakeDrafts/${draft.id}/parts/`)).every(name => name.includes(current.revision)));
+  const submitted = await fetch(`${urls[1]}/api/sheets/danh-sach-nhan-su/batch`,{method:'POST',headers:headers(deviceToken),body:JSON.stringify({employees:draftSnapshot(3).employees,draftId:draft.id,draftVersion:draft.version})});
+  assert.equal(submitted.status,200,await submitted.clone().text());
+  assert.equal((await submitted.json()).draftCleanupPending,false);
+  assert.equal((await draftCall(token,`/${draft.id}`)).status,404);
+  assert.ok(![...documents.keys()].some(name => name.includes(`/intakeDrafts/${draft.id}`)));
+  const store = new FirestoreRecordStore();
+  const records = await store.list('tuyendung@congty.com');
+  assert.equal(records[0].phuCapNangLuc,345000);
+  assert.doesNotMatch(JSON.stringify(records),/base64Data|test.pdf|PDF-test/);
+  for (const record of records) await store.delete(record.id);
+});
+
+test('incomplete uploads preserve the previous revision; invalid sizes and mutable parts fail closed',async () => {
+  const token = await login('tuyendung','tuyendung123');
+  const draft = await uploadDraft(token,draftSnapshot());
+  const staged = (await draftCall(token,'/stage','POST',{id:draft.id,version:draft.version,chunkCount:2,byteLength:100})).data;
+  const path = `/${draft.id}/parts/${staged.revision}/0`;
+  assert.equal((await draftCall(token,path,'PUT',{content:'partial'})).status,200);
+  assert.equal((await draftCall(token,path,'PUT',{content:'partial'})).status,200);
+  assert.equal((await draftCall(token,path,'PUT',{content:'tampered'})).status,409);
+  assert.notEqual((await draftCall(token,`/${draft.id}/finish`,'POST',staged)).status,200);
+  assert.equal((await draftCall(token,`/${draft.id}`)).data.revision,draft.revision);
+  assert.equal((await draftCall(token,'/stage','POST',{chunkCount:999,byteLength:5})).status,400);
+  assert.equal((await draftCall(token,'/stage','POST',{chunkCount:1,byteLength:17*1024*1024})).status,400);
+  const invalidContent = JSON.stringify({...draftSnapshot(),groups:[{id:'invalid',label:'invalid',documents:[{id:'x',fileName:'script',mimeType:'text/html',base64Data:'eA=='}]}]});
+  const invalid = (await draftCall(token,'/stage','POST',{chunkCount:1,byteLength:Buffer.byteLength(invalidContent)})).data;
+  await draftCall(token,`/${invalid.id}/parts/${invalid.revision}/0`,'PUT',{content:invalidContent});
+  assert.equal((await draftCall(token,`/${invalid.id}/finish`,'POST',invalid)).status,400);
+  const list = (await draftCall(token,'')).data;
+  assert.ok(list.some((item:any) => item.id === invalid.id && !item.ready));
+  for (const item of list) assert.equal((await draftCall(token,`/${item.id}`,'DELETE',{version:item.version})).status,200);
+  assert.equal(documents.size,0);
+});
+
+test('failed draft completion leaves personnel unchanged, successful completion cannot be submitted twice',async () => {
+  const token = await login('tuyendung','tuyendung123');
+  const draft = await uploadDraft(token,draftSnapshot(4));
+  const body = {employees:draftSnapshot(4).employees,draftId:draft.id,draftVersion:draft.version};
+  failCommit = true;
+  const request = () => fetch(`${urls[0]}/api/sheets/danh-sach-nhan-su/batch`,{method:'POST',headers:headers(token),body:JSON.stringify(body)});
+  try {assert.equal((await request()).status,503);} finally {failCommit=false;}
+  assert.equal((await new FirestoreRecordStore().list()).length,0);
+  assert.equal((await request()).status,200);
+  assert.equal((await request()).status,404);
+  const store = new FirestoreRecordStore();
+  assert.equal((await store.list()).length,1);
+  for (const record of await store.list()) await store.delete(record.id);
 });

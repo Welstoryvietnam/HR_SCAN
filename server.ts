@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
 import { randomUUID } from "node:crypto";
 import { recordStore, personnelFields, firestoreConfigured, StorageError } from "./backend/recordStore.js";
+import { draftStore } from './backend/draftStore.js';
 import { createSession, readSession } from "./backend/session.js";
 import { DEFAULT_ORGANIZATION_HIERARCHY } from "./src/data/organizationHierarchy.js";
 
@@ -781,6 +782,21 @@ const requirePersonnelSession: express.RequestHandler = (req,res,next) => {
   req.headers['x-user-email'] = user.email;
   next();
 };
+app.use('/api/drafts',requirePersonnelSession,(_req,res,next) => {
+  res.setHeader('Cache-Control','no-store');
+  next();
+});
+const draftRoute = (handler: (req: express.Request,email: string) => Promise<any>): express.RequestHandler => async (req,res) => {
+  try { res.json({success:true,data:await handler(req,res.locals.personnelUser.email)}); }
+  catch (error) { res.status(error instanceof StorageError ? error.status : 500).json({success:false,error:error instanceof StorageError ? error.message : 'Không thể đồng bộ bản nháp. Vui lòng thử lại.'}); }
+};
+app.get('/api/drafts',draftRoute((_req,email) => draftStore.summaries(email)));
+app.post('/api/drafts/stage',draftRoute((req,email) => draftStore.stage(email,req.body)));
+app.put('/api/drafts/:id/parts/:revision/:index',draftRoute((req,email) => draftStore.putPart(email,String(req.params.id),String(req.params.revision),Number(req.params.index),req.body.content)));
+app.post('/api/drafts/:id/finish',draftRoute((req,email) => draftStore.finish(email,String(req.params.id),req.body.revision,req.body.version)));
+app.get('/api/drafts/:id',draftRoute((req,email) => draftStore.open(email,String(req.params.id))));
+app.get('/api/drafts/:id/parts/:revision/:index',draftRoute((req,email) => draftStore.part(email,String(req.params.id),String(req.params.revision),Number(req.params.index))));
+app.delete('/api/drafts/:id',draftRoute((req,email) => draftStore.discard(email,String(req.params.id),req.body.version)));
 app.use(['/api/admin','/api/settings'],requirePersonnelSession,(_req,res,next) => {
   if (res.locals.personnelUser.role !== 'admin') {res.status(403).json({success:false,error:'Chỉ Quản trị viên mới có quyền thực hiện thao tác này.'});return;}
   next();
@@ -2232,12 +2248,15 @@ app.post("/api/sheets/danh-sach-nhan-su", async (req, res) => {
   try {
     const userEmail = ((req.headers["x-user-email"] as string) || req.body.userEmail || "nhanvien@congty.com").toLowerCase().trim();
     const newRecord = buildPersonnelRecord(req.body, userEmail);
-    await recordStore.create([newRecord]);
+    const draftCleanupPending = req.body.draftId
+      ? await draftStore.complete(userEmail,req.body.draftId,req.body.draftVersion,[newRecord])
+      : (await recordStore.create([newRecord]),false);
 
     res.json({
       success: true,
       message: "Đã lưu hồ sơ vào Firestore.",
       record: newRecord,
+      draftCleanupPending,
       emailSent: false,
     });
   } catch (error) {
@@ -2258,13 +2277,16 @@ app.post("/api/sheets/danh-sach-nhan-su/batch", async (req, res) => {
     }
 
     const savedRecords = batchList.map(item => buildPersonnelRecord(item,userEmail));
-    await recordStore.create(savedRecords);
+    const draftCleanupPending = req.body.draftId
+      ? await draftStore.complete(userEmail,req.body.draftId,req.body.draftVersion,savedRecords)
+      : (await recordStore.create(savedRecords),false);
 
     res.json({
       success: true,
       message: `Đã lưu ${savedRecords.length} hồ sơ vào Firestore.`,
       count: savedRecords.length,
       records: savedRecords,
+      draftCleanupPending,
     });
   } catch (error) {
     console.error("Lỗi khi lưu hàng loạt hồ sơ:", error);

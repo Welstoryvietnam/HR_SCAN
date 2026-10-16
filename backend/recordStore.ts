@@ -44,7 +44,7 @@ function encode(value: any): FirestoreValue {
   if (typeof value === 'object') return { mapValue: { fields: encodeFields(value) } };
   return { stringValue: String(value) };
 }
-function encodeFields(value: EmployeeRecord) { return Object.fromEntries(Object.entries(value).map(([key,item]) => [key,encode(item)])); }
+export function encodeFields(value: EmployeeRecord) { return Object.fromEntries(Object.entries(value).map(([key,item]) => [key,encode(item)])); }
 function decode(value: FirestoreValue): any {
   if ('nullValue' in value) return null;
   if ('booleanValue' in value) return value.booleanValue;
@@ -54,9 +54,10 @@ function decode(value: FirestoreValue): any {
   if ('mapValue' in value) return decodeFields(value.mapValue.fields || {});
   return value.stringValue ?? value.timestampValue ?? '';
 }
-function decodeFields(value: Record<string,FirestoreValue>): EmployeeRecord { return Object.fromEntries(Object.entries(value).map(([key,item]) => [key,decode(item)])); }
+export function decodeFields(value: Record<string,FirestoreValue>): EmployeeRecord { return Object.fromEntries(Object.entries(value).map(([key,item]) => [key,decode(item)])); }
 
 export class FirestoreRecordStore {
+  constructor(private collection = 'personnel', private filter = personnelFields) {}
   private token?: { value: string; expires: number; identity: string };
   private async accessToken() {
     const credentials = firebaseCredentials();
@@ -72,12 +73,12 @@ export class FirestoreRecordStore {
     this.token = {value:body.access_token,expires:Date.now()+Number(body.expires_in||3600)*1000,identity:credentials.email};
     return this.token.value;
   }
-  private root() { return `projects/${firebaseCredentials().projectId}/databases/(default)/documents`; }
-  private document(id: string) {
+  protected root() { return `projects/${firebaseCredentials().projectId}/databases/(default)/documents`; }
+  protected document(id: string) {
     if (!/^[A-Za-z0-9_-]{1,150}$/.test(id)) throw new StorageError('Mã hồ sơ không hợp lệ.',400);
-    return `${this.root()}/personnel/${id}`;
+    return `${this.root()}/${this.collection}/${id}`;
   }
-  private async request(path: string, method = 'GET', body?: any) {
+  protected async request(path: string, method = 'GET', body?: any) {
     try {
     const response = await fetch(`https://firestore.googleapis.com/v1/${path}`,{method,headers:{Authorization:`Bearer ${await this.accessToken()}`,'Content-Type':'application/json'},...(body === undefined ? {} : {body:JSON.stringify(body)}),signal:AbortSignal.timeout(20_000)});
     const data = await response.json();
@@ -99,7 +100,7 @@ export class FirestoreRecordStore {
     }
   }
   async list(email?: string) {
-    const results = await this.request(`${this.root()}:runQuery`,'POST',{structuredQuery:{from:[{collectionId:'personnel'}],...(email ? {where:{fieldFilter:{field:{fieldPath:'userEmail'},op:'EQUAL',value:{stringValue:email}}}} : {})}});
+    const results = await this.request(`${this.root()}:runQuery`,'POST',{structuredQuery:{from:[{collectionId:this.collection}],...(email ? {where:{fieldFilter:{field:{fieldPath:'userEmail'},op:'EQUAL',value:{stringValue:email}}}} : {})}});
     return results.filter((item: any) => item.document).map((item: any) => decodeFields(item.document.fields || {})).sort((a: EmployeeRecord,b: EmployeeRecord) => String(b.timestamp).localeCompare(String(a.timestamp)));
   }
   async get(id: string) {
@@ -109,10 +110,11 @@ export class FirestoreRecordStore {
   async create(records: EmployeeRecord[]) {
     if (!records.length || records.length > 400) throw new StorageError('Mỗi lần lưu từ 1 đến 400 hồ sơ.',400);
     // Atomic commit: no partial success or overwriting another submission.
-    await this.request(`${this.root()}:commit`,'POST',{writes:records.map(record => ({update:{name:this.document(record.id),fields:encodeFields(personnelFields(record))},currentDocument:{exists:false}}))});
+    await this.request(`${this.root()}:commit`,'POST',{writes:records.map(record => ({update:{name:this.document(record.id),fields:encodeFields(this.filter(record))},currentDocument:{exists:false}}))});
   }
   async update(id: string, record: EmployeeRecord, version: string) {
-    await this.request(`${this.root()}:commit`,'POST',{writes:[{update:{name:this.document(id),fields:encodeFields(personnelFields(record))},currentDocument:{updateTime:version}}]});
+    const result = await this.request(`${this.root()}:commit`,'POST',{writes:[{update:{name:this.document(id),fields:encodeFields(this.filter(record))},currentDocument:{updateTime:version}}]});
+    return result.writeResults?.[0]?.updateTime as string | undefined;
   }
   async delete(id: string) {
     await this.request(`${this.root()}:commit`,'POST',{writes:[{delete:this.document(id)}]});
