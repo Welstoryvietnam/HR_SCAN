@@ -40,22 +40,21 @@ export function Dashboard({records}: {records: NhanSuRecord[]}) {
       </article>)}
     </section>
     {report.unknownAI > 0 && <p className="text-xs text-slate-500">{report.unknownAI} hồ sơ cũ chưa có dấu xác nhận trích xuất AI nên chưa được tính vào chỉ số AI Vision.</p>}
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-label="Thống kê theo người nhập">
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-label="Thống kê nhân viên mới">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 p-4">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900"><Users className="h-4 w-4 text-indigo-600" />Thống kê theo người nhập nhân viên mới</h3>
+        <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900"><Users className="h-4 w-4 text-indigo-600" />Thống kê nhân viên mới</h3>
         <p className="text-xs text-slate-500">{report.people.length} người nhập • {report.total} hồ sơ</p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[800px] text-left text-sm" aria-label="Thống kê hồ sơ theo người nhập">
+        <table className="w-full min-w-[700px] text-left text-sm" aria-label="Thống kê nhân viên mới">
           <thead className="bg-slate-50 text-xs text-slate-600"><tr>
-            {['STT','Người nhập','Tổng số hồ sơ','Đã số hóa AI Vision','Hồ sơ trong tháng','Đơn vị tiếp nhận','Lần nhập gần nhất'].map(label => <th key={label} scope="col" className="px-4 py-3 font-semibold">{label}</th>)}
+            {['STT','Người nhập','Tổng số hồ sơ','Hồ sơ trong tháng','Đơn vị tiếp nhận','Lần nhập gần nhất'].map(label => <th key={label} scope="col" className="px-4 py-3 font-semibold">{label}</th>)}
           </tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {!report.people.length ? <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">{report.error ? 'Vui lòng chọn lại kỳ thống kê hợp lệ.' : 'Không có hồ sơ trong kỳ đã chọn.'}</td></tr> : report.people.map((person,index) => <tr key={person.email || 'unknown'} className="hover:bg-slate-50/70">
+            {!report.people.length ? <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">{report.error ? 'Vui lòng chọn lại kỳ thống kê hợp lệ.' : 'Không có hồ sơ trong kỳ đã chọn.'}</td></tr> : report.people.map((person,index) => <tr key={person.email || 'unknown'} className="hover:bg-slate-50/70">
               <td className="px-4 py-4 text-xs text-slate-500">{index+1}</td>
               <th scope="row" className="px-4 py-4 font-medium text-slate-900"><span className="block">{person.name}</span>{person.email && person.email !== person.name && <span className="mt-1 block text-xs font-normal text-slate-500">{person.email}</span>}</th>
               <td className="px-4 py-4 font-bold text-indigo-700">{person.total}</td>
-              <td className="px-4 py-4">{person.ai}</td>
               <td className="px-4 py-4">{person.monthly}</td>
               <td className="px-4 py-4">{person.units}</td>
               <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-600">{person.latest ? new Date(person.latest).toLocaleString('vi-VN',{timeZone:'Asia/Ho_Chi_Minh'}) : 'Chưa xác định'}</td>
