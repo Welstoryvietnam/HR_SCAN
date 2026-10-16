@@ -43,6 +43,8 @@ test('normalization never reuses SYLL relatives or invents missing household dat
   assert.equal(cleaned[0].hoTen,'TÊN MẪU');
   assert.equal(cleaned[0].quanHeVoiChuHo,'Con');
   assert.doesNotMatch(JSON.stringify(cleaned),/PRIVATE|base64|image|quanHe"/);
+  const missing = normalizeHouseholdMembers([member({quocTich:'[KHONG HIEN THI]',danToc:'Chưa rõ',ngaySinh:'N/A'})]);
+  assert.equal(missing[0].quocTich,'');assert.equal(missing[0].danToc,'');assert.equal(missing[0].ngaySinh,'');
   const sheet = createHouseholdWorkbook([{hoVaTen:'MẪU',diaChiThuongTru:'',thanhVienHoGiaDinh:[member({ngaySinh:'31/02/2014',hoTen:'=1+1'})]}]).worksheets[0];
   assert.equal(sheet.getCell('C2').value,'31/02/2014','invalid dates are not silently corrected');
   assert.equal(sheet.getCell('B2').type,ExcelJS.ValueType.String);
