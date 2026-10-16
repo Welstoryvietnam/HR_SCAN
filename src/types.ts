@@ -60,11 +60,13 @@ export interface EmployeeIntakeInfo {
 }
 
 export interface EmployeeIdentityInfo {
+  aiVisionExtracted?: boolean;
   tinhTrangHonNhan?: string;
   ngayHetHanCCCD?: string;
 }
 
 export interface NhanSuRecord extends EmployeeIntakeInfo, EmployeeIdentityInfo {
+  nguoiNhap?: string;
   phuCapNangLuc?: number;
   id: string;
   timestamp: string;

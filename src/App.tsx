@@ -336,7 +336,7 @@ export default function App() {
 
       const extractedInfo = res.data.data;
       setBatchEmployees([]);
-      setExtractedData(extractedInfo);
+      setExtractedData({...extractedInfo,aiVisionExtracted:true});
       setCurrentSopStep(2);
 
       if (extractedInfo.cauHoiLamRo && extractedInfo.cauHoiLamRo.length > 0) {
@@ -680,6 +680,7 @@ export default function App() {
                       const first = list[0];
                       setExtractedData({
                         hoVaTen: first.hoVaTen,
+                        aiVisionExtracted:first.aiVisionExtracted,
                         ngaySinh: first.ngaySinh,
                         gioiTinh: first.gioiTinh,
                         soCCCD: first.soCCCD,
@@ -817,8 +818,6 @@ export default function App() {
           <div className="animate-fade-in">
             <Dashboard
               records={records}
-              currentUser={currentUser}
-              standards={tieuChuanLuong}
             />
           </div>
         )}

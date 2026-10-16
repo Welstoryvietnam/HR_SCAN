@@ -52,7 +52,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
           });
           if (result.ok && result.data?.success && result.data.data) {
             const data = result.data.data;
-            Object.assign(draft,data,{id:group.id,hoVaTen:data.hoVaTen || draft.hoVaTen,soTaiLieuDinhKem:group.documents.length});
+            Object.assign(draft,data,{id:group.id,hoVaTen:data.hoVaTen || draft.hoVaTen,soTaiLieuDinhKem:group.documents.length,aiVisionExtracted:true});
           } else {
             const message = result.data?.error || result.error || 'Không nhận được kết quả AI.';
             failures.push(`Nhân viên ${index + 1}: ${message}`);

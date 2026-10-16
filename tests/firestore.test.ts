@@ -288,3 +288,26 @@ test('failed draft completion leaves personnel unchanged, successful completion 
   assert.equal((await store.list()).length,1);
   for (const record of await store.list()) await store.delete(record.id);
 });
+
+test('dashboard attribution and AI markers survive storage without trusting a client-supplied recruiter name',async () => {
+  const token = await login('tuyendung','tuyendung123');
+  const response = await fetch(`${urls[0]}/api/sheets/danh-sach-nhan-su/batch`,{method:'POST',headers:headers(token),body:JSON.stringify({employees:[
+    {hoVaTen:'AI METADATA TEST',soCCCD:'000000002001',aiVisionExtracted:true,nguoiNhap:'SPOOFED NAME'},
+    {hoVaTen:'MANUAL METADATA TEST',soCCCD:'000000002002',soTaiLieuDinhKem:3},
+  ]})});
+  assert.equal(response.status,200);
+  const store = new FirestoreRecordStore();
+  const records = await store.list('tuyendung@congty.com');
+  const ai = records.find(record => record.hoVaTen === 'AI METADATA TEST');
+  const manual = records.find(record => record.hoVaTen === 'MANUAL METADATA TEST');
+  assert.equal(ai?.aiVisionExtracted,true);
+  assert.ok(ai?.nguoiNhap && ai.nguoiNhap !== 'SPOOFED NAME');
+  assert.equal(manual?.aiVisionExtracted,false);
+  const admin = await login('admin','admin123');
+  const changed = await fetch(`${urls[1]}/api/sheets/danh-sach-nhan-su/${ai!.id}`,{method:'PUT',headers:headers(admin),body:JSON.stringify({aiVisionExtracted:false,nguoiNhap:'SPOOFED NAME',ghiChu:'Changed note'})});
+  assert.equal(changed.status,200);
+  const updated = (await store.get(ai!.id)).record;
+  assert.equal(updated.aiVisionExtracted,true);
+  assert.equal(updated.nguoiNhap,ai?.nguoiNhap);
+  for (const record of records) await store.delete(record.id);
+});

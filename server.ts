@@ -2061,7 +2061,7 @@ app.get("/api/sheets/danh-sach-nhan-su", async (req, res) => {
       isAdmin,
       userEmail,
       totalRecords: sorted.length,
-      data: sorted,
+      data: sorted.map(record => ({...record,nguoiNhap:record.nguoiNhap || userAccounts.find(account => account.email.toLowerCase() === String(record.userEmail).toLowerCase())?.fullName || record.userEmail})),
     });
   } catch (error) {
     res.status(error instanceof StorageError ? error.status : 503).json({ success:false,error:"Không tải được hồ sơ từ Firestore. " + (error instanceof StorageError ? error.message : "Vui lòng thử lại.") });
@@ -2106,7 +2106,7 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     thamQuyen = "",
     trinhDoHocVan = "Trung cấp / Cao đẳng / Đại học",
     ghiChu = "",
-    soTaiLieuDinhKem = 1,
+    soTaiLieuDinhKem = 0,
   } = body;
 
   if (!hoVaTen || !soCCCD) {
@@ -2185,6 +2185,8 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     id: `NS_${randomUUID()}`,
     timestamp,
     userEmail,
+    nguoiNhap:userAccounts.find(account => account.email.toLowerCase() === userEmail)?.fullName || userEmail,
+    aiVisionExtracted:body.aiVisionExtracted === true,
     hoVaTen: String(hoVaTen).toUpperCase().trim(),
     ngaySinh: ngaySinh || "",
     gioiTinh: gioiTinh || "Nam",
@@ -2236,7 +2238,7 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     thamQuyen,
     trinhDoHocVan: trinhDoHocVan || "Trung cấp / Cao đẳng / Đại học",
     ghiChu: ghiChu || "",
-    soTaiLieuDinhKem: Number(soTaiLieuDinhKem) || 1,
+    soTaiLieuDinhKem: Math.max(0,Number(soTaiLieuDinhKem) || 0),
     trangThaiEmail: "Chờ gửi" as const,
   };
 
@@ -2347,6 +2349,8 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", async (req, res) => {
       ...body,
       id, // Bảo toàn ID hồ sơ
       timestamp: existing.timestamp,
+      nguoiNhap:existing.nguoiNhap,
+      aiVisionExtracted:existing.aiVisionExtracted,
       userEmail: existing.userEmail,
       troCapDacThuFPT,
       thuongNangLucAM,
