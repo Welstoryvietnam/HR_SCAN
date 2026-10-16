@@ -177,9 +177,19 @@ export interface EmployeeDocumentGroup {
 }
 
 export interface IntakeDraftSnapshot {
+  form?: IntakeFormDraft;
   step: number;
   employees: BatchEmployeeDraft[];
   groups: EmployeeDocumentGroup[];
+}
+
+export interface IntakeFormDraft {
+  employee: Partial<BatchEmployeeDraft>;
+  bulk: {khoi:string;ban:string;phong:string;congViec:string;chucVu:string;diemLamViec:string;loaiHopDong:string};
+  selectedIds: string[];
+  activeIndex: number;
+  isCustomOrg: boolean;
+  isCustomJob: boolean;
 }
 
 export interface IntakeDraftSummary {

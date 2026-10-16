@@ -20,6 +20,18 @@ function validateSnapshot(value: any): asserts value is IntakeDraftSnapshot {
   }
   if (files > 100 || (value.step > 1 && !value.employees.length)) throw new StorageError('Bản nháp cần có nhân viên, tối đa 100 tài liệu.',400);
   if (value.employees.some((employee: any) => !employee || typeof employee.id !== 'string')) throw new StorageError('Dữ liệu nhân viên không hợp lệ.',400);
+  if (value.form !== undefined) {
+    const form = value.form;
+    if (!form || typeof form.employee !== 'object' || !form.employee || !form.bulk ||
+      !['khoi','ban','phong','congViec','chucVu','diemLamViec','loaiHopDong'].every(key => typeof form.bulk[key] === 'string') ||
+      !Array.isArray(form.selectedIds) || form.selectedIds.length > 100 || !form.selectedIds.every((id:any) => typeof id === 'string') ||
+      !Number.isInteger(form.activeIndex) || form.activeIndex < 0 || form.activeIndex > 100 ||
+      typeof form.isCustomOrg !== 'boolean' || typeof form.isCustomJob !== 'boolean') throw new StorageError('Trạng thái biểu mẫu trong bản nháp không hợp lệ.',400);
+    for (const [key,item] of Object.entries(form.employee)) {
+      if (key === 'thongTinGiaDinh') {if (!Array.isArray(item)) throw new StorageError('Thông tin gia đình không hợp lệ.',400);}
+      else if (!['string','number','boolean'].includes(typeof item)) throw new StorageError('Giá trị trong biểu mẫu không hợp lệ.',400);
+    }
+  }
 }
 
 export class FirestoreDraftStore extends FirestoreRecordStore {

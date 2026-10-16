@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { GeminiExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, NhanSuRecord, BatchEmployeeDraft, KhoiNode, EmployeeIntakeInfo } from '../types';
+import React, { useState, useEffect, useRef, useImperativeHandle } from 'react';
+import { GeminiExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, NhanSuRecord, BatchEmployeeDraft, KhoiNode, EmployeeIntakeInfo, IntakeFormDraft } from '../types';
 import { EmployeeReviewGrid } from './EmployeeReviewGrid';
 import { EmployeeIntakeFields } from './EmployeeIntakeFields';
 import { EmployeeSalaryGrid } from './EmployeeSalaryGrid';
@@ -50,6 +50,8 @@ import {
 } from 'lucide-react';
 
 interface ExtractedFormProps {
+  initialDraftState?: IntakeFormDraft;
+  draftReader?: React.Ref<{read: () => IntakeFormDraft}>;
   initialData: GeminiExtractionResult | null;
   existingRecords?: NhanSuRecord[];
   tieuChuanLuongList: TieuChuanLuongItem[];
@@ -81,6 +83,8 @@ const formatVND = (value: number | string | undefined | null): string => {
 };
 
 export const ExtractedForm: React.FC<ExtractedFormProps> = ({
+  initialDraftState,
+  draftReader,
   initialData,
   existingRecords = [],
   tieuChuanLuongList,
@@ -203,6 +207,34 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   const [bulkDiemLamViec, setBulkDiemLamViec] = useState('Hà Nội - FPT Tower');
   const [bulkLoaiHopDong, setBulkLoaiHopDong] = useState('Toàn thời gian (Chính thức)');
   const [bulkSuccessMsg, setBulkSuccessMsg] = useState<string | null>(null);
+  const restoringDraft = useRef(Boolean(initialDraftState));
+
+  // Restore local editors as well as the employee grid. These controls include
+  // unsent bulk selections and custom organization/job fields at Step 3.
+  useEffect(() => {
+    if (!initialDraftState) return;
+    const employee = initialDraftState.employee;
+    const setters: Record<string,(value:any) => void> = {
+      hoVaTen:setHoVaTen,ngaySinh:setNgaySinh,gioiTinh:setGioiTinh,soCCCD:setSoCCCD,
+      ngayCap:setNgayCap,ngayHetHanCCCD:setNgayHetHanCCCD,tinhTrangHonNhan:setTinhTrangHonNhan,noiCap:setNoiCap,
+      queQuan:setQueQuan,diaChiThuongTru:setDiaChiThuongTru,nguonDiaChi:setNguonDiaChi,ghiChuSapNhap:setGhiChuSapNhap,
+      soDienThoai:setSoDienThoai,thongTinGiaDinh:setThongTinGiaDinh,khoi:setKhoi,ban:setBan,phong:setPhong,
+      congViecDuKien:setCongViecDuKien,chucVu:setChucVu,diemLamViec:setDiemLamViec,loaiHopDong:setLoaiHopDong,
+      isManualSalary:setIsManualMode,luongCoBan:setLuongCoBan,phuCapChucVu:setPhuCapChucVu,
+      phuCapDienThoai:setPhuCapDienThoai,troCapTayNghe:setTroCapTayNghe,troCapGiaDinh:setTroCapGiaDinh,
+      thuongChuyenCan:setThuongChuyenCan,thuongSangKien:setThuongSangKien,phuCapMoiTruong:setPhuCapMoiTruong,
+      phuCapXangXe:setPhuCapXangXe,anToanVeSinhVien:setAnToanVeSinhVien,phuCapKinhDoanh:setPhuCapKinhDoanh,
+      phuCapNangNhoc:setPhuCapNangNhoc,troCapDacThuFPT:setTroCapDacThuFPT,thuongNangLucAM:setThuongNangLucAM,
+      phuCapNangLuc:setPhuCapNangLuc,phuCapLuuDong:setPhuCapLuuDong,phuCapPhatSinh:setPhuCapPhatSinh,
+      luongDongBHXH:setLuongDongBHXH,ghiChu:setGhiChu,
+    };
+    Object.entries(employee).forEach(([key,value]) => {if (value !== undefined) setters[key]?.(value);});
+    const bulk = initialDraftState.bulk;
+    setBulkKhoi(bulk.khoi);setBulkBan(bulk.ban);setBulkPhong(bulk.phong);setBulkCongViec(bulk.congViec);
+    setBulkChucVu(bulk.chucVu);setBulkDiemLamViec(bulk.diemLamViec);setBulkLoaiHopDong(bulk.loaiHopDong);
+    setSelectedBatchIds(initialDraftState.selectedIds);setActiveBatchIndex(initialDraftState.activeIndex);
+    setIsCustomOrg(initialDraftState.isCustomOrg);setIsCustomJob(initialDraftState.isCustomJob);
+  },[]);
 
   // Đồng bộ khi batchEmployees prop thay đổi
   useEffect(() => {
@@ -242,6 +274,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   useEffect(() => {
     setIsSavedSuccess(false);
     setSavedSummary(null);
+    if (initialDraftState) return;
     if (initialData) {
       setHoVaTen(initialData.hoVaTen ? initialData.hoVaTen.toUpperCase() : '');
       setNgaySinh(initialData.ngaySinh || '');
@@ -276,6 +309,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
 
   // Tự động gợi ý các định mức lương chuẩn khi chức vụ ở Bước 3 thay đổi (HR vẫn có thể tự do sửa tay)
   useEffect(() => {
+    if (restoringDraft.current) return;
     const std = findTieuChuanLuong(congViecDuKien, chucVu);
     if (std) {
       setLuongCoBan(std.luongCoBan || 0);
@@ -288,6 +322,13 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       setLuongDongBHXH((std.luongCoBan || 0) + (std.phuCapChucVu || 0));
     }
   }, [congViecDuKien, chucVu]);
+
+  useEffect(() => {
+    if (!restoringDraft.current) return;
+    // End restoration after the state update has rendered. The first standard
+    // suggestion must not overwrite restored manual salary amounts.
+    if (congViecDuKien === initialDraftState?.employee.congViecDuKien && chucVu === initialDraftState?.employee.chucVu) restoringDraft.current = false;
+  },[congViecDuKien,chucVu]);
 
   // Tra cứu bảng tiêu chuẩn lương
   const matchedStandard = findTieuChuanLuong(congViecDuKien, chucVu);
@@ -370,6 +411,12 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     trangThaiEmail: 'Đã gửi',
     thoiGianGuiEmail: new Date().toISOString(),
   };
+
+  useImperativeHandle(draftReader,() => ({read: () => ({
+    employee:{...currentRecordObject,isManualSalary},
+    bulk:{khoi:bulkKhoi,ban:bulkBan,phong:bulkPhong,congViec:bulkCongViec,chucVu:bulkChucVu,diemLamViec:bulkDiemLamViec,loaiHopDong:bulkLoaiHopDong},
+    selectedIds:selectedBatchIds,activeIndex:activeBatchIndex,isCustomOrg,isCustomJob,
+  })}));
 
   // Chuyển đổi danh sách batch thành mảng NhanSuRecord chuẩn 43 cột
   const getBatchRecordObjects = (): NhanSuRecord[] => {

@@ -10,6 +10,7 @@ import {
   EmployeeDocumentGroup,
   EmployeeIntakeInfo,
   IntakeDraftSummary,
+  IntakeFormDraft,
   KhoiNode
 } from './types';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from './data/organizationHierarchy';
@@ -77,6 +78,12 @@ export default function App() {
   const [draftCompleted,setDraftCompleted] = useState(false);
   const [uploaderBusy,setUploaderBusy] = useState(false);
   const [formGeneration,setFormGeneration] = useState(0);
+  const [draftFormState,setDraftFormState] = useState<IntakeFormDraft|undefined>();
+  const draftReader = useRef<{read: () => IntakeFormDraft}>(null);
+  const changeSopStep = (step:number) => {
+    if (step === 1 && draftReader.current) setDraftFormState(draftReader.current.read());
+    setCurrentSopStep(step);
+  };
   const draftOwner = useRef(currentUser?.email);
   draftOwner.current = currentUser?.email;
 
@@ -94,7 +101,7 @@ export default function App() {
     const owner = currentUser.email;
     setDraftBusy(true);setDraftStatus('Đang chuẩn bị bản nháp…');setDraftError('');
     try {
-      const saved = await saveIntakeDraft({step:Math.min(currentSopStep,4),employees:batchEmployees,groups:employeeGroups},activeDraft,
+      const saved = await saveIntakeDraft({step:Math.min(currentSopStep,4),employees:batchEmployees,groups:employeeGroups,form:draftReader.current?.read() || draftFormState},activeDraft,
         draft => {if (draftOwner.current === owner) {setActiveDraft(draft);setDraftSavedAt('');}},
         message => {if (draftOwner.current === owner) setDraftStatus(message);});
       if (draftOwner.current !== owner) return;
@@ -114,7 +121,7 @@ export default function App() {
       setImages(snapshot.groups.flatMap(group => group.documents));setEmployeeGroups(snapshot.groups);
       setBatchEmployees(snapshot.employees);
       setExtractedData(snapshot.employees[0] as GeminiExtractionResult || null);
-      setSingleIntakeInfo({});setActiveDraft(active);setDraftSavedAt(draft.timestamp);setDraftCompleted(false);
+      setSingleIntakeInfo(snapshot.form?.employee || {});setDraftFormState(snapshot.form);setActiveDraft(active);setDraftSavedAt(draft.timestamp);setDraftCompleted(false);
       setFormGeneration(previous => previous+1);setCurrentSopStep(snapshot.step);setActiveTab('upload');
     } catch (error) {if (draftOwner.current === owner) setDraftError((error as Error).message);}
     finally {if (draftOwner.current === owner) setDraftBusy(false);}
@@ -283,6 +290,7 @@ export default function App() {
     setSingleIntakeInfo({});
     setCurrentSopStep(1);
     setActiveDraft(null);setDrafts([]);setDraftSavedAt('');setDraftError('');setDraftBusy(false);setDraftCompleted(false);setUploaderBusy(false);
+    setDraftFormState(undefined);
     showNotification('success', 'Đã đăng xuất khỏi hệ thống thành công.');
   };
 
@@ -622,13 +630,14 @@ export default function App() {
                 if (!window.confirm('Tạo đợt nhập mới? Hãy lưu tạm trước nếu bạn muốn giữ nội dung đang nhập.')) return;
                 setImages([]);setEmployeeGroups([]);setBatchEmployees([]);setExtractedData(null);setSingleIntakeInfo({});
                 setActiveDraft(null);setDraftSavedAt('');setDraftError('');setDraftCompleted(false);setCurrentSopStep(1);
+                setDraftFormState(undefined);
               }} />
             <fieldset disabled={draftBusy || isSaving} className="min-w-0 space-y-4">
             {/* Thanh tiến trình SOP 4 Bước (Tối ưu: Chỉ giữ tên bước) */}
             <SopProgressHeader
               currentStep={currentSopStep}
               onSelectStep={(step) => {
-                setCurrentSopStep(step);
+                changeSopStep(step);
               }}
               hasImages={images.length > 0}
               hasExtractedData={!!extractedData}
@@ -664,6 +673,7 @@ export default function App() {
                   employeeGroups={employeeGroups}
                   onEmployeeGroupsChange={setEmployeeGroups}
                   onProceedToStep2WithBatch={(list) => {
+                    setDraftFormState(undefined);
                     setImages(employeeGroups.flatMap(group => group.documents));
                     setBatchEmployees(list);
                     if (list.length > 0) {
@@ -721,7 +731,7 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => batchEmployees.length ? setCurrentSopStep(1) : handleExtractAI()}
+                      onClick={() => batchEmployees.length ? changeSopStep(1) : handleExtractAI()}
                       disabled={isProcessingAI || images.length === 0}
                       className="px-3 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
                       title={batchEmployees.length ? 'Quay lại Bước 1 để quét riêng tài liệu của từng nhân viên' : 'Quét lại toàn bộ tài liệu bằng AI Vision'}
@@ -731,7 +741,7 @@ export default function App() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => setCurrentSopStep(1)}
+                      onClick={() => changeSopStep(1)}
                       className="px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-blue-700 bg-slate-50 border border-slate-300 rounded-lg hover:border-blue-300 transition cursor-pointer"
                       title="Quay lại Bước 1 để chọn lại ảnh hoặc tài liệu khác"
                     >
@@ -743,15 +753,17 @@ export default function App() {
                 {/* Form chi tiết hiển thị toàn màn hình */}
                 <ExtractedForm
                   key={formGeneration}
+                  initialDraftState={draftFormState}
+                  draftReader={draftReader}
                   initialData={extractedData}
                   existingRecords={records}
                   tieuChuanLuongList={tieuChuanLuong}
                   userEmail={currentUser.email}
                   onSaveToSheet={handleSaveToSheet}
                   isSaving={isSaving}
-                  onStepChange={(step) => setCurrentSopStep(step)}
+                  onStepChange={changeSopStep}
                   currentStep={currentSopStep}
-                  onBackToStep1={() => setCurrentSopStep(1)}
+                  onBackToStep1={() => changeSopStep(1)}
                   onReExtractAI={handleExtractAI}
                   isProcessingAI={isProcessingAI}
                   onResetNewRecord={() => {
@@ -761,6 +773,7 @@ export default function App() {
                     setEmployeeGroups([]);
                     setSingleIntakeInfo({});
                     setActiveDraft(null);setDraftSavedAt('');setDraftCompleted(false);setDraftError('');
+                    setDraftFormState(undefined);
                     setCurrentSopStep(1);
                     showNotification(
                       'success',

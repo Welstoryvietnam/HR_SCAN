@@ -229,6 +229,12 @@ test('draft Step 1 files and Step 3 fields resume on an independent device, priv
   assert.equal((await draftCall('', '')).status,401);
   const previous = {...draft};
   draft = await uploadDraft(deviceToken,draftSnapshot(3),draft);
+  const form = {employee:{hoVaTen:'TEST DRAFT',luongCoBan:1234567,congViecDuKien:'Công việc tùy chỉnh',chucVu:'Chức vụ tùy chỉnh'},bulk:{khoi:'K',ban:'B',phong:'P',congViec:'CV',chucVu:'V',diemLamViec:'D',loaiHopDong:'H'},selectedIds:['employee-a'],activeIndex:0,isCustomOrg:true,isCustomJob:true};
+  draft = await uploadDraft(deviceToken,{...draftSnapshot(3),form},draft);
+  const formMeta = (await draftCall(token,`/${draft.id}`)).data;
+  let restoredForm = '';
+  for (let index=0;index<formMeta.chunkCount;index++) restoredForm += (await draftCall(token,`/${draft.id}/parts/${formMeta.revision}/${index}`)).data;
+  assert.deepEqual(JSON.parse(restoredForm).form,form);
   const stale = await draftCall(token,'/stage','POST',{id:draft.id,version:previous.version,chunkCount:1,byteLength:10});
   assert.equal(stale.status,409);
   const current = (await draftCall(token,`/${draft.id}`)).data;
