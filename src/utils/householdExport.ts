@@ -35,7 +35,8 @@ export function createHouseholdWorkbook(employees:HouseholdEmployee[]) {
       // The user's required mapping is a permanent address, never birthplace,
       // hometown, temporary residence or the CCCD issuing authority.
       const address = member.diaChiThuongTru || employee.diaChiThuongTru?.trim() || '';
-      const row = sheet.addRow([i+1,member.hoTen,excelBirthDate(member.ngaySinh),member.quanHeVoiChuHo,member.gioiTinh,address,member.quocTich,member.danToc]);
+      const values = [i+1,member.hoTen,excelBirthDate(member.ngaySinh),member.quanHeVoiChuHo,member.gioiTinh,address,member.quocTich,member.danToc];
+      const row = sheet.addRow(values.map(value => value === '' ? null : value));
       row.height=Math.max(28,Math.ceil(address.length/70)*17,Math.ceil(member.hoTen.length/24)*17,Math.ceil(member.quanHeVoiChuHo.length/20)*17);
       row.eachCell({includeEmpty:true},(cell,column) => {
         cell.font={name:'Times New Roman',size:12,color:{argb:'FF000000'}};
@@ -43,7 +44,7 @@ export function createHouseholdWorkbook(employees:HouseholdEmployee[]) {
         cell.numFmt=column === 3 && cell.value instanceof Date ? 'dd/mm/yyyy' : column === 1 ? '0' : '@';
       });
     });
-    if (!members.length) {sheet.addRow(['','','','','','','','']).height=28;}
+    if (!members.length) {sheet.addRow(Array(8).fill(null)).height=28;}
     for (let row=1;row<=sheet.rowCount;row++) for (let column=1;column<=8;column++) sheet.getCell(row,column).border={
       top:{style:'thin',color:{argb:'FF000000'}},bottom:{style:'thin',color:{argb:'FF000000'}},left:{style:'thin',color:{argb:'FF000000'}},right:{style:'thin',color:{argb:'FF000000'}},
     };

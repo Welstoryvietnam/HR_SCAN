@@ -23,12 +23,12 @@ test('household appendix has exactly eight template columns and separate employe
   assert.equal(first.getCell('C2').numFmt,'dd/mm/yyyy');
   assert.equal(first.getCell('C3').value,'1980','a birth year must not become a fabricated full date');
   assert.equal(first.getCell('D2').value,'Con');
-  assert.equal(first.getCell('G2').value,'');
-  assert.equal(first.getCell('H2').value,'');
+  assert.equal(first.getCell('G2').value ?? '','');
+  assert.equal(first.getCell('H2').value ?? '','');
   assert.equal(second.getCell('A2').value,1,'numbering restarts for each household');
   assert.equal(second.getCell('B2').value,'THÀNH VIÊN HỘ KHÁC');
   assert.equal(empty.rowCount,2,'missing household produces only the blank template');
-  assert.equal(empty.getCell('B2').value,'');
+  assert.equal(empty.getCell('B2').value ?? '','');
   assert.notEqual(first.name,second.name);
   assert.ok(first.name.length<=31 && !first.name.includes('/'));
   assert.equal(first.getCell('A1').font.name,'Times New Roman');
@@ -48,5 +48,5 @@ test('normalization never reuses SYLL relatives or invents missing household dat
   const sheet = createHouseholdWorkbook([{hoVaTen:'MẪU',diaChiThuongTru:'',thanhVienHoGiaDinh:[member({ngaySinh:'31/02/2014',hoTen:'=1+1'})]}]).worksheets[0];
   assert.equal(sheet.getCell('C2').value,'31/02/2014','invalid dates are not silently corrected');
   assert.equal(sheet.getCell('B2').type,ExcelJS.ValueType.String);
-  assert.equal(sheet.getCell('F2').value,'');
+  assert.equal(sheet.getCell('F2').value ?? '','');
 });
