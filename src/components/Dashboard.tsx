@@ -5,6 +5,7 @@ import { currentMonthRange, dashboardReport } from '../utils/dashboardStats';
 
 export function Dashboard({records}: {records: NhanSuRecord[]}) {
   const [range,setRange] = useState(() => currentMonthRange());
+  const changeDate = (key:'from'|'to',value:string) => setRange(previous => previous[key] === value ? previous : {...previous,[key]:value});
   const report = useMemo(() => dashboardReport(records,range.from,range.to),[records,range.from,range.to]);
   const monthLabel = `${report.currentMonth.slice(5,7)}/${report.currentMonth.slice(0,4)}`;
   const cards = [
@@ -22,10 +23,10 @@ export function Dashboard({records}: {records: NhanSuRecord[]}) {
       <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4">
         <span className="w-full text-sm font-semibold text-slate-700 sm:w-auto sm:self-center">Kỳ thống kê</span>
         <label className="min-w-0 flex-1 space-y-1 text-xs font-medium text-slate-600 sm:max-w-52">Từ ngày
-          <input type="date" value={range.from} onChange={event => setRange(previous => ({...previous,from:event.target.value}))} aria-invalid={Boolean(report.error)} aria-describedby={report.error ? 'dashboard-date-error' : undefined} className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" />
+          <input type="date" value={range.from} onInput={event => changeDate('from',event.currentTarget.value)} onChange={event => changeDate('from',event.currentTarget.value)} aria-invalid={Boolean(report.error)} aria-describedby={report.error ? 'dashboard-date-error' : undefined} className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" />
         </label>
         <label className="min-w-0 flex-1 space-y-1 text-xs font-medium text-slate-600 sm:max-w-52">Đến ngày
-          <input type="date" value={range.to} onChange={event => setRange(previous => ({...previous,to:event.target.value}))} aria-invalid={Boolean(report.error)} aria-describedby={report.error ? 'dashboard-date-error' : undefined} className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" />
+          <input type="date" value={range.to} onInput={event => changeDate('to',event.currentTarget.value)} onChange={event => changeDate('to',event.currentTarget.value)} aria-invalid={Boolean(report.error)} aria-describedby={report.error ? 'dashboard-date-error' : undefined} className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" />
         </label>
         <button type="button" onClick={() => setRange(currentMonthRange())} className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700">Tháng hiện tại</button>
         <button type="button" onClick={() => setRange({from:'',to:''})} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600">Toàn bộ thời gian</button>
