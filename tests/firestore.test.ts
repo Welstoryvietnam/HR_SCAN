@@ -311,3 +311,26 @@ test('dashboard attribution and AI markers survive storage without trusting a cl
   assert.equal(updated.nguoiNhap,ai?.nguoiNhap);
   for (const record of records) await store.delete(record.id);
 });
+
+test('VNeID households persist separately from SYLL relatives and survive draft form snapshots',async () => {
+  const token = await login('tuyendung','tuyendung123');
+  const household = {hoTen:'TEST HOUSEHOLD',ngaySinh:'02/03/2014',quanHeVoiChuHo:'Con',gioiTinh:'Nam',diaChiThuongTru:'THUONG TRU TEST',quocTich:'',danToc:''};
+  const snapshot = draftSnapshot(3);
+  const employees = [{...snapshot.employees[0],thanhVienHoGiaDinh:[household]}];
+  const form = {employee:{...employees[0]},bulk:{khoi:'K',ban:'B',phong:'P',congViec:'CV',chucVu:'V',diemLamViec:'D',loaiHopDong:'H'},selectedIds:['employee-a'],activeIndex:0,isCustomOrg:false,isCustomJob:false};
+  const draft = await uploadDraft(token,{...snapshot,employees,form});
+  const meta = (await draftCall(token,`/${draft.id}`)).data;
+  let content = '';
+  for (let i=0;i<meta.chunkCount;i++) content += (await draftCall(token,`/${draft.id}/parts/${meta.revision}/${i}`)).data;
+  assert.deepEqual(JSON.parse(content).form.employee.thanhVienHoGiaDinh,[household]);
+  const response = await fetch(`${urls[1]}/api/sheets/danh-sach-nhan-su`,{method:'POST',headers:headers(token),body:JSON.stringify({hoVaTen:'TEST HOUSEHOLD OWNER',soCCCD:'000000002999',thongTinGiaDinh:[{hoTen:'SYLL RELATIVE',quanHe:'Vợ'}],thanhVienHoGiaDinh:[{...household,image:'PRIVATE_IMAGE'}],draftId:draft.id,draftVersion:draft.version})});
+  assert.equal(response.status,200);
+  const record = (await response.json()).record;
+  const store = new FirestoreRecordStore();
+  const restored = (await store.get(record.id)).record;
+  assert.deepEqual(restored.thanhVienHoGiaDinh,[household]);
+  assert.equal(restored.thongTinGiaDinh[0].quanHe,'Vợ');
+  assert.doesNotMatch(JSON.stringify(restored),/PRIVATE_IMAGE/);
+  assert.equal((await draftCall(token,`/${draft.id}`)).status,404);
+  await store.delete(record.id);
+});

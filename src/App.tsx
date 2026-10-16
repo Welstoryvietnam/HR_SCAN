@@ -697,6 +697,7 @@ export default function App() {
                         congViecDuKien: first.congViecDuKien || 'Đầu Bếp',
                         chucVu: first.chucVu || 'Bếp Trưởng',
                         thongTinGiaDinh: first.thongTinGiaDinh || [],
+                        thanhVienHoGiaDinh:first.thanhVienHoGiaDinh || [],
                         thongTinChuaRo: [],
                         cauHoiLamRo: [],
                       });

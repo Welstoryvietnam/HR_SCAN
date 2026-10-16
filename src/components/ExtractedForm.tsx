@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useImperativeHandle } from 'react';
-import { GeminiExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, NhanSuRecord, BatchEmployeeDraft, KhoiNode, EmployeeIntakeInfo, IntakeFormDraft } from '../types';
+import { GeminiExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, ThanhVienHoGiaDinh, NhanSuRecord, BatchEmployeeDraft, KhoiNode, EmployeeIntakeInfo, IntakeFormDraft } from '../types';
 import { EmployeeReviewGrid } from './EmployeeReviewGrid';
 import { EmployeeIntakeFields } from './EmployeeIntakeFields';
 import { EmployeeSalaryGrid } from './EmployeeSalaryGrid';
@@ -7,6 +7,8 @@ import { DEFAULT_ORGANIZATION_HIERARCHY } from '../data/organizationHierarchy';
 import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
 import { findTieuChuanLuong, DEFAULT_TIEU_CHUAN_LUONG } from '../data/tieuChuanLuongData';
 import { generateExcel43Columns, HR_43_COLUMNS } from '../utils/excelExport';
+import { exportHouseholdAppendix } from '../utils/householdExport';
+import { normalizeHouseholdMembers } from '../utils/household';
 import {
   Save,
   Plus,
@@ -154,6 +156,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   const [ghiChuSapNhap, setGhiChuSapNhap] = useState('');
   const [soDienThoai, setSoDienThoai] = useState('');
   const [thongTinGiaDinh, setThongTinGiaDinh] = useState<ThanhVienGiaDinh[]>([]);
+  const [thanhVienHoGiaDinh,setThanhVienHoGiaDinh] = useState<ThanhVienHoGiaDinh[]>([]);
 
   // Bước 3: Cơ cấu tổ chức & Vị trí công tác (do con người chọn)
   const [khoi, setKhoi] = useState('FD MANAGEMENT');
@@ -192,6 +195,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
 
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isExportingHousehold,setIsExportingHousehold] = useState(false);
 
   // Quản lý trạng thái danh sách hàng loạt (Batch Mode)
   const [batchList, setBatchList] = useState<BatchEmployeeDraft[]>(batchEmployees);
@@ -218,7 +222,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       hoVaTen:setHoVaTen,ngaySinh:setNgaySinh,gioiTinh:setGioiTinh,soCCCD:setSoCCCD,
       ngayCap:setNgayCap,ngayHetHanCCCD:setNgayHetHanCCCD,tinhTrangHonNhan:setTinhTrangHonNhan,noiCap:setNoiCap,
       queQuan:setQueQuan,diaChiThuongTru:setDiaChiThuongTru,nguonDiaChi:setNguonDiaChi,ghiChuSapNhap:setGhiChuSapNhap,
-      soDienThoai:setSoDienThoai,thongTinGiaDinh:setThongTinGiaDinh,khoi:setKhoi,ban:setBan,phong:setPhong,
+      soDienThoai:setSoDienThoai,thongTinGiaDinh:setThongTinGiaDinh,thanhVienHoGiaDinh:setThanhVienHoGiaDinh,khoi:setKhoi,ban:setBan,phong:setPhong,
       congViecDuKien:setCongViecDuKien,chucVu:setChucVu,diemLamViec:setDiemLamViec,loaiHopDong:setLoaiHopDong,
       isManualSalary:setIsManualMode,luongCoBan:setLuongCoBan,phuCapChucVu:setPhuCapChucVu,
       phuCapDienThoai:setPhuCapDienThoai,troCapTayNghe:setTroCapTayNghe,troCapGiaDinh:setTroCapGiaDinh,
@@ -265,6 +269,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     if (updates.ghiChuSapNhap !== undefined) setGhiChuSapNhap(updates.ghiChuSapNhap);
     if (updates.soDienThoai !== undefined) setSoDienThoai(updates.soDienThoai);
     if (updates.thongTinGiaDinh !== undefined) setThongTinGiaDinh(updates.thongTinGiaDinh);
+    if (updates.thanhVienHoGiaDinh !== undefined) setThanhVienHoGiaDinh(updates.thanhVienHoGiaDinh);
     if (updates.ghiChu !== undefined) setGhiChu(updates.ghiChu);
     const intakeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => ['ngayVaoLam','diaChiTamTru','emailCaNhan','tinhTrangHoSo','thamQuyen'].includes(key)));
     if (Object.keys(intakeUpdates).length) onIntakeInfoChange?.(intakeUpdates);
@@ -294,6 +299,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
             : 'Trích xuất từ mặt CCCD - HR cần kiểm tra địa giới sáp nhập mới')
       );
       setSoDienThoai(initialData.soDienThoai || '');
+      setThanhVienHoGiaDinh(initialData.thanhVienHoGiaDinh || []);
 
       if (initialData.thongTinGiaDinh && initialData.thongTinGiaDinh.length > 0) {
         setThongTinGiaDinh(initialData.thongTinGiaDinh);
@@ -407,6 +413,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     tongThuNhapDuKien,
     luongDongBHXH: Number(luongDongBHXH) || 0,
     thongTinGiaDinh,
+    thanhVienHoGiaDinh,
     ghiChu,
     soTaiLieuDinhKem: uploadedImagesCount || 0,
     trangThaiEmail: 'Đã gửi',
@@ -500,6 +507,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         luongDongBHXH: Number(emp.luongDongBHXH ?? (lcb + pcCV)),
         isManualSalary: emp.isManualSalary ?? !std,
         thongTinGiaDinh: emp.thongTinGiaDinh || [],
+        thanhVienHoGiaDinh:emp.thanhVienHoGiaDinh || [],
         ghiChu: emp.ghiChu || '',
         soTaiLieuDinhKem: emp.soTaiLieuDinhKem ?? 0,
         trangThaiEmail: 'Đã gửi',
@@ -525,6 +533,16 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     } finally {
       setIsExportingExcel(false);
     }
+  };
+
+  // Xử lý thay đổi Khối ở thanh công cụ hàng loạt Bước 3
+  const missingHouseholds = (batchList.length ? batchList : [currentRecordObject]).filter(employee => !normalizeHouseholdMembers(employee.thanhVienHoGiaDinh).length).length;
+  const handleExportHousehold = async () => {
+    setIsExportingHousehold(true);
+    setValidationError(null);
+    try {await exportHouseholdAppendix(getBatchRecordObjects());}
+    catch (error) {setValidationError('Không thể xuất phụ lục hộ gia đình: '+(error as Error).message);}
+    finally {setIsExportingHousehold(false);}
   };
 
   // Xử lý thay đổi Khối ở thanh công cụ hàng loạt Bước 3
@@ -1794,14 +1812,14 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
 
                 <button
                   type="button"
-                  disabled
-                  aria-label="Xuất thông tin hộ gia đình"
+                  onClick={() => void handleExportHousehold()}
+                  disabled={isExportingHousehold}
+                  aria-label="Xuất phụ lục hộ gia đình"
                   aria-describedby="household-export-template-note"
-                  className="w-full sm:w-auto px-5 py-3 bg-slate-50 text-slate-500 border-2 border-slate-200 rounded-xl text-xs sm:text-sm font-bold flex flex-wrap items-center justify-center gap-2 cursor-not-allowed"
+                  className="w-full sm:w-auto px-5 py-3 bg-white hover:bg-indigo-50 text-indigo-800 border-2 border-indigo-300 rounded-xl text-xs sm:text-sm font-bold flex flex-wrap items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   <Users className="w-4 h-4" />
-                  <span>Xuất thông tin hộ gia đình</span>
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">Chờ mẫu</span>
+                  <span>{isExportingHousehold ? 'Đang tạo phụ lục...' : 'Xuất phụ lục hộ gia đình'}</span>
                 </button>
 
                 {/* NÚT LƯU VÀO GOOGLE SHEETS */}
@@ -1824,7 +1842,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                   )}
                 </button>
                 <p id="household-export-template-note" className="w-full text-xs text-slate-500">
-                  Xuất thông tin hộ gia đình sẽ được kích hoạt khi có mẫu xuất.
+                  Phụ lục hộ gia đình: đúng mẫu 8 cột, mỗi nhân viên một sheet. Nơi cấp giấy khai sinh lấy từ địa chỉ thường trú. Kiểm tra hộ gia đình VNeID tại Bước 2 trước khi xuất.
+                  {missingHouseholds > 0 && <span className="mt-1 block text-amber-700">{missingHouseholds} nhân viên chưa có dữ liệu hộ gia đình; sheet tương ứng chỉ có mẫu trống.</span>}
                 </p>
               </div>
             </div>

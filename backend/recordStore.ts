@@ -1,4 +1,5 @@
 import { createSign } from 'node:crypto';
+import { normalizeHouseholdMembers } from '../src/utils/household.js';
 
 export type EmployeeRecord = Record<string, any>;
 type FirestoreValue = Record<string, any>;
@@ -9,6 +10,7 @@ const RECORD_FIELDS = new Set(`id timestamp userEmail hoVaTen ngaySinh gioiTinh 
 
 RECORD_FIELDS.add('aiVisionExtracted');
 RECORD_FIELDS.add('nguoiNhap');
+RECORD_FIELDS.add('thanhVienHoGiaDinh');
 
 export class StorageError extends Error {
   constructor(message: string, public status = 503) { super(message); }
@@ -31,6 +33,7 @@ export function firestoreConfigured() {
 
 export function personnelFields(record: EmployeeRecord): EmployeeRecord {
   const filtered = Object.fromEntries(Object.entries(record).filter(([key, value]) => RECORD_FIELDS.has(key) && value !== undefined));
+  if ('thanhVienHoGiaDinh' in filtered) filtered.thanhVienHoGiaDinh = normalizeHouseholdMembers(filtered.thanhVienHoGiaDinh);
   if ('thongTinGiaDinh' in filtered) filtered.thongTinGiaDinh = Array.isArray(filtered.thongTinGiaDinh)
     ? filtered.thongTinGiaDinh.map((member: any) => Object.fromEntries(['quanHe','hoTen','namSinh','ngheNghiep'].filter(key => member?.[key] !== undefined).map(key => [key,String(member[key])]))) : [];
   return filtered;

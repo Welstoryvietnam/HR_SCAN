@@ -28,7 +28,7 @@ function validateSnapshot(value: any): asserts value is IntakeDraftSnapshot {
       !Number.isInteger(form.activeIndex) || form.activeIndex < 0 || form.activeIndex > 100 ||
       typeof form.isCustomOrg !== 'boolean' || typeof form.isCustomJob !== 'boolean') throw new StorageError('Trạng thái biểu mẫu trong bản nháp không hợp lệ.',400);
     for (const [key,item] of Object.entries(form.employee)) {
-      if (key === 'thongTinGiaDinh') {if (!Array.isArray(item)) throw new StorageError('Thông tin gia đình không hợp lệ.',400);}
+      if (key === 'thongTinGiaDinh' || key === 'thanhVienHoGiaDinh') {if (!Array.isArray(item)) throw new StorageError('Thông tin gia đình không hợp lệ.',400);}
       else if (!['string','number','boolean'].includes(typeof item)) throw new StorageError('Giá trị trong biểu mẫu không hợp lệ.',400);
     }
   }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BatchEmployeeDraft, NhanSuRecord } from '../types';
 import { Search, Users, AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { HouseholdMembersEditor } from './HouseholdMembersEditor';
 
 interface Props {
   employees: BatchEmployeeDraft[];
@@ -69,6 +70,7 @@ export function EmployeeReviewGrid({ employees, existingRecords, onChange }: Pro
                 <td className="min-w-64 space-y-2 border-b border-slate-200 p-3">{field('soDienThoai','Số điện thoại')}{field('queQuan','Quê quán')}{field('diaChiThuongTru','Địa chỉ thường trú')}</td>
                 <td className="min-w-64 space-y-2 border-b border-slate-200 p-3">
                   {field('ghiChu','Ghi chú hồ sơ')}
+                  <HouseholdMembersEditor members={employee.thanhVienHoGiaDinh || []} onChange={members => onChange(employee.id,{thanhVienHoGiaDinh:members})} employeeNumber={index+1} permanentAddress={employee.diaChiThuongTru} />
                   <details><summary className="cursor-pointer font-semibold text-blue-700">Gia đình ({employee.thongTinGiaDinh?.length || 0})</summary>
                     <div className="mt-2 space-y-2">{(employee.thongTinGiaDinh || []).map((member, memberIndex) => <div key={memberIndex} className="space-y-1 rounded-lg bg-slate-50 p-2">
                       {(['quanHe','hoTen','namSinh','ngheNghiep'] as const).map((key, fieldIndex) => <input key={key} aria-label={`${['Quan hệ','Họ tên người thân','Năm sinh người thân','Nghề nghiệp'][fieldIndex]} ${memberIndex + 1} nhân viên ${index + 1}`} placeholder={['Quan hệ','Họ tên người thân','Năm sinh','Nghề nghiệp'][fieldIndex]} value={member[key] || ''} onChange={event => onChange(employee.id,{thongTinGiaDinh:(employee.thongTinGiaDinh || []).map((item,i) => i === memberIndex ? {...item,[key]:event.target.value} : item)})} className={inputClass} />)}

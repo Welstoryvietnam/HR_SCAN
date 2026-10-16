@@ -6,6 +6,7 @@ import dotenv from "dotenv";
 import { randomUUID } from "node:crypto";
 import { recordStore, personnelFields, firestoreConfigured, StorageError } from "./backend/recordStore.js";
 import { draftStore } from './backend/draftStore.js';
+import { normalizeHouseholdMembers } from './src/utils/household.js';
 import { createSession, readSession } from "./backend/session.js";
 import { DEFAULT_ORGANIZATION_HIERARCHY } from "./src/data/organizationHierarchy.js";
 
@@ -1741,6 +1742,7 @@ Yêu cầu định dạng:
 - emailCaNhan: chỉ lấy email liên hệ của chính nhân viên nhìn thấy rõ trong ảnh hoặc CV; không lấy email nhà tuyển dụng, không suy đoán; không có thì để "".
 - khoi, ban, phong: phân cấp phòng ban nếu có trong đơn/CV/tài liệu, nếu không có thì để "".
 - thongTinGiaDinh: mảng người thân gồm { "quanHe", "hoTen", "namSinh", "ngheNghiep" } nếu có trong Sơ yếu lý lịch hoặc CV.
+- thanhVienHoGiaDinh: mảng thành viên hộ gia đình chỉ lấy từ thông tin cư trú/hộ gia đình trên VNeID. Rà soát tất cả ảnh/trang VNeID của cùng nhân viên; gộp các dòng trùng của cùng một người, không bỏ sót thành viên được liệt kê (kể cả chủ hộ và chính nhân viên nếu xuất hiện). Mỗi dòng gồm { "hoTen", "ngaySinh", "quanHeVoiChuHo", "gioiTinh", "diaChiThuongTru", "quocTich", "danToc" }. Ngày sinh đủ ngày/tháng/năm ghi DD/MM/YYYY; nếu chỉ thấy năm thì giữ đúng năm, không thêm 01/01. quanHeVoiChuHo là quan hệ với CHỦ HỘ ghi trên VNeID, tuyệt đối không lấy quan hệ người thân với nhân viên từ sơ yếu lý lịch/CV để thay thế. Không suy đoán giới tính từ tên, không mặc định quốc tịch Việt Nam hoặc dân tộc Kinh. diaChiThuongTru của thành viên chỉ ghi khi đọc rõ trên VNeID, không dùng quê quán, nơi sinh hoặc tạm trú. Không có dữ liệu VNeID hộ gia đình thì trả mảng rỗng []. Mọi trường thiếu/mờ để "" và thêm câu hỏi làm rõ; không tự thêm người không được liệt kê. Giữ thongTinGiaDinh và thanhVienHoGiaDinh riêng biệt.
 - mucDoTinCay: "CAO" nếu đọc rõ các trường chính (Họ tên, CCCD hoặc thông tin cá nhân cốt lõi); "CAN_XAC_NHAN" nếu có từ 1-3 trường mờ/thiếu; "CHUA_RO" nếu ảnh/tệp quá mờ hoặc thiếu tài liệu chính.
 
 Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong markdown tick:
@@ -1767,6 +1769,7 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
   "thongTinGiaDinh": [
     { "quanHe": "", "hoTen": "", "namSinh": "", "ngheNghiep": "" }
   ],
+  "thanhVienHoGiaDinh": [],
   "ghiChu": "",
   "thongTinChuaRo": [],
   "cauHoiLamRo": [],
@@ -1844,6 +1847,7 @@ Chỉ xuất ra DUY NHẤT một chuỗi JSON hợp lệ không bọc trong mark
 
     const responseText = response.text || "{}";
     const extractedData: any = safeParseExtractedJson(responseText);
+    extractedData.thanhVienHoGiaDinh = normalizeHouseholdMembers(extractedData.thanhVienHoGiaDinh);
     extractedData.emailCaNhan = typeof extractedData.emailCaNhan === "string" ? extractedData.emailCaNhan.trim() : "";
     for (const field of ['ngayHetHanCCCD','tinhTrangHonNhan']) {
       extractedData[field] = typeof extractedData[field] === 'string' ? extractedData[field].trim() : '';
@@ -2212,6 +2216,7 @@ function buildPersonnelRecord(body: any, userEmail: string) {
     chucVu: chucVu || salaryLookup.matchedChucVu,
     isManualSalary,
     thongTinGiaDinh: Array.isArray(thongTinGiaDinh) ? thongTinGiaDinh : [],
+    thanhVienHoGiaDinh:normalizeHouseholdMembers(body.thanhVienHoGiaDinh),
     luongCoBan,
     phuCapChucVu,
     phuCapDienThoai,

@@ -51,6 +51,20 @@ export interface ThanhVienGiaDinh {
   ngheNghiep?: string;
 }
 
+export interface ThanhVienHoGiaDinh {
+  hoTen: string;
+  ngaySinh: string;
+  quanHeVoiChuHo: string;
+  gioiTinh: string;
+  diaChiThuongTru: string;
+  quocTich: string;
+  danToc: string;
+}
+
+export interface EmployeeHouseholdInfo {
+  thanhVienHoGiaDinh?: ThanhVienHoGiaDinh[];
+}
+
 export interface EmployeeIntakeInfo {
   thamQuyen?: '' | 'Trưởng địa điểm' | 'Dinh dưỡng viên trưởng' | 'Giám sát trưởng';
   ngayVaoLam?: string;
@@ -65,7 +79,7 @@ export interface EmployeeIdentityInfo {
   ngayHetHanCCCD?: string;
 }
 
-export interface NhanSuRecord extends EmployeeIntakeInfo, EmployeeIdentityInfo {
+export interface NhanSuRecord extends EmployeeIntakeInfo, EmployeeIdentityInfo, EmployeeHouseholdInfo {
   nguoiNhap?: string;
   phuCapNangLuc?: number;
   id: string;
@@ -121,7 +135,7 @@ export interface NhanSuRecord extends EmployeeIntakeInfo, EmployeeIdentityInfo {
   thoiGianGuiEmail?: string;
 }
 
-export interface BatchEmployeeDraft extends EmployeeIntakeInfo, EmployeeIdentityInfo {
+export interface BatchEmployeeDraft extends EmployeeIntakeInfo, EmployeeIdentityInfo, EmployeeHouseholdInfo {
   phuCapNangLuc?: number;
   id: string;
   hoVaTen: string;
@@ -218,7 +232,7 @@ export interface OptimizedImageFile {
   docType: 'cccd_truoc' | 'cccd_sau' | 'vneid_cu_tru' | 'so_yeu_ly_lich' | 'xac_nhan_cu_tru' | 'khac';
 }
 
-export interface GeminiExtractionResult extends EmployeeIdentityInfo {
+export interface GeminiExtractionResult extends EmployeeIdentityInfo, EmployeeHouseholdInfo {
   emailCaNhan?: string;
   hoVaTen: string;
   ngaySinh: string;
