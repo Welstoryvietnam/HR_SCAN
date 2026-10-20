@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test tests/ocr.test.ts tests/ai-resilience.test.ts tests/vercel-api.test.ts tests/api-helper.test.ts tests/firestore.test.ts tests/personnel-export.test.ts tests/dashboard-stats.test.ts tests/household-export.test.ts",
+    "test": "node --import tsx --test tests/ocr.test.ts tests/ocr-orientation.test.ts tests/gemini-ocr.test.ts tests/ai-resilience.test.ts tests/vercel-api.test.ts tests/api-helper.test.ts tests/firestore.test.ts tests/personnel-export.test.ts tests/dashboard-stats.test.ts tests/household-export.test.ts tests/hrm-migration.test.ts",
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
@@ -25,6 +25,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "recharts": "^3.10.1",
+    "sharp": "^0.35.5",
     "tesseract.js": "^7.0.0",
     "vite": "^6.2.3"
   },

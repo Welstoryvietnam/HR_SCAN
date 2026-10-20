@@ -13,8 +13,11 @@ import {
 } from 'lucide-react';
 
 export type AppTab = 'upload' | 'records' | 'dashboard' | 'salary' | 'emails' | 'users';
+export type WorkspaceModule = 'hrscan' | 'meals' | 'tasks';
 
 interface HeaderProps {
+  module: WorkspaceModule;
+  onModuleChange: (module: WorkspaceModule) => void;
   currentUser: UserProfile;
   onLogout: () => void;
   activeTab: AppTab;
@@ -28,6 +31,8 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   onTabChange,
   recordsCount,
+  module,
+  onModuleChange,
 }) => {
   const isAdmin = currentUser.role === 'admin';
 
@@ -44,10 +49,10 @@ export const Header: React.FC<HeaderProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                  WELV Document AI Automator
+                  WELV HR Workspace
                 </h1>
                 <span className="bg-emerald-100 text-emerald-800 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                  v2.5 OCR
+                  HR
                 </span>
               </div>
             </div>
@@ -95,7 +100,10 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Tab Navigation (Đã ẩn hoàn toàn phần Mã Nguồn Apps Script) */}
-        <nav className="flex space-x-1 sm:space-x-4 border-t border-slate-100 overflow-x-auto py-1">
+        <nav aria-label="Ứng dụng nhân sự" className="flex gap-2 border-t border-slate-100 overflow-x-auto py-2">
+          {(['hrscan','meals','tasks'] as const).map(item => <button key={item} type="button" aria-current={module===item?'page':undefined} onClick={()=>onModuleChange(item)} className={`px-4 py-2.5 rounded-xl whitespace-nowrap font-semibold text-sm ${module===item?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-100'}`}>{({hrscan:'HR Scan · Tiếp nhận nhân sự',meals:'Khai báo tiền ăn bên ngoài',tasks:'Quản lý công việc nhân sự'})[item]}</button>)}
+        </nav>
+        {module === 'hrscan' && <nav aria-label="Chức năng HR Scan" className="flex space-x-1 sm:space-x-4 border-t border-slate-100 overflow-x-auto py-1">
           {/* Tab Nộp hồ sơ: Cả Admin và Nhân viên tuyển dụng đều sử dụng */}
           <button
             type="button"
@@ -193,7 +201,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </>
           )}
-        </nav>
+        </nav>}
       </div>
     </header>
   );

@@ -44,9 +44,9 @@ before(async () => {
       return json({writeResults:body.writes.map(() => ({updateTime:`2026-10-15T01:00:${String(commits).padStart(2,'0')}Z`}))});
     }
     if (url.endsWith(':runQuery')) {
-      const email = body.structuredQuery.where?.fieldFilter.value.stringValue;
+      const filter = body.structuredQuery.where?.fieldFilter;
       const collection = body.structuredQuery.from[0].collectionId;
-      return json([...documents.values()].filter(doc => doc.name.split('/').at(-2) === collection && (!email || doc.fields.userEmail?.stringValue === email)).map(document => ({document})));
+      return json([...documents.values()].filter(doc => doc.name.split('/').at(-2) === collection && (!filter || doc.fields[filter.field.fieldPath]?.stringValue === filter.value.stringValue)).map(document => ({document})));
     }
     const name = url.split('/v1/')[1];
     if (name.includes('/parts?')) {
@@ -82,6 +82,84 @@ async function draftCall(token:string,path:string,method='GET',body?:any,device=
   return {status:response.status,...await response.json()};
 }
 const draftSnapshot = (step=1) => ({step,employees:step>1 ? [{id:'employee-a',hoVaTen:'TEST DRAFT',soCCCD:'000000001234',ngaySinh:'',gioiTinh:'',queQuan:'',diaChiThuongTru:'',soDienThoai:'',thamQuyen:'Giám sát trưởng',phuCapNangLuc:345000}] : [],groups:[{id:'employee-a',label:'TEST DRAFT',documents:[{id:'file-a',fileName:'test.pdf',mimeType:'application/pdf',base64Data:Buffer.from('%PDF-test synthetic document').toString('base64'),docType:'khac'}]}]});
+async function hrmCall(token:string,path:string,method='GET',body?:any,device=0) {
+  const response=await fetch(`${urls[device]}/api/hrm${path}`,{method,headers:headers(token),...(body===undefined?{}:{body:JSON.stringify(body)})});
+  return {status:response.status,...await response.json()};
+}
+const adminToken=()=>createSession({id:'usr_admin_01',email:'happyendpu@gmail.com',role:'admin'});
+const syntheticMeal={mealType:'Bữa Trưa',startTime:'08:00',endTime:'17:00',location:'Địa điểm giả lập',purpose:'TEST ONLY',mealsCount:99};
+
+test('HRM rejects unsigned access and exposes only safe own directory fields',async()=>{
+  assert.equal((await hrmCall('','/bootstrap')).status,401);
+  const employee=await login('tuyendung','tuyendung123');
+  const bootstrap=await hrmCall(employee,'/bootstrap');
+  assert.equal(bootstrap.status,200);assert.equal(bootstrap.data.employees.length,1);
+  assert.equal(bootstrap.data.employees[0].role,'nhan_vien_nhan_su');
+  assert.equal('password' in bootstrap.data.employees[0],false);
+  const forbidden=await hrmCall(employee,'/meals/usr_admin_01/2020-01-02','PUT',{sessions:[syntheticMeal]});
+  assert.equal(forbidden.status,403);
+});
+test('HRM meals persist across devices and reject stale updates, duplicate types, future and invalid dates',async()=>{
+  const token=await login('tuyendung','tuyendung123');
+  const id=(await hrmCall(token,'/bootstrap')).data.employees[0].id;
+  const path=`/meals/${id}/2020-01-02`;
+  const saved=await hrmCall(token,path,'PUT',{sessions:[syntheticMeal]});
+  assert.equal(saved.status,200);assert.equal(saved.data.mealsCount,1);assert.equal(saved.data.sessions[0].mealsCount,1);
+  const listed=await hrmCall(token,'/meals?start=2020-01-01&end=2020-01-31','GET',undefined,1);
+  assert.ok(listed.data.some((v:any)=>v.id===saved.data.id));
+  const opened=await hrmCall(token,'/meals/'+saved.data.id);
+  assert.equal((await hrmCall(token,path,'PUT',{sessions:[],version:opened.data.version},1)).status,200);
+  assert.equal((await hrmCall(token,path,'PUT',{sessions:[syntheticMeal],version:opened.data.version})).status,409);
+  assert.equal((await hrmCall(token,`/meals/${id}/2020-01-03`,'PUT',{sessions:[syntheticMeal,syntheticMeal]})).status,400);
+  assert.equal((await hrmCall(token,`/meals/${id}/2099-01-03`,'PUT',{sessions:[]})).status,400);
+  assert.equal((await hrmCall(token,`/meals/${id}/2020-13-03`,'PUT',{sessions:[]})).status,400);
+  assert.equal((await hrmCall(token,`/meals/${id}/2020-02-31`,'PUT',{sessions:[]})).status,400);
+  assert.equal((await hrmCall(token,'/meals?start=2020-01-01&end=2026-01-01')).status,400);
+});
+test('HRM task assignment, ownership and progress remain enforced on the server',async()=>{
+  const employee=await login('tuyendung','tuyendung123');
+  const employeeId=(await hrmCall(employee,'/bootstrap')).data.employees[0].id;
+  const input={employeeId,title:'TEST TASK',description:'Synthetic task',dueDate:'2026-10-30',status:'pending',progress:0,priority:'high'};
+  assert.equal((await hrmCall(employee,'/tasks','POST',input)).status,403);
+  const saved=await hrmCall(adminToken(),'/tasks','POST',input);assert.equal(saved.status,200);
+  const taskId=saved.data.id;
+  const loaded=await hrmCall(employee,'/tasks/'+taskId,'GET',undefined,1);assert.equal(loaded.status,200);
+  const changed=await hrmCall(employee,'/tasks/'+taskId,'PUT',{...input,employeeId:'usr_admin_01',title:'forged',status:'completed',progress:20,resultNote:'TEST DONE',version:loaded.data.version});
+  assert.equal(changed.status,200);assert.equal(changed.data.title,'TEST TASK');assert.equal(changed.data.employeeId,employeeId);assert.equal(changed.data.progress,100);
+  assert.equal((await hrmCall(employee,'/tasks/'+taskId,'DELETE',{version:loaded.data.version})).status,403);
+  assert.equal((await hrmCall(adminToken(),'/tasks/'+taskId,'DELETE',{version:loaded.data.version})).status,409);
+  const adminTask=await hrmCall(adminToken(),'/tasks','POST',{...input,employeeId:'usr_admin_01'});
+  assert.equal((await hrmCall(employee,'/tasks/'+adminTask.data.id)).status,403);
+  const own=await hrmCall(employee,'/tasks');assert.ok(own.data.every((t:any)=>t.employeeId===employeeId));
+});
+test('HRM reports failed cloud writes, and only admin can change meal settings',async()=>{
+  const employee=await login('tuyendung','tuyendung123');
+  const id=(await hrmCall(employee,'/bootstrap')).data.employees[0].id;
+  failCommit=true;
+  try {assert.equal((await hrmCall(employee,`/meals/${id}/2020-01-04`,'PUT',{sessions:[syntheticMeal]})).status,503);} finally{failCommit=false;}
+  assert.equal((await hrmCall(employee,'/settings','PUT',{mealPrice:50000})).status,403);
+  const original=(await hrmCall(adminToken(),'/settings')).data;
+  const settings={...original.record,mealPrice:45000,version:original.version};
+  assert.equal((await hrmCall(adminToken(),'/settings','PUT',settings)).status,200);
+  assert.equal((await hrmCall(employee,'/bootstrap','GET',undefined,1)).data.settings.mealPrice,45000);
+  for(const key of documents.keys()) if(/\/hrm_(meals|tasks|settings)\//.test(key)) documents.delete(key);
+});
+test('historical employee profiles stay private until explicitly linked by admin',async()=>{
+  const employee=await login('tuyendung','tuyendung123');
+  const userId=(await hrmCall(employee,'/bootstrap')).data.employees[0].id;
+  const directory=new FirestoreRecordStore('hrm_directory',v=>v);
+  await directory.create([{id:'legacy_test',name:'TEST LEGACY',email:'old@example.com',accountId:''}]);
+  const task=await hrmCall(adminToken(),'/tasks','POST',{employeeId:'legacy_test',title:'TEST HISTORICAL',description:'',dueDate:'2026-10-30',status:'pending',progress:0,priority:'medium'});
+  assert.equal(task.status,200);assert.equal((await hrmCall(employee,'/tasks/'+task.data.id)).status,403);
+  const profile=(await hrmCall(adminToken(),'/directory/legacy_test')).data;
+  assert.equal((await hrmCall(employee,'/directory/legacy_test','PUT',{accountId:userId,version:profile.version})).status,403);
+  assert.equal((await hrmCall(adminToken(),'/directory/legacy_test','PUT',{accountId:userId,version:profile.version})).status,200);
+  const visible=await hrmCall(employee,'/tasks');assert.ok(visible.data.some((t:any)=>t.id===task.data.id));
+  const opened=(await hrmCall(employee,'/tasks/'+task.data.id)).data;
+  const changed=await hrmCall(employee,'/tasks/'+task.data.id,'PUT',{...opened.record,status:'completed',progress:100,version:opened.version});
+  assert.equal(changed.status,200);assert.equal(changed.data.employeeId,'legacy_test');
+  for(const key of documents.keys())if(/\/hrm_(directory|tasks)\//.test(key))documents.delete(key);
+});
 async function uploadDraft(token:string,snapshot:any,active?:any) {
   const content = JSON.stringify(snapshot);
   const staged = await draftCall(token,'/stage','POST',{...active,chunkCount:2,byteLength:Buffer.byteLength(content)});

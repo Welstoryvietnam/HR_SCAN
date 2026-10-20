@@ -34,7 +34,7 @@ export async function safeFetchJson<T = any>(
       // Nếu server/proxy trả về text hoặc HTML (ví dụ: lỗi Cloud Run, Vercel Edge, Nginx, hoặc 404/502)
       let sanitizedError = `Lỗi phản hồi từ máy chủ (HTTP ${res.status})`;
       if (text.includes('NOT_FOUND') || text.includes('The page could not be found') || text.includes('hkg1::')) {
-        sanitizedError = 'Không tìm thấy máy chủ API trên môi trường mạng hiện tại (404 Not Found). Đang kích hoạt chế độ dự phòng ngoại tuyến.';
+        sanitizedError = 'Không tìm thấy máy chủ API (HTTP 404). Chưa lưu được dữ liệu; hãy giữ nguyên trang và kiểm tra cấu hình máy chủ.';
       } else if (res.status === 405) {
         sanitizedError = 'API chưa được triển khai đúng trên máy chủ (HTTP 405). Vui lòng kiểm tra cấu hình Vercel.';
       } else if (res.status === 413) {
@@ -55,7 +55,12 @@ export async function safeFetchJson<T = any>(
   } catch (err) {
     const rawMsg = (err as Error)?.message || '';
     let userMsg = rawMsg || 'Không thể kết nối đến máy chủ.';
-    if (rawMsg.includes('did not match the expected pattern') || rawMsg.includes('pattern')) {
+    if (/failed to fetch|fetch failed|networkerror|network request failed|load failed/i.test(rawMsg)) {
+      const local = typeof window !== 'undefined' && ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname);
+      userMsg = local
+        ? 'Không kết nối được máy chủ local. Hãy khởi động lại máy chủ; để lưu cloud, bản local cần cấu hình Firebase. Giữ nguyên trang để tránh mất dữ liệu chưa lưu.'
+        : 'Mất kết nối tới máy chủ. Hãy kiểm tra mạng rồi thử lưu lại. Giữ nguyên trang để tránh mất dữ liệu chưa lưu.';
+    } else if (rawMsg.includes('did not match the expected pattern') || rawMsg.includes('pattern')) {
       userMsg = 'Định dạng dữ liệu không tương thích trên trình duyệt hiện tại. Đang chuyển sang chế độ tự động tối ưu.';
     }
     return {

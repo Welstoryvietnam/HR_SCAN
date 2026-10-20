@@ -2,6 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { safeFetchJson } from '../src/utils/apiHelper.js';
 
+test('network failure explains that unsaved work must stay open', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw new TypeError('Failed to fetch'); };
+  try {
+    const result = await safeFetchJson('/api/drafts/stage', {method:'POST'});
+    assert.equal(result.ok,false);
+    assert.match(result.error || '',/Mất kết nối/);
+    assert.match(result.error || '',/Giữ nguyên trang/);
+  } finally { globalThis.fetch = original; }
+});
+
 test('an HTTP 200 HTML rewrite is an API error, not a successful extraction', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response('<!doctype html><html>SPA</html>', {status:200});

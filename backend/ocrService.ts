@@ -5,12 +5,27 @@ import path from 'node:path';
 import {Worker} from 'node:worker_threads';
 // Keep the isolated worker's dependency graph visible to Vercel file tracing.
 import 'tesseract.js';
+import 'sharp';
+import {parseOCRProfile} from './ocrProfile.js';
 const require=createRequire(path.resolve(process.cwd(),'package.json'));
 export class OCRError extends Error {
   constructor(message:string,public status=400,public retryable=false) {super(message);}
 }
 export interface OCRLine {text:string;x:number;y:number;width:number;height:number;}
-export interface OCRPage {page:number;text:string;confidence:number;lines:OCRLine[];}
+export interface OCRPage {page:number;text:string;confidence:number;lines:OCRLine[];rotation?:0|90|180|270;processing?:{passes:number;partial:boolean};engine?:'tesseract'|'gemini';assistance?:{status:'used'|'disabled'|'not-needed'|'unavailable'|'conflict';message?:string};}
+
+export function scoreOCRPage(page:OCRPage) {
+  // Both modules expose functions only; this call happens after their module
+  // initialization, so the OCR error/parser imports do not run recursively.
+  let score=Math.min(Math.max(page.confidence || 0,0),100)/1000;
+  try {
+    const profile=parseOCRProfile([{id:'orientation-candidate',docType:'khac',pages:[page]}],{allowIncomplete:true});
+    for(const [key,weight] of Object.entries({hoVaTen:60,soCCCD:60,ngaySinh:50,ngayCap:8,ngayHetHanCCCD:8,noiCap:5,queQuan:5,diaChiThuongTru:8,gioiTinh:3,danToc:3,soDienThoai:5,emailCaNhan:5})) {
+      if(profile[key]) score+=weight;
+    }
+  } catch { /* Incomplete pages still remain available for manual review. */ }
+  return score;
+}
 
 export function validateOCRImage(input:any) {
   if(!input || !['image/jpeg','image/png'].includes(input.mimeType) || typeof input.base64Data!=='string' || !input.base64Data.length || input.base64Data.length>4_000_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(input.base64Data) || input.base64Data.length%4) throw new OCRError('OCR cần một ảnh JPEG/PNG hợp lệ, tối đa 3 MB.');
@@ -55,15 +70,28 @@ export async function recognizeImage(input:unknown):Promise<OCRPage> {
   try {
     const langPath=await prepareModels();
     worker=new Worker(path.resolve(process.cwd(),'backend/ocrWorker.cjs'),{
-      workerData:{image,langPath,engineEntry:require.resolve('tesseract.js')},execArgv:[],stdout:true,stderr:true,
+      workerData:{image,langPath,engineEntry:require.resolve('tesseract.js'),sharpEntry:require.resolve('sharp')},execArgv:[],stdout:true,stderr:true,
     });
     // Engine diagnostics can contain OCR text: do not forward them to logs.
     worker.stdout?.resume();worker.stderr?.resume();
     const result=await new Promise<OCRPage>((resolve,reject)=>{
-      timer=setTimeout(()=>reject(new OCRError('OCR quá thời gian chờ. Hãy thử lại ảnh hoặc chia nhỏ trang.',504,true)),45_000);
-      worker!.once('message',message=>message?.ok && message.data ? resolve(message.data) : reject(new OCRError('OCR chưa đọc được chữ rõ ràng. Hãy chụp gần, đủ sáng và thẳng tài liệu.',422)));
-      worker!.once('error',()=>reject(new OCRError('Không khởi động được máy OCR. Vui lòng thử lại.',503,true)));
-      worker!.once('exit',()=>reject(new OCRError('Máy OCR đã dừng trước khi trả kết quả. Vui lòng thử lại.',503,true)));
+      let partial:OCRPage|undefined;
+      let bestScore=-1,lastPasses=0;
+      const accept=(candidate:OCRPage)=>{
+        lastPasses=Math.max(lastPasses,candidate.processing?.passes || 1);
+        const score=scoreOCRPage(candidate);
+        if(score>bestScore) {partial=candidate;bestScore=score;}
+      };
+      const selected=(incomplete:boolean)=>({...partial!,processing:{passes:lastPasses || 1,partial:incomplete}});
+      timer=setTimeout(()=>partial ? resolve(selected(true)) : reject(new OCRError('OCR quá thời gian chờ. Hãy thử lại ảnh hoặc chia nhỏ trang.',504,true)),45_000);
+      worker!.on('message',message=>{
+        if(message?.checkpoint && message.data) {accept(message.data);return;}
+        if(message?.ok && message.data) {accept(message.data);resolve(selected(Boolean(message.data.processing?.partial)));}
+        else if(partial) resolve(selected(true));
+        else reject(new OCRError('OCR chưa đọc được chữ rõ ràng. Hãy chụp gần, đủ sáng và thẳng tài liệu.',422));
+      });
+      worker!.once('error',()=>partial ? resolve(selected(true)) : reject(new OCRError('Không khởi động được máy OCR. Vui lòng thử lại.',503,true)));
+      worker!.once('exit',()=>partial ? resolve(selected(true)) : reject(new OCRError('Máy OCR đã dừng trước khi trả kết quả. Vui lòng thử lại.',503,true)));
     });
     return result;
   } catch(error) {

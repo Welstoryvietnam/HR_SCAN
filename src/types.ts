@@ -74,6 +74,7 @@ export interface EmployeeIntakeInfo {
 }
 
 export interface EmployeeIdentityInfo {
+  danToc?: string;
   extractionMethod?: 'ocr' | 'vision' | 'manual';
   aiVisionExtracted?: boolean;
   tinhTrangHonNhan?: string;
@@ -224,7 +225,8 @@ export interface IntakeDraftSummary {
 }
 
 export interface OptimizedImageFile {
-  ocrPages?: {page:number;text:string;confidence:number;lines:{text:string;x:number;y:number;width:number;height:number}[]}[];
+  ocrVersion?: string;
+  ocrPages?: {page:number;text:string;confidence:number;lines:{text:string;x:number;y:number;width:number;height:number}[];engine?:'tesseract'|'gemini';assistance?:{status:'used'|'disabled'|'not-needed'|'unavailable'|'conflict';message?:string};assistanceRevision?:string}[];
   extractedText?: string;
   id: string;
   fileName: string;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import {
   UserProfile,
   OptimizedImageFile,
@@ -14,7 +14,8 @@ import {
   KhoiNode
 } from './types';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from './data/organizationHierarchy';
-import { Header, AppTab } from './components/Header';
+import { Header, AppTab, type WorkspaceModule } from './components/Header';
+const HrmWorkspace = lazy(()=>import('./modules/hrm/HrmWorkspace'));
 import { LoginScreen } from './components/LoginScreen';
 import { DocumentUploader } from './components/DocumentUploader';
 import { IntakeDraftBar } from './components/IntakeDraftBar';
@@ -31,7 +32,6 @@ import {
   Sparkles,
   CheckCircle2,
   AlertTriangle,
-  FileSpreadsheet,
   ArrowRight,
   ShieldCheck,
   UserCheck
@@ -61,6 +61,8 @@ export default function App() {
   });
 
   const [activeTab, setActiveTab] = useState<AppTab>('upload');
+  const [workspaceModule,setWorkspaceModule] = useState<WorkspaceModule>('hrscan');
+  const [hrmOpened,setHrmOpened] = useState(false);
   const [images, setImages] = useState<OptimizedImageFile[]>([]);
   const [extractedData, setExtractedData] = useState<DocumentExtractionResult | null>(null);
   const [batchEmployees, setBatchEmployees] = useState<BatchEmployeeDraft[]>([]);
@@ -527,6 +529,8 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       {/* Header Bar */}
       <Header
+        module={workspaceModule}
+        onModuleChange={module=>{if(uploaderBusy){showNotification('error','Hãy tạm dừng quét trước khi chuyển màn hình.');return;}if(module!=='hrscan')setHrmOpened(true);setWorkspaceModule(module);}}
         currentUser={currentUser}
         onLogout={handleLogout}
         activeTab={activeTab}
@@ -556,6 +560,8 @@ export default function App() {
 
       {/* Main Content Area - Tràn viền tối ưu 100% diện tích thao tác */}
       <main className="flex-1 w-full max-w-[1720px] mx-auto p-3 sm:p-5 lg:p-6 space-y-5">
+        <div hidden={workspaceModule==='hrscan'}>{hrmOpened && <Suspense fallback={<p role="status">Đang mở ứng dụng…</p>}><HrmWorkspace key={currentUser.email} currentUser={currentUser} module={workspaceModule==='tasks'?'tasks':'meals'}/></Suspense>}</div>
+        <div hidden={workspaceModule!=='hrscan'} className="space-y-5">
         {activeTab === 'upload' && (
           <div className="space-y-4 animate-fade-in">
             {/* Banner hiển thị vai trò */}
@@ -586,19 +592,9 @@ export default function App() {
               </div>
             </div>
 
-            <IntakeDraftBar busy={draftBusy} disabled={isSaving || uploaderBusy} completed={draftCompleted}
-              status={draftStatus} activeId={activeDraft?.id} savedAt={draftSavedAt} drafts={drafts} error={draftError}
-              onSave={() => void saveDraft()} onRefresh={() => void refreshDrafts()}
-              onOpen={draft => void openDraft(draft)} onDiscard={draft => void discardDraft(draft)}
-              onNew={() => {
-                if (!window.confirm('Tạo đợt nhập mới? Hãy lưu tạm trước nếu bạn muốn giữ nội dung đang nhập.')) return;
-                setImages([]);setEmployeeGroups([]);setBatchEmployees([]);setExtractedData(null);setSingleIntakeInfo({});
-                setActiveDraft(null);setDraftSavedAt('');setDraftError('');setDraftCompleted(false);setCurrentSopStep(1);
-                setDraftFormState(undefined);
-              }} />
             <fieldset disabled={draftBusy || isSaving} className="min-w-0 space-y-4">
             {/* Thanh tiến trình SOP 4 Bước (Tối ưu: Chỉ giữ tên bước) */}
-            <SopProgressHeader
+            {currentSopStep === 1 && <SopProgressHeader
               currentStep={currentSopStep}
               onSelectStep={(step) => {
                 if(uploaderBusy) {showNotification('error','Hãy tạm dừng quét trước khi chuyển bước.');return;}
@@ -608,7 +604,7 @@ export default function App() {
               hasExtractedData={!!extractedData}
               step2Verified={!!extractedData && !!extractedData.hoVaTen}
               step3Verified={currentSopStep >= 4}
-            />
+            />}
 
             {/* BƯỚC 1: Màn hình Uploader khi currentSopStep === 1 */}
             {currentSopStep === 1 && (
@@ -650,6 +646,7 @@ export default function App() {
                         extractionMethod:first.extractionMethod,
                         ngaySinh: first.ngaySinh,
                         gioiTinh: first.gioiTinh,
+                        danToc: first.danToc,
                         soCCCD: first.soCCCD,
                         ngayCap: first.ngayCap,
                         ngayHetHanCCCD: first.ngayHetHanCCCD,
@@ -678,47 +675,6 @@ export default function App() {
             {/* BƯỚC 2, 3, 4: Biểu mẫu form chuẩn toàn màn hình */}
             {currentSopStep >= 2 && (
               <div className="space-y-4">
-                {/* Thanh trạng thái hồ sơ tinh gọn */}
-                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-white rounded-xl border border-slate-200 text-xs shadow-2xs">
-                  <div className="flex items-center gap-2 text-slate-700">
-                    <FileSpreadsheet className="w-4 h-4 text-indigo-600 shrink-0" />
-                    <span>
-                      Đang xử lý:{' '}
-                      <strong className="text-slate-900 uppercase">
-                        {batchEmployees.length > 1
-                          ? `${batchEmployees.length} nhân sự (Hàng loạt)`
-                          : extractedData?.hoVaTen || 'Hồ sơ nhân sự'}
-                      </strong>
-                    </span>
-                    <span className="text-slate-300">|</span>
-                    <span className="text-slate-500">
-                      {batchEmployees.length > 1
-                        ? `Danh sách: ${batchEmployees.length} người`
-                        : `Tài liệu: ${images.length} ảnh`}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => changeSopStep(1)}
-                      disabled={images.length === 0}
-                      className="px-3 py-1 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-xs disabled:opacity-50"
-                      title="Quay lại Bước 1 để OCR tài liệu theo từng nhân viên"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Quét lại bằng OCR</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => changeSopStep(1)}
-                      className="px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-blue-700 bg-slate-50 border border-slate-300 rounded-lg hover:border-blue-300 transition cursor-pointer"
-                      title="Quay lại Bước 1 để chọn lại ảnh hoặc tài liệu khác"
-                    >
-                      ← Đổi danh sách/ảnh (Bước 1)
-                    </button>
-                  </div>
-                </div>
-
                 {/* Form chi tiết hiển thị toàn màn hình */}
                 <ExtractedForm
                   key={formGeneration}
@@ -762,6 +718,16 @@ export default function App() {
               </div>
             )}
             </fieldset>
+            <IntakeDraftBar showIntro={currentSopStep !== 1} busy={draftBusy} disabled={isSaving || uploaderBusy} completed={draftCompleted}
+              status={draftStatus} activeId={activeDraft?.id} savedAt={draftSavedAt} drafts={drafts} error={draftError}
+              onSave={() => void saveDraft()} onRefresh={() => void refreshDrafts()}
+              onOpen={draft => void openDraft(draft)} onDiscard={draft => void discardDraft(draft)}
+              onNew={() => {
+                if (!window.confirm('Tạo đợt nhập mới? Hãy lưu tạm trước nếu bạn muốn giữ nội dung đang nhập.')) return;
+                setImages([]);setEmployeeGroups([]);setBatchEmployees([]);setExtractedData(null);setSingleIntakeInfo({});
+                setActiveDraft(null);setDraftSavedAt('');setDraftError('');setDraftCompleted(false);setCurrentSopStep(1);
+                setDraftFormState(undefined);
+              }} />
           </div>
         )}
 
@@ -816,6 +782,7 @@ export default function App() {
             <UserManagement currentUser={currentUser} />
           </div>
         )}
+        </div>
       </main>
 
       {/* Footer */}

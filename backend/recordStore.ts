@@ -10,6 +10,7 @@ const RECORD_FIELDS = new Set(`id timestamp userEmail hoVaTen ngaySinh gioiTinh 
 
 RECORD_FIELDS.add('aiVisionExtracted');
 RECORD_FIELDS.add('extractionMethod');
+RECORD_FIELDS.add('danToc');
 RECORD_FIELDS.add('nguoiNhap');
 RECORD_FIELDS.add('thanhVienHoGiaDinh');
 
@@ -110,6 +111,10 @@ export class FirestoreRecordStore {
     const results = await this.request(`${this.root()}:runQuery`,'POST',{structuredQuery:{from:[{collectionId:this.collection}],...(email ? {where:{fieldFilter:{field:{fieldPath:'userEmail'},op:'EQUAL',value:{stringValue:email}}}} : {})}});
     return results.filter((item: any) => item.document).map((item: any) => decodeFields(item.document.fields || {})).sort((a: EmployeeRecord,b: EmployeeRecord) => String(b.timestamp).localeCompare(String(a.timestamp)));
   }
+  async listMatching(field: 'employeeId' | 'accountId', value: string) {
+    const results=await this.request(`${this.root()}:runQuery`,'POST',{structuredQuery:{from:[{collectionId:this.collection}],where:{fieldFilter:{field:{fieldPath:field},op:'EQUAL',value:{stringValue:value}}}}});
+    return results.filter((item:any)=>item.document).map((item:any)=>decodeFields(item.document.fields||{}));
+  }
   async get(id: string) {
     const document = await this.request(this.document(id));
     return { record:decodeFields(document.fields || {}), version:document.updateTime as string };
@@ -125,6 +130,9 @@ export class FirestoreRecordStore {
   }
   async delete(id: string) {
     await this.request(`${this.root()}:commit`,'POST',{writes:[{delete:this.document(id)}]});
+  }
+  async removeVersioned(id: string, version: string) {
+    await this.request(`${this.root()}:commit`,'POST',{writes:[{delete:this.document(id),currentDocument:{updateTime:version}}]});
   }
 }
 

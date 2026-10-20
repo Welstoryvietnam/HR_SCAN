@@ -1,0 +1,11 @@
+.git
+.vercel
+node_modules
+build
+dist
+coverage
+.env
+.env.*
+*.log
+ai-email-test.png
+ai-test-document.png

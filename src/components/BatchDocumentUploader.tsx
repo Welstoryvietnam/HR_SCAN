@@ -4,6 +4,8 @@ import { BatchEmployeeDraft, EmployeeDocumentGroup, OptimizedImageFile } from '.
 import { optimizeImageFile } from '../utils/imageOptimizer';
 import { extractOCRGroup } from '../utils/ocrClient';
 import { prepareEmployees, runBatchExtraction } from '../utils/batchExtraction';
+import {DocumentImageEditor} from './DocumentImageEditor';
+
 
 interface Props {
   groups: EmployeeDocumentGroup[];
@@ -19,6 +21,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
+  const [editing,setEditing]=useState<{groupId:string;document:OptimizedImageFile}>();
   const currentGroups=useRef(groups);currentGroups.current=groups;
   const paused = useRef(false);
   const mounted = useRef(true);
@@ -67,7 +70,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
           const checkpoint=list.filter(employee=>['success','failed'].includes(employee.extractionStatus || '')).map(employee=>`${employee.id}:${employee.extractionStatus}`).join('|');
           if(checkpoint && checkpoint!==lastCheckpoint && !cloudFailed && onCheckpoint) {
             lastCheckpoint=checkpoint;
-            try {await onCheckpoint(list,currentGroups.current);} catch(err) {cloudFailed=true;setError(`Chưa lưu được lên cloud: ${(err as Error).message}. Kết quả vẫn còn trên màn hình; hãy bấm Lưu tạm trước khi đóng trang.`);}
+            try {await onCheckpoint(list,currentGroups.current);} catch(err) {cloudFailed=true;setError(`Chưa lưu được lên cloud: ${(err as Error).message} Kết quả vẫn còn trên màn hình. Sau khi khắc phục kết nối hoặc cấu hình, bấm Lưu tạm và chờ xác nhận lưu thành công trước khi đóng trang.`);}
           }
         }});
       if(mounted.current && !paused.current && !cloudFailed && employees.every(employee=>employee.extractionStatus==='success')) onProceed(employees);
@@ -75,12 +78,13 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
     finally {locked.current=false;if(mounted.current) {setBusy(false);onBusyChange(false);}}
   };
   return <section className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/30 p-4" aria-label="Nhập tài liệu nhiều nhân viên">
-    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold text-slate-900">Tài liệu theo từng nhân viên</h3><p className="mt-1 text-xs text-slate-600">Gom CCCD, VNeID, sơ yếu lý lịch của cùng một người vào một ô. OCR xử lý riêng từng người để tránh trộn thông tin.</p></div><button type="button" disabled={busy} onClick={addGroup} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 disabled:opacity-50"><Plus className="h-4 w-4" />Thêm nhân viên</button></div>
+    {editing && <DocumentImageEditor document={editing.document} onClose={()=>setEditing(undefined)} onSave={document=>{onChange(groups.map(group=>group.id===editing.groupId ? {...group,documents:group.documents.map(previous=>previous.id===editing.document.id ? document : previous)} : group));setEditing(undefined);}} />}
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold text-slate-900">Tài liệu theo từng nhân viên</h3></div><button type="button" disabled={busy} onClick={addGroup} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 disabled:opacity-50"><Plus className="h-4 w-4" />Thêm nhân viên</button></div>
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{groups.map((group,index) => <div key={group.id} className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
       <div className="flex items-center justify-between"><span className="text-xs font-bold text-blue-700">Nhân viên {index + 1}</span><button type="button" disabled={busy} aria-label={`Bỏ nhóm nhân viên ${index + 1}`} onClick={() => onChange(groups.filter(item => item.id !== group.id))} className="rounded p-1 text-slate-400 hover:text-rose-600 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button></div>
-      <input aria-label={`Tên nhóm nhân viên ${index + 1}`} placeholder="Tên nhân viên (có thể bổ sung sau)" disabled={busy} value={group.label} onChange={event => onChange(groups.map(item => item.id === group.id ? {...item,label:event.target.value} : item))} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
+      <input aria-label={`Tên nhóm nhân viên ${index + 1}`} placeholder="Họ tên nhân viên (có thể bổ sung sau)" disabled={busy} value={group.label} onChange={event => onChange(groups.map(item => item.id === group.id ? {...item,label:event.target.value} : item))} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
       <label className="block rounded-lg border border-dashed border-blue-300 bg-blue-50/40 p-3 text-xs text-blue-700"><span className="mb-2 block font-semibold">Thêm ảnh / PDF cho nhân viên {index + 1}</span><input aria-label={`Tài liệu nhân viên ${index + 1}`} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple disabled={busy} onChange={event => { const input=event.currentTarget; void upload(group.id,input.files); input.value=''; }} className="w-full text-[11px] file:mr-2 file:rounded file:border-0 file:bg-blue-100 file:px-2 file:py-1 file:text-blue-700" /></label>
-      <ul className="space-y-1">{group.documents.map(document => <li key={document.id} className="flex items-center gap-1 text-xs text-slate-600"><FileText className="h-3 w-3 shrink-0" /><span className="truncate flex-1">{document.fileName}</span><button type="button" disabled={busy} aria-label={`Bỏ ${document.fileName} của nhân viên ${index + 1}`} onClick={() => onChange(groups.map(item => item.id === group.id ? {...item,documents:item.documents.filter(file => file.id !== document.id)} : item))} className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="h-3 w-3" /></button></li>)}</ul>
+      <ul className="space-y-2">{group.documents.map(document => <li key={document.id} className="rounded border border-slate-100 p-2 text-xs text-slate-600"><div className="flex items-center gap-1"><FileText className="h-3 w-3 shrink-0" /><span className="truncate flex-1">{document.fileName}</span><button type="button" disabled={busy} aria-label={`Bỏ ${document.fileName} của nhân viên ${index + 1}`} onClick={() => onChange(groups.map(item => item.id === group.id ? {...item,documents:item.documents.filter(file => file.id !== document.id)} : item))} className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="h-3 w-3" /></button></div>{document.mimeType.startsWith('image/') && <button type="button" disabled={busy} onClick={()=>setEditing({groupId:group.id,document})} aria-label={`Xem, xoay hoặc cắt ảnh ${document.fileName} nhân viên ${index+1}`} className="mt-1 rounded bg-blue-50 px-2 py-1.5 font-semibold text-blue-700">Xem / Xoay / Cắt</button>}</li>)}</ul>
       <label className={`inline-flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 ${busy ? 'opacity-50' : 'cursor-pointer hover:bg-blue-50'}`}><Camera className="h-3.5 w-3.5" />Chụp ảnh / chọn ảnh<input className="sr-only" aria-label={`Chụp ảnh cho nhân viên ${index + 1}`} type="file" accept="image/*" capture="environment" disabled={busy} onChange={event => {const input=event.currentTarget; void upload(group.id,input.files); input.value='';}} /></label>
       <p className="text-[11px] text-slate-400">{group.documents.length} tài liệu • 1 nhân viên</p>
       <p className="text-xs font-semibold text-blue-700">{({waiting:'Đang chờ',running:'Đang quét…',success:'Đã trích xuất',failed:'Cần thử lại / nhập tay'})[previousEmployees.find(employee=>employee.id===group.id)?.extractionStatus || 'waiting']}</p>
@@ -88,7 +92,6 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
     </div>)}</div>
     {!groups.length && <p className="py-6 text-center text-sm text-slate-500">Bấm “Thêm nhân viên” để bắt đầu danh sách.</p>}
     {error && <p role="alert" className="whitespace-pre-wrap text-xs text-rose-700">{error}</p>}
-    <p className="text-xs text-slate-500">OCR xử lý lần lượt từng người và giữ kết quả đã xong. Bấm lại để xử lý hồ sơ lỗi hoặc tài liệu mới. Giữ trang mở trong lúc quét.</p>
     {busy && <button type="button" onClick={()=>{paused.current=true;setStatus('Sẽ tạm dừng sau hồ sơ đang xử lý…');}} className="rounded-lg border px-3 py-2 text-xs">Tạm dừng sau hồ sơ này</button>}
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 pt-3">
       <p role="status" className="text-xs text-slate-500">{busy ? status || 'Đang tải tài liệu…' : `${groups.length} nhân viên • ${groups.reduce((sum,group) => sum + group.documents.length,0)} tài liệu`}</p>

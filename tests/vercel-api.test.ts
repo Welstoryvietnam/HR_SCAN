@@ -33,10 +33,11 @@ test('legacy Gemini route is retired and never returns a blank profile', async (
 });
 
 test('dedicated OCR endpoints require a verified session',async()=>{
-  for(const endpoint of ['recognize','extract-profile']) {
+  for(const endpoint of ['recognize','extract-profile','gemini-assist']) {
     const response=await fetch(`${baseUrl}/api/ocr/${endpoint}`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
     assert.equal(response.status,401);assert.equal((await response.json()).success,false);
   }
+  assert.equal((await fetch(`${baseUrl}/api/ocr/capabilities`)).status,401);
 });
 
 test('unknown API routes return JSON 404', async () => {

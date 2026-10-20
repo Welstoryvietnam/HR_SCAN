@@ -63,13 +63,10 @@ export async function optimizeImageFile(
             let height = img.height;
 
             // Preserve aspect ratio and enough detail for Vietnamese diacritics.
-            if (width > maxWidth) {
-              const ratio = maxWidth / width;
-              width = maxWidth;
-              height = Math.round(height * ratio);
-            }
-            // Bound tall screenshots too, while preserving their aspect ratio.
-            if(height>3200) {width=Math.round(width*3200/height);height=3200;}
+            // Bound short/long edges independently of orientation. A sideways
+            // portrait must keep the same detail as an upright portrait.
+            const ratio=Math.min(1,maxWidth/Math.min(width,height),3200/Math.max(width,height));
+            width=Math.round(width*ratio);height=Math.round(height*ratio);
 
             // Tạo canvas để nén
             const canvas = document.createElement('canvas');

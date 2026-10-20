@@ -3,6 +3,7 @@ import { CloudUpload, FolderOpen, RefreshCw } from 'lucide-react';
 import type { IntakeDraftSummary } from '../types';
 
 interface Props {
+  showIntro?: boolean;
   busy: boolean;
   disabled: boolean;
   completed: boolean;
@@ -17,12 +18,12 @@ interface Props {
   onDiscard: (draft: IntakeDraftSummary) => void;
   onNew: () => void;
 }
-export function IntakeDraftBar({busy,disabled,completed,status,activeId,savedAt,drafts,error,onSave,onRefresh,onOpen,onDiscard,onNew}: Props) {
+export function IntakeDraftBar({showIntro=true,busy,disabled,completed,status,activeId,savedAt,drafts,error,onSave,onRefresh,onOpen,onDiscard,onNew}: Props) {
   const [expanded,setExpanded] = useState(false);
   const [discardId,setDiscardId] = useState<string|null>(null);
   return <section aria-label="Lưu tạm và tiếp tục trên thiết bị khác" className="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50/60 p-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h3 className="text-sm font-bold text-indigo-950">Lưu tạm & tiếp tục trên thiết bị khác</h3><p className="mt-1 text-xs text-slate-600">Lưu cả thông tin và ảnh/PDF vào bản nháp riêng của tài khoản. Trên thiết bị khác, đăng nhập rồi mở “Bản nháp của tôi”.</p></div>
+      {showIntro && <div><h3 className="text-sm font-bold text-indigo-950">Lưu tạm & tiếp tục trên thiết bị khác</h3><p className="mt-1 text-xs text-slate-600">Lưu cả thông tin và ảnh/PDF vào bản nháp riêng của tài khoản. Trên thiết bị khác, đăng nhập rồi mở “Bản nháp của tôi”.</p></div>}
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={disabled || busy || completed} onClick={onSave} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"><CloudUpload className="h-4 w-4" />{busy ? 'Đang đồng bộ…' : 'Lưu tạm'}</button>
         <button type="button" disabled={busy} onClick={() => {setExpanded(!expanded);if (!expanded) onRefresh();}} aria-expanded={expanded} className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm text-indigo-800 disabled:opacity-50"><FolderOpen className="h-4 w-4" />Bản nháp của tôi</button>

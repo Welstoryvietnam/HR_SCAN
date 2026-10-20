@@ -1,10 +1,12 @@
 import express from "express";
+import { createHrmRouter } from './backend/hrm.js';
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
 import { randomUUID } from "node:crypto";
 import { recognizeImage, OCRError } from "./backend/ocrService.js";
 import { parseOCRProfile } from "./backend/ocrProfile.js";
+import {assistGeminiOCR,geminiOCRCapabilities} from './backend/geminiOCR.js';
 import { recordStore, personnelFields, firestoreConfigured, StorageError } from "./backend/recordStore.js";
 import { draftStore } from './backend/draftStore.js';
 import { normalizeHouseholdMembers } from './src/utils/household.js';
@@ -768,6 +770,7 @@ const requirePersonnelSession: express.RequestHandler = (req,res,next) => {
   req.headers['x-user-email'] = user.email;
   next();
 };
+app.use('/api/hrm',requirePersonnelSession,createHrmRouter(()=>userAccounts));
 app.use('/api/drafts',requirePersonnelSession,(_req,res,next) => {
   res.setHeader('Cache-Control','no-store');
   next();
@@ -1548,8 +1551,23 @@ app.post("/api/settings/admins", (req, res) => {
   }
 });
 
-// Dedicated, authenticated OCR. Images never go to a generative AI provider.
+// Authenticated local OCR, with separately configured Gemini assistance.
 app.use('/api/ocr',requirePersonnelSession);
+app.get('/api/ocr/capabilities',(_req,res)=>{
+  res.set('Cache-Control','no-store');
+  res.json({success:true,data:geminiOCRCapabilities()});
+});
+app.post('/api/ocr/gemini-assist',async(req,res)=>{
+  const requestId=randomUUID(),start=Date.now();
+  try {
+    const data=await assistGeminiOCR(req.body,res.locals.personnelUser.email);
+    console.info('[OCR assist]',JSON.stringify({requestId,status:200,result:data.assistance?.status,durationMs:Date.now()-start}));
+    res.json({success:true,data,requestId});
+  } catch(error) {
+    const failure=error instanceof OCRError ? error : new OCRError('Không xử lý được yêu cầu hỗ trợ OCR.',400);
+    res.status(failure.status).json({success:false,error:failure.message,retryable:false,requestId});
+  }
+});
 app.post('/api/ocr/recognize',async(req,res)=>{
   const requestId=randomUUID();const start=Date.now();
   try {
@@ -1560,7 +1578,7 @@ app.post('/api/ocr/recognize',async(req,res)=>{
     const failure=error instanceof OCRError ? error : new OCRError('OCR tạm thời không khả dụng.',503,true);
     console.info('[OCR]',JSON.stringify({requestId,status:failure.status,durationMs:Date.now()-start}));
     if(failure.retryable) res.set('Retry-After','2');
-    res.status(failure.status).json({success:false,error:failure.message,retryable:failure.retryable,retryAfterSeconds:failure.retryable ? 2 : 0,requestId});
+    res.status(failure.status).json({success:false,error:failure.message,status:failure.status,retryable:failure.retryable,retryAfterSeconds:failure.retryable ? 2 : 0,requestId});
   }
 });
 app.post('/api/ocr/extract-profile',(req,res)=>{

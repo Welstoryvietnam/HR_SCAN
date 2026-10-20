@@ -23,3 +23,15 @@ test('pause preserves the finished employee and does not start the next one',asy
   const result=await runBatchExtraction({groups,previous:[],cancelled:()=>pause,extract:async()=>{calls++;pause=true;return {ok:true,data:{success:true,data:JSON.parse(json)}};},progress:()=>{}});
   assert.equal(calls,1);assert.equal(result[0].extractionStatus,'success');assert.equal(result[1].extractionStatus,'waiting');
 });
+
+test('OCR upgrades preserve confirmed values on the same files but changed files clear stale values',async()=>{
+  const group=groups[0];
+  const oldKey=documentKey(group).replace(/^ocr-v\d+:/,'ocr-v0:');
+  const previous=[{id:group.id,hoVaTen:'NHÂN VIÊN MẪU',ngaySinh:'15/06/1995',gioiTinh:'Nữ',danToc:'Kinh',soCCCD:'000000001234',queQuan:'',diaChiThuongTru:'Địa chỉ đã xác nhận',soDienThoai:'0901234567',extractionStatus:'success' as const,extractionDocumentKey:oldKey}];
+  const emptyOCR=async()=>({ok:true,data:{success:true,data:{...JSON.parse(json),ngaySinh:'',gioiTinh:'',danToc:'',diaChiThuongTru:'',soDienThoai:''}}});
+  const same=await runBatchExtraction({groups:[group],previous,extract:emptyOCR,progress:()=>{}});
+  assert.equal(same[0].gioiTinh,'Nữ');assert.equal(same[0].danToc,'Kinh');assert.equal(same[0].soDienThoai,'0901234567');
+  const changed=structuredClone(group);changed.documents[0].id='replacement';
+  const next=await runBatchExtraction({groups:[changed],previous,extract:emptyOCR,progress:()=>{}});
+  assert.equal(next[0].gioiTinh,'');assert.equal(next[0].danToc,'');assert.equal(next[0].soDienThoai,'');
+});

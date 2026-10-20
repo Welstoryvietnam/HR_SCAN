@@ -1,5 +1,5 @@
 import type { BatchEmployeeDraft, EmployeeDocumentGroup, DocumentExtractionResult } from '../types';
-export const documentKey = (group:EmployeeDocumentGroup) => 'ocr-v1:'+JSON.stringify(group.documents.map(doc=>[doc.id,doc.docType,doc.base64Data.length]));
+export const documentKey = (group:EmployeeDocumentGroup) => 'ocr-v11:'+JSON.stringify(group.documents.map(doc=>[doc.id,doc.docType,doc.base64Data.length]));
 export function prepareEmployees(groups:EmployeeDocumentGroup[],previous:BatchEmployeeDraft[]):BatchEmployeeDraft[] {
   return groups.map(group=>{
     const old = previous.find(employee=>employee.id===group.id);
@@ -34,7 +34,17 @@ export async function runBatchExtraction(options:{groups:EmployeeDocumentGroup[]
       let reply:ExtractReply;
       try { reply=await options.extract(group); } catch {reply={ok:false,error:'Mất kết nối. Hãy thử lại riêng hồ sơ này.'};}
       if(reply.ok && reply.data?.success && reply.data.data) {
-        employees[index]={...employees[index],...reply.data.data,id:group.id,hoVaTen:reply.data.data.hoVaTen || employees[index].hoVaTen,
+        const updates={...reply.data.data};
+        const previous=options.previous.find(employee=>employee.id===group.id);
+        const sameFiles=previous?.extractionDocumentKey?.split(':').slice(1).join(':')===documentKey(group).split(':').slice(1).join(':');
+        if(sameFiles && previous) {
+          // A new OCR version may find more fields, but a blank result must not
+          // erase a value HR already corrected on these same source files.
+          for(const key of ['gioiTinh','danToc','tinhTrangHonNhan','ngaySinh','soCCCD','ngayCap','ngayHetHanCCCD','noiCap','queQuan','diaChiThuongTru','soDienThoai','emailCaNhan'] as const) {
+            if(!updates[key] && previous[key]) updates[key]=previous[key];
+          }
+        }
+        employees[index]={...employees[index],...updates,id:group.id,hoVaTen:updates.hoVaTen || employees[index].hoVaTen,
           extractionStatus:'success',extractionError:'',extractionDocumentKey:documentKey(group),aiVisionExtracted:reply.data.data.extractionMethod!=='ocr'};
         await publish(`Đã quét xong nhân viên ${index+1}/${options.groups.length}.`);break;
       }
