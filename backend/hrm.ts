@@ -60,14 +60,15 @@ export function createHrmRouter(accounts: () => SystemUserAccount[]) {
   };
   const scopedList=async(store:FirestoreRecordStore,user:SessionUser)=>{
     if(user.role==='admin')return store.list();
-    const ids=[user.id,...(await directory.listMatching('accountId',user.id)).map(p=>p.id)];
+    const ids=[...new Set([user.id,...(await directory.listMatching('accountId',user.id)).map(p=>p.id)])];
     return (await Promise.all(ids.map(id=>store.listMatching('employeeId',id)))).flat();
   };
   const getSettings = async () => {try {return (await settings.get('default')).record as AppSettings;} catch(e) {if (e instanceof StorageError && e.status===404) return HRM_SETTINGS; throw e;}};
   router.get('/bootstrap',route(async (_req,user) => {
     const [legacy,config]=await Promise.all([user.role==='admin'?directory.list():directory.listMatching('accountId',user.id),getSettings()]);
-    const employees=accounts().filter(a=>a.status==='active'&&(user.role==='admin'||a.id===user.id)).map(a=>({id:a.id,name:a.fullName,email:a.email,department:'HR Group',role:a.role==='admin'?'admin':'nhan_vien_nhan_su'}));
-    return {employees:[...employees,...legacy.map(p=>({id:p.id,name:p.name,email:p.email,department:p.department||'HR Group',role:'nhan_vien_nhan_su',legacy:true,accountId:p.accountId||''}))],settings:config};
+    const employees=accounts().filter(a=>a.status==='active'&&(user.role==='admin'||a.id===user.id)).map(a=>({id:a.id,name:a.fullName,email:(a as any).contactEmail??a.email,employeeCode:(a as any).employeeCode||a.username,department:(a as any).department||'HR Group',notes:(a as any).notes,phone:(a as any).phone,avatarColor:(a as any).avatarColor,role:(a as any).hrmRole||(a.role==='admin'?'admin':'nhan_vien_nhan_su')}));
+    const primaryIds=new Set(employees.map(a=>a.id));
+    return {employees:[...employees,...legacy.filter(p=>!primaryIds.has(p.id)).map(p=>({id:p.id,name:p.name,email:p.email,employeeCode:p.legacyId,department:p.department||'HR Group',role:'nhan_vien_nhan_su',legacy:true,accountId:p.accountId||''}))],settings:config};
   }));
   router.get('/directory',route(async(_req,user)=>{
     if(user.role!=='admin')throw new StorageError('Chỉ quản trị viên được liên kết tài khoản.',403);

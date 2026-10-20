@@ -1,4 +1,5 @@
 import express from "express";
+import {accountStore,verifyPassword,createAccountRouter,type Account} from './backend/accountStore.js';
 import { createHrmRouter } from './backend/hrm.js';
 import path from "path";
 import fs from "fs";
@@ -60,10 +61,10 @@ const adminEmails = new Set<string>([
 ]);
 
 // Cấu trúc tài khoản hệ thống (Admin & Nhân viên tuyển dụng)
-interface SystemAccount {
+interface SystemAccount extends Account {
   id: string;
   username: string;
-  password: string;
+  password?: string;
   email: string;
   fullName: string;
   role: "admin" | "employee";
@@ -115,6 +116,11 @@ let userAccounts: SystemAccount[] = [
     createdAt: "2026-09-15T08:00:00.000Z",
   },
 ];
+let cloudAccountsEnabled=false;
+const syncAccounts=async()=>{
+  const loaded=await accountStore.load(userAccounts);userAccounts=loaded.accounts.map(a=>({...a}));cloudAccountsEnabled=loaded.enabled;
+  if(cloudAccountsEnabled){adminEmails.clear();for(const user of userAccounts)if(user.role==='admin'&&user.status==='active')adminEmails.add(user.email.toLowerCase());}
+};
 
 // Bộ nhớ đệm lưu mã đặt lại mật khẩu gửi qua email: email -> { code, expires }
 const resetPasswordTokens = new Map<string, { code: string; expires: number }>();
@@ -758,9 +764,11 @@ function timLuongTheoChucVu(chucVu: string, congViec?: string) {
 // -------------------------------------------------------------
 
 // Persistent personnel data requires a server-verified login, never a client email alone.
-const requirePersonnelSession: express.RequestHandler = (req,res,next) => {
+const requirePersonnelSession: express.RequestHandler = async (req,res,next) => {
   const token = req.headers.authorization?.replace(/^Bearer /,'') || '';
   const user = readSession(token);
+  if(!user){res.status(401).json({success:false,error:'Phiên đăng nhập hết hạn. Vui lòng đăng xuất và đăng nhập lại.'});return;}
+  try {await syncAccounts();}catch(error){res.status(error instanceof StorageError?error.status:503).json({success:false,error:error instanceof StorageError?error.message:'Không thể xác thực tài khoản từ cloud. Vui lòng thử lại.'});return;}
   const account = userAccounts.find(item => item.id === user?.id);
   if (!user || !account || account.status !== 'active' || account.email.toLowerCase() !== user.email || account.role !== user.role) {
     res.status(401).json({success:false,error:"Phiên đăng nhập hết hạn. Vui lòng đăng xuất và đăng nhập lại để truy cập hồ sơ."});
@@ -791,8 +799,12 @@ app.use(['/api/admin','/api/settings'],requirePersonnelSession,(_req,res,next) =
   next();
 });
 
+const cloudAccountRouter=createAccountRouter(()=>userAccounts);
+app.use('/api/admin/users',(req,res,next)=>cloudAccountsEnabled?cloudAccountRouter(req,res,next):next());
+
 // Kiểm tra thông tin người dùng và phân quyền
-app.get("/api/auth/me", (req, res) => {
+app.get("/api/auth/me", requirePersonnelSession, async (req, res) => {
+  try {await syncAccounts();}catch{res.status(503).json({error:'Không tải được tài khoản.'});return;}
   const clientEmail = ((req.headers["x-user-email"] as string) || "Happyendpu@gmail.com").toLowerCase().trim();
   const matchedUser = userAccounts.find(
     (u) => u.email.toLowerCase() === clientEmail || u.username.toLowerCase() === clientEmail
@@ -812,8 +824,9 @@ app.get("/api/auth/me", (req, res) => {
 });
 
 // Đăng nhập hệ thống bằng Tên Đăng Nhập hoặc Email và Mật Khẩu
-app.post("/api/auth/login", (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   try {
+    await syncAccounts();
     const { username, email, password } = req.body;
     const loginIdentifier = (username || email || "").toString().trim().toLowerCase();
 
@@ -828,7 +841,7 @@ app.post("/api/auth/login", (req, res) => {
     const account = userAccounts.find(
       (u) =>
         u.username.toLowerCase() === loginIdentifier ||
-        u.email.toLowerCase() === loginIdentifier
+        u.email.toLowerCase() === loginIdentifier || u.contactEmail?.toLowerCase() === loginIdentifier
     );
 
     if (!account) {
@@ -843,7 +856,7 @@ app.post("/api/auth/login", (req, res) => {
       });
     }
 
-    if (account.password !== String(password)) {
+    if (!verifyPassword(account,String(password))) {
       return res.status(401).json({
         error: "Mật khẩu không chính xác. Nếu quên mật khẩu, vui lòng sử dụng chức năng 'Quên mật khẩu' để đổi mật khẩu qua email.",
       });
@@ -860,6 +873,10 @@ app.post("/api/auth/login", (req, res) => {
       name: account.fullName,
       role: account.role,
       displayName: isAdmin ? "Quản trị viên (Toàn quyền)" : "Nhân viên tuyển dụng",
+      employeeCode:account.employeeCode,
+      department:account.department,
+      hrmRole:account.hrmRole,
+      contactEmail:account.contactEmail,
       sessionToken: createSession({id:account.id,email:account.email,role:account.role}),
     };
 

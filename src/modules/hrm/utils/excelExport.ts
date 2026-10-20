@@ -326,7 +326,7 @@ function buildDetailedSheet(
           // Values
           row.getCell(1).value = sttCounter++;
           row.getCell(2).value = emp.department || 'HUMAN RESOURCES';
-          row.getCell(3).value = emp.id;
+          row.getCell(3).value = emp.employeeCode || emp.id;
           row.getCell(4).value = emp.name;
           row.getCell(5).value = formatDateVN(day.dateStr);
           row.getCell(6).value = session.startTime || defaultStart;
@@ -532,7 +532,7 @@ function buildPivotSheet(
     row.height = 25;
 
     row.getCell(1).value = idx + 1;
-    row.getCell(2).value = emp.id;
+    row.getCell(2).value = emp.employeeCode || emp.id;
     row.getCell(3).value = emp.name;
     row.getCell(4).value = emp.department || 'HUMAN RESOURCES';
 
@@ -676,7 +676,7 @@ export async function exportIndividualMealAllowanceToExcel(
     .replace(/Đ/g, 'D')
     .replace(/[^a-zA-Z0-9]/g, '_');
 
-  const fileName = `Bang_Ke_Tien_An_${safeName}_${employee.id}_${cycle.startDate}_den_${cycle.endDate}.xlsx`;
+  const fileName = `Bang_Ke_Tien_An_${safeName}_${employee.employeeCode || employee.id}_${cycle.startDate}_den_${cycle.endDate}.xlsx`;
   await downloadWorkbook(workbook, fileName);
 }
 

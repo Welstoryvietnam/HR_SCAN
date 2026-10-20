@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, SystemUserAccount } from '../types';
 import { safeFetchJson } from '../utils/apiHelper';
-import { getStoredAccounts, saveStoredAccounts } from '../utils/authStore';
 import {
   Users,
   UserPlus,
@@ -58,12 +57,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
 
   const loadUsers = async () => {
     setIsLoading(true);
-    // Trước tiên nạp ngay từ local cache để hiển thị tức thì
-    const localList = getStoredAccounts();
-    if (localList.length > 0) {
-      setUsers(localList);
-    }
-
     try {
       const res = await safeFetchJson<{ success: boolean; users: SystemUserAccount[] }>(
         '/api/admin/users',
@@ -73,7 +66,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       );
       if (res.data?.success && Array.isArray(res.data.users)) {
         setUsers(res.data.users);
-        saveStoredAccounts(res.data.users);
       }
     } catch (err) {
       console.warn('Lỗi gọi API /api/admin/users, dùng dữ liệu lưu trữ nội bộ:', err);
@@ -89,7 +81,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   // Xử lý tạo tài khoản mới
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUsername.trim() || !newPassword.trim() || !newEmail.trim() || !newFullName.trim()) {
+    if (!newUsername.trim() || !newPassword.trim() || !newFullName.trim()) {
       showNotify('error', 'Vui lòng điền đầy đủ tất cả thông tin bắt buộc.');
       return;
     }
@@ -98,12 +90,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     const cleanEmail = newEmail.trim().toLowerCase();
 
     // Kiểm tra trùng lặp trên local
-    const currentList = getStoredAccounts();
+    const currentList = users;
     if (currentList.some((u) => u.username.toLowerCase() === cleanUsername)) {
       showNotify('error', `Tên đăng nhập "${cleanUsername}" đã được sử dụng.`);
       return;
     }
-    if (currentList.some((u) => u.email.toLowerCase() === cleanEmail)) {
+    if (cleanEmail && currentList.some((u) => u.email.toLowerCase() === cleanEmail)) {
       showNotify('error', `Email "${cleanEmail}" đã được liên kết với một tài khoản khác.`);
       return;
     }
@@ -121,7 +113,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
 
     setIsSubmitting(true);
     try {
-      await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
+      const response = await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
         '/api/admin/users',
         {
           method: 'POST',
@@ -139,10 +131,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         }
       );
 
-      // Luôn cập nhật local storage để đảm bảo nhân viên đăng nhập được ngay lập tức
-      const updatedList = [...currentList, newAcc];
-      saveStoredAccounts(updatedList);
-      setUsers(updatedList);
+      if (!response.ok || !response.data?.success) throw new Error(response.error || 'Chưa lưu được thay đổi lên máy chủ.');
+      await loadUsers();
 
       showNotify('success', `Đã tạo và cấp tài khoản thành công cho nhân viên ${newAcc.fullName}!`);
       setShowCreateModal(false);
@@ -162,7 +152,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   const handleOpenEdit = (user: SystemUserAccount) => {
     setEditingUser(user);
     setEditFullName(user.fullName);
-    setEditEmail(user.email);
+    setEditEmail(user.contactEmail ?? user.email);
     setEditPassword('');
     setEditRole(user.role);
     setEditStatus(user.status);
@@ -185,7 +175,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         payload.password = editPassword.trim();
       }
 
-      await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
+      const response = await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
         `/api/admin/users/${editingUser.id}`,
         {
           method: 'PUT',
@@ -197,23 +187,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         }
       );
 
-      // Cập nhật local storage
-      const currentList = getStoredAccounts();
-      const updatedList = currentList.map((u) => {
-        if (u.id === editingUser.id) {
-          return {
-            ...u,
-            fullName: editFullName.trim(),
-            email: editEmail.trim(),
-            role: editRole,
-            status: editStatus,
-            password: editPassword.trim() ? editPassword.trim() : u.password,
-          };
-        }
-        return u;
-      });
-      saveStoredAccounts(updatedList);
-      setUsers(updatedList);
+      if (!response.ok || !response.data?.success) throw new Error(response.error || 'Chưa lưu được thay đổi lên máy chủ.');
+      await loadUsers();
 
       showNotify('success', 'Cập nhật tài khoản thành công!');
       setEditingUser(null);
@@ -236,7 +211,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     }
 
     try {
-      await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
+      const response = await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
         `/api/admin/users/${user.id}`,
         {
           method: 'DELETE',
@@ -244,10 +219,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         }
       );
 
-      const currentList = getStoredAccounts();
-      const updatedList = currentList.filter((u) => u.id !== user.id);
-      saveStoredAccounts(updatedList);
-      setUsers(updatedList);
+      if (!response.ok || !response.data?.success) throw new Error(response.error || 'Chưa lưu được thay đổi lên máy chủ.');
+      await loadUsers();
 
       showNotify('success', `Đã xóa tài khoản "${user.username}".`);
     } catch (err) {
@@ -411,12 +384,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                       <td className="p-3 text-slate-600">
                         <span className="inline-flex items-center gap-1">
                           <Mail className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{user.email}</span>
+                          <span>{(user.contactEmail ?? user.email) || 'Chưa có email'}</span>
                         </span>
                       </td>
                       <td className="p-3 font-mono text-slate-600">
                         <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded font-mono text-[11px] border border-slate-200">
-                          {user.password || '••••••••'}
+                          {'••••••••'}
                         </span>
                       </td>
                       <td className="p-3 text-center">
@@ -566,14 +539,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                 </label>
                 <input
                   type="email"
-                  required
                   placeholder="nhanvien@congty.com"
                   value={newEmail}
                   onChange={(e) => setNewEmail(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-blue-600"
                 />
                 <p className="text-[10px] text-slate-400 mt-0.5">
-                  Mã xác nhận bảo mật sẽ được gửi về địa chỉ này khi nhân viên thực hiện đổi mật khẩu
+                  Có thể để trống nếu nhân viên chưa có email; đăng nhập bằng mã nhân viên.
                 </p>
               </div>
 
@@ -663,7 +635,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                 </label>
                 <input
                   type="email"
-                  required
                   value={editEmail}
                   onChange={(e) => setEditEmail(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-blue-600"

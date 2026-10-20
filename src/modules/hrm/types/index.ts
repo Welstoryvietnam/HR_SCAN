@@ -68,6 +68,7 @@ export interface MealSession {
 }
 
 export interface Employee {
+  employeeCode?:string;
   id: string; // e.g. "2502038104"
   name: string; // e.g. "Nguyễn Văn Hùng"
   department: string; // e.g. "HUMAN RESOURCES"
@@ -80,6 +81,7 @@ export interface Employee {
 }
 
 export interface AuthUser {
+  employeeCode?:string;
   id: string;
   name: string;
   role: 'nhan_vien_nhan_su' | 'quan_ly_nhan_su' | 'admin';

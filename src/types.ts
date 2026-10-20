@@ -1,6 +1,10 @@
 export type UserRole = 'admin' | 'employee';
 
 export interface UserProfile {
+  employeeCode?:string;
+  contactEmail?:string;
+  hrmRole?:'admin'|'quan_ly_nhan_su'|'nhan_vien_nhan_su';
+  department?:string;
   sessionToken?: string;
   id?: string;
   username?: string;
@@ -12,6 +16,7 @@ export interface UserProfile {
 }
 
 export interface SystemUserAccount {
+  contactEmail?:string;
   id: string;
   username: string;
   password?: string;

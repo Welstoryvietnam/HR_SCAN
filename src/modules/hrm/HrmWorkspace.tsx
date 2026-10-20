@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CheckSquare, Download, Plus, RefreshCw, Save, Utensils, X } from 'lucide-react';
 import type { UserProfile } from '../../types';
-import type { AppSettings, Employee, EmployeeMealData, MealSession, MealType, Task } from './types';
+import type { AppSettings, Employee, EmployeeMealData, MealSession, MealType, Task, AuthUser } from './types';
+import MealModule,{MealDayDialog,defaultMealSession} from './MealModule';
 import { safeFetchJson } from '../../utils/apiHelper';
 import { getCurrentCycle, getCycleConfig, getCycleDays, getTodayDateString, formatVND } from './utils/cycleHelper';
 
@@ -18,7 +19,7 @@ const buttonClass='inline-flex items-center justify-center gap-2 rounded-lg bg-i
 const statuses={pending:'Chưa thực hiện','in-progress':'Đang thực hiện',completed:'Hoàn thành'};
 const priorities={urgent:'Khẩn cấp',high:'Cao',medium:'Trung bình',low:'Thấp'};
 const mealTypes:MealType[]=['Bữa Sáng','Bữa Trưa','Bữa Tối','Bữa Đêm'];
-const newSession=():MealSession=>({id:crypto.randomUUID(),mealType:'Bữa Trưa',startTime:'08:00',endTime:'17:00',location:'',purpose:'',mealsCount:1});
+const newSession=()=>defaultMealSession('Bữa Trưa');
 const emptyTask=(id:string):Task=>({id:'',employeeId:id,title:'',description:'',dueDate:getTodayDateString(),status:'pending',assignedBy:'',priority:'medium',progress:0,resultNote:'',createdAt:'',updatedAt:''});
 
 export default function HrmWorkspace({currentUser,module}:{currentUser:UserProfile;module:'meals'|'tasks'}) {
@@ -60,15 +61,15 @@ export default function HrmWorkspace({currentUser,module}:{currentUser:UserProfi
   const total=selectedMeals.reduce((sum,m)=>sum+m.mealsCount,0);
   const name=(id:string)=>employees.find(e=>e.id===id)?.name || id;
   const visibleTasks=tasks.filter(t=>(statusFilter==='all'||t.status===statusFilter)&&(assigneeFilter==='all'||t.employeeId===assigneeFilter)&&`${t.title} ${t.description} ${name(t.employeeId)}`.toLocaleLowerCase('vi').includes(query.toLocaleLowerCase('vi'))).sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
-  const openMeal=(date:string)=>action(async()=>{
-    const previous=meals.find(m=>m.employeeId===employeeId&&m.date===date);
+  const openMeal=(date:string,targetId=employeeId)=>action(async()=>{
+    const previous=meals.find(m=>m.employeeId===targetId&&m.date===date);
     const loaded=previous?await api<Versioned<Meal>>('/meals/'+previous.id):null;
-    setMealEditor({date,employeeId,version:loaded?.version || '',sessions:loaded?.record.sessions || [newSession()]});
+    setMealEditor({date,employeeId:targetId,version:loaded?.version || '',sessions:loaded?.record.sessions || [newSession()]});
   });
   const openTask=(task:Task)=>action(async()=>{const item=await api<Versioned<Task>>('/tasks/'+task.id);setTaskEditor({task:item.record,version:item.version});});
-  const exportMeals=()=>action(async()=>{
+  const exportMeals=(targetId=employeeId)=>action(async()=>{
     const {exportSmartMealAllowanceToExcel}=await import('./utils/excelExport');
-    await exportSmartMealAllowanceToExcel({id:currentUser.id!,name:currentUser.name,role:isAdmin?'admin':'nhan_vien_nhan_su',department:'HR Group'},employees,mealData,cycle,settings!,employeeId);
+    await exportSmartMealAllowanceToExcel({id:currentUser.id!,name:currentUser.name,role:isAdmin?'admin':'nhan_vien_nhan_su',department:'HR Group'},employees,mealData,cycle,settings!,targetId);
   });
 
   return <section className="space-y-5" aria-label={module==='meals'?'Khai báo tiền ăn bên ngoài':'Quản lý công việc nhân sự'}>
@@ -79,24 +80,10 @@ export default function HrmWorkspace({currentUser,module}:{currentUser:UserProfi
     {error&&<div role="alert" className="border border-rose-200 rounded-xl bg-rose-50 text-rose-800 p-4">{error}<button type="button" disabled={busy||loading} className="ml-4 underline" onClick={refresh}>Thử tải lại</button></div>}
     {message&&<p role="status" className="bg-emerald-50 text-emerald-800 p-3 rounded-xl">{message}</p>}
     {loading&&<p role="status">Đang tải dữ liệu cloud…</p>}
-    {isAdmin&&<div className="space-y-3"><button type="button" disabled={busy} onClick={()=>action(async()=>setDirectory(directory?null:await api('/directory')))} className="text-sm text-indigo-700 underline">{directory?'Đóng liên kết tài khoản':'Nhân viên HRM-Mini & liên kết tài khoản'}</button>{directory&&<div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3"><p className="text-sm text-slate-600">Nhân viên chuyển từ HRM-Mini chỉ truy cập được hồ sơ cũ sau khi quản trị viên liên kết với đúng tài khoản đăng nhập. Mật khẩu từ ứng dụng cũ không được chuyển.</p>{directory.profiles.length?directory.profiles.map(profile=><div key={profile.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 py-2"><div><p className="font-medium text-sm">{profile.name}</p><p className="text-xs text-slate-500">{profile.email} · {directory.accounts.find(a=>a.id===profile.accountId)?.name||'Chưa liên kết tài khoản'}</p></div><button type="button" disabled={busy} className="text-sm text-indigo-700 underline" onClick={()=>action(async()=>setProfileEditor(await api('/directory/'+profile.id)))}>Liên kết</button></div>):<p className="text-sm">Chưa có nhân viên được chuyển từ HRM-Mini.</p>}</div>}</div>}
+    {isAdmin&&<div className="space-y-3"><button type="button" disabled={busy} onClick={()=>action(async()=>setDirectory(directory?null:await api('/directory')))} className="text-sm text-indigo-700 underline">{directory?'Đóng liên kết tài khoản':'Nhân viên HRM-Mini & liên kết tài khoản'}</button>{directory&&<div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3"><p className="text-sm text-slate-600">Tài khoản HRM-Mini dùng mã nhân viên để đăng nhập. Chỉ liên kết thêm khi đã đối chiếu đúng người sở hữu hồ sơ.</p>{directory.profiles.length?directory.profiles.map(profile=><div key={profile.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 py-2"><div><p className="font-medium text-sm">{profile.name}</p><p className="text-xs text-slate-500">{profile.email} · {directory.accounts.find(a=>a.id===profile.accountId)?.name||'Chưa liên kết tài khoản'}</p></div><button type="button" disabled={busy} className="text-sm text-indigo-700 underline" onClick={()=>action(async()=>setProfileEditor(await api('/directory/'+profile.id)))}>Liên kết</button></div>):<p className="text-sm">Chưa có nhân viên được chuyển từ HRM-Mini.</p>}</div>}</div>}
     {!loading&&ready&&settings&&<>
       <fieldset disabled={busy} className="min-w-0 space-y-5">
-      {module==='meals'?<>
-        <div className="flex flex-wrap gap-4 items-end bg-white border border-slate-200 rounded-2xl p-4">
-          <label className="text-sm font-medium">Kỳ tính tiền ăn<input aria-label="Kỳ tính tiền ăn" type="month" className={inputClass+' mt-1'} value={`${cycle.year}-${String(cycle.month).padStart(2,'0')}`} onChange={e=>{if(e.target.value){const[y,m]=e.target.value.split('-').map(Number);setCycle(getCycleConfig(y,m));}}}/></label>
-          <label className="text-sm font-medium grow max-w-sm">Nhân viên<select className={inputClass+' mt-1'} value={employeeId} onChange={e=>setEmployeeId(e.target.value)}>{employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>
-          <button type="button" className={buttonClass} onClick={exportMeals} disabled={!employeeId}><Download size={16}/>Xuất Excel cá nhân</button>
-          {isAdmin&&<><button type="button" className="text-sm border rounded-lg px-3 py-2" onClick={()=>action(async()=>{const {exportDepartmentMealAllowanceToExcel}=await import('./utils/excelExport');await exportDepartmentMealAllowanceToExcel(employees,mealData,cycle,settings);})}>Excel tổng hợp</button><button type="button" className="text-sm underline" onClick={()=>action(async()=>setSettingsEditor(await api<Versioned<AppSettings>>('/settings')))}>Đơn giá & biểu mẫu</button></>}
-          <p className="w-full text-sm text-slate-500">{cycle.label}</p>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">{[['Tổng số bữa',total],['Đơn giá / bữa',formatVND(settings.mealPrice)],['Tiền ăn trong kỳ',formatVND(total*settings.mealPrice)]].map(([label,value])=><div key={label} className="bg-white rounded-xl border p-4"><p className="text-sm text-slate-500">{label}</p><p className="text-2xl font-bold mt-1">{value}</p></div>)}</div>
-        <div className="overflow-x-auto bg-white rounded-2xl border"><table className="w-full text-sm text-left"><thead className="bg-slate-100"><tr>{['Ngày','Bữa ăn','Địa điểm / Mục đích','Thành tiền','Thao tác'].map(h=><th className="p-3" scope="col" key={h}>{h}</th>)}</tr></thead><tbody>{getCycleDays(cycle).map(day=>{
-          const row=selectedMeals.find(m=>m.date===day.dateStr);
-          return <tr key={day.dateStr} className={`border-t ${day.isWeekend?'bg-slate-50/70':''}`}><td className="p-3 whitespace-nowrap">{day.dayOfWeekLabel}, {day.dayNum}/{day.monthNum}{day.isToday&&<span className="ml-2 text-indigo-700">Hôm nay</span>}</td><td className="p-3">{row?.sessions.map(s=>s.mealType).join(', ')||'—'}</td><td className="p-3 min-w-48">{row?.sessions.map(s=><p key={s.id}>{s.location} · {s.purpose} <span className="text-slate-500">({s.startTime}–{s.endTime})</span></p>)}</td><td className="p-3 whitespace-nowrap">{formatVND((row?.mealsCount||0)*settings.mealPrice)}</td><td className="p-3"><button type="button" disabled={day.isFuture||!employeeId} onClick={()=>openMeal(day.dateStr)} className="text-indigo-700 underline disabled:text-slate-400 disabled:no-underline">{day.isFuture?'Chưa đến ngày':row?.mealsCount?'Chỉnh sửa':'Khai báo'}</button></td></tr>;
-        })}</tbody></table></div>
-        {isAdmin&&<div className="bg-white rounded-2xl border overflow-x-auto"><h3 className="font-semibold p-4">Tổng hợp nhân viên trong kỳ</h3><table className="w-full text-sm text-left"><thead><tr>{['Nhân viên','Số bữa','Tổng tiền'].map(h=><th key={h} className="px-4 pb-3" scope="col">{h}</th>)}</tr></thead><tbody>{employees.map(e=>{const count=meals.filter(m=>m.employeeId===e.id).reduce((sum,m)=>sum+m.mealsCount,0);return <tr className="border-t" key={e.id}><td className="p-4">{e.name}</td><td>{count}</td><td>{formatVND(count*settings.mealPrice)}</td></tr>;})}</tbody></table></div>}
-      </>:<>
+      {module==='meals'?<MealModule employees={employees} mealData={mealData} cycle={cycle} settings={settings} currentUser={{id:currentUser.id!,name:currentUser.name,employeeCode:currentUser.employeeCode,department:currentUser.department||'HR Group',role:currentUser.hrmRole||(isAdmin?'admin':'nhan_vien_nhan_su')}} selectedEmployeeId={employeeId} onSelectEmployee={setEmployeeId} onCycleChange={setCycle} busy={busy} onOpenDay={openMeal} onExport={exportMeals} onExportAll={()=>action(async()=>{const {exportDepartmentMealAllowanceToExcel}=await import('./utils/excelExport');await exportDepartmentMealAllowanceToExcel(employees,mealData,cycle,settings);})} onSettings={()=>action(async()=>setSettingsEditor(await api<Versioned<AppSettings>>('/settings')))}/>:<>
         <div className="flex flex-wrap gap-3 bg-white border rounded-2xl p-4">
           <label className="grow min-w-48 text-sm">Tìm công việc<input className={inputClass+' mt-1'} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Tên công việc, người nhận…"/></label>
           <label className="text-sm">Trạng thái<select className={inputClass+' mt-1'} value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="all">Tất cả</option>{Object.entries(statuses).map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label>
@@ -109,16 +96,9 @@ export default function HrmWorkspace({currentUser,module}:{currentUser:UserProfi
       </fieldset>
     </>}
 
-    {mealEditor&&<Editor title={`Khai báo tiền ăn · ${mealEditor.date.split('-').reverse().join('/')} · ${name(mealEditor.employeeId)}`} busy={busy} onClose={()=>setMealEditor(null)} error={error} onSubmit={()=>action(async()=>{
-      await api(`/meals/${encodeURIComponent(mealEditor.employeeId)}/${mealEditor.date}`,'PUT',{sessions:mealEditor.sessions,version:mealEditor.version});setMealEditor(null);setMessage('Đã lưu tiền ăn lên cloud.');refresh();
-    })}>
-      {mealEditor.sessions.map((session,index)=><div key={session.id} className="border rounded-xl p-3 space-y-3"><div className="flex items-center gap-2"><label className="grow text-sm">Bữa ăn<select className={inputClass} value={session.mealType} onChange={e=>setMealEditor({...mealEditor,sessions:mealEditor.sessions.map((s,i)=>i===index?{...s,mealType:e.target.value as MealType}:s)})}>{mealTypes.map(t=><option key={t}>{t}</option>)}</select></label><button aria-label={`Xóa bữa ${index+1}`} type="button" onClick={()=>setMealEditor({...mealEditor,sessions:mealEditor.sessions.filter((_,i)=>i!==index)})} className="text-rose-600 px-2 pt-5"><X size={18}/></button></div>
-        <div className="grid grid-cols-2 gap-3">{(['startTime','endTime'] as const).map(key=><label key={key} className="text-sm">{key==='startTime'?'Giờ bắt đầu':'Giờ kết thúc'}<input type="time" required className={inputClass} value={session[key]} onChange={e=>setMealEditor({...mealEditor,sessions:mealEditor.sessions.map((s,i)=>i===index?{...s,[key]:e.target.value}:s)})}/></label>)}</div>
-        {(['location','purpose'] as const).map(key=><label key={key} className="block text-sm">{key==='location'?'Địa điểm công tác':'Mục đích công tác'}<input required maxLength={key==='location'?300:1000} className={inputClass} value={session[key]} onChange={e=>setMealEditor({...mealEditor,sessions:mealEditor.sessions.map((s,i)=>i===index?{...s,[key]:e.target.value}:s)})}/></label>)}
-      </div>)}
-      {mealEditor.sessions.length<4&&<button type="button" className="text-indigo-700 underline" onClick={()=>{const session=newSession();session.mealType=mealTypes.find(t=>!mealEditor.sessions.some(s=>s.mealType===t))!;setMealEditor({...mealEditor,sessions:[...mealEditor.sessions,session]});}}>+ Thêm bữa ăn</button>}
-      {!mealEditor.sessions.length&&<p className="text-sm text-rose-700">Lưu để xóa các bữa ăn đã khai báo trong ngày này.</p>}
-    </Editor>}
+    {mealEditor&&settings&&<MealDayDialog key={mealEditor.employeeId+mealEditor.date} date={mealEditor.date} sessions={mealEditor.sessions} mealPrice={settings.mealPrice} busy={busy} error={error} onClose={()=>setMealEditor(null)} onSave={sessions=>action(async()=>{
+      await api(`/meals/${encodeURIComponent(mealEditor.employeeId)}/${mealEditor.date}`,'PUT',{sessions,version:mealEditor.version});setMealEditor(null);setMessage('Đã lưu tiền ăn lên cloud.');refresh();
+    })}/>}
 
     {taskEditor&&<Editor title={taskEditor.task.id?'Chi tiết công việc':'Giao công việc mới'} busy={busy} error={error} onClose={()=>setTaskEditor(null)} onSubmit={()=>action(async()=>{
       const t=taskEditor.task;await api(t.id?'/tasks/'+t.id:'/tasks',t.id?'PUT':'POST',{...t,version:taskEditor.version});setTaskEditor(null);setMessage('Đã lưu công việc lên cloud.');refresh();

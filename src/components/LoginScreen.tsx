@@ -76,12 +76,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  // Nạp nhanh tài khoản mẫu vào form
-  const fillPreset = (userVal: string, passVal: string) => {
-    setUsername(userVal);
-    setPassword(passVal);
-    setErrorMessage('');
-  };
 
   // Bước 1 Quên mật khẩu: Gửi mã xác nhận qua email
   const handleSendResetCode = async (e: React.FormEvent) => {
@@ -184,7 +178,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             </div>
             
             <h1 className="text-[11px] font-bold tracking-[0.35em] uppercase text-slate-400">
-              Document AI Automator
+              WELV HR Workspace
             </h1>
           </div>
         </div>
@@ -194,7 +188,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           <div>
             <h2 className="text-lg font-bold text-slate-900">Đăng nhập tài khoản</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Vui lòng nhập Tên đăng nhập và Mật khẩu đã được cấp hoặc phê duyệt
+              Dùng tài khoản HRM-Mini đã được cấp để truy cập các ứng dụng nhân sự.
             </p>
           </div>
 
@@ -216,14 +210,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
-                Tên đăng nhập hoặc Email đã cấp *
+                Mã nhân viên hoặc email liên hệ *
               </label>
               <div className="relative">
                 <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   required
-                  placeholder="Ví dụ: tuyendung, admin, hoặc email..."
+                  placeholder="Nhập mã nhân viên hoặc email liên hệ"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full pl-9 pr-3 py-2.5 text-xs sm:text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-600/30 focus:border-blue-600 bg-slate-50/50 font-medium"
@@ -285,56 +279,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             </button>
           </form>
 
-          {/* Quick Helper: Thông tin tài khoản mẫu để test phân quyền */}
-          <div className="pt-3 border-t border-slate-100 space-y-2">
-            <div className="flex items-center justify-between text-[11px] text-slate-500">
-              <span className="font-semibold text-slate-700 flex items-center gap-1">
-                <HelpCircle className="w-3.5 h-3.5 text-slate-400" />
-                Tài khoản mẫu đã cấp để kiểm thử:
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              {/* Preset 1: Admin */}
-              <button
-                type="button"
-                onClick={() => fillPreset('admin', 'admin123')}
-                className="p-2.5 rounded-lg border border-purple-200 bg-purple-50/70 hover:bg-purple-100 text-left transition cursor-pointer"
-              >
-                <div className="flex items-center gap-1 text-purple-900 font-bold">
-                  <ShieldCheck className="w-3.5 h-3.5 text-purple-600" />
-                  <span>Admin</span>
-                </div>
-                <div className="font-mono text-[10px] text-purple-800 mt-0.5">
-                  admin / admin123
-                </div>
-                <div className="text-[9px] text-purple-600 mt-0.5">
-                  Toàn quyền xem & sửa
-                </div>
-              </button>
-
-              {/* Preset 2: Recruiter */}
-              <button
-                type="button"
-                onClick={() => fillPreset('tuyendung', 'tuyendung123')}
-                className="p-2.5 rounded-lg border border-sky-200 bg-sky-50/70 hover:bg-sky-100 text-left transition cursor-pointer"
-              >
-                <div className="flex items-center gap-1 text-sky-900 font-bold">
-                  <UserCheck className="w-3.5 h-3.5 text-sky-600" />
-                  <span>Tuyển dụng</span>
-                </div>
-                <div className="font-mono text-[10px] text-sky-800 mt-0.5">
-                  tuyendung / tuyendung123
-                </div>
-                <div className="text-[9px] text-sky-600 mt-0.5">
-                  Chỉ nhập & điền hồ sơ
-                </div>
-              </button>
-            </div>
-            <p className="text-[10px] text-slate-400 text-center italic">
-              Bấm vào thẻ trên để điền tự động Tên đăng nhập & Mật khẩu
-            </p>
-          </div>
+          <p className="text-xs text-slate-500 text-center">Dùng mã nhân viên và mật khẩu của hệ thống tiền ăn / công việc.</p>
         </div>
 
         {/* Footer info */}

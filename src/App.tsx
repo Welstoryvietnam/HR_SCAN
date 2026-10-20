@@ -291,6 +291,8 @@ export default function App() {
 
   // Xử lý khi đăng nhập thành công
   const handleLoginSuccess = (user: UserProfile) => {
+    localStorage.removeItem('hr_user_accounts');
+    localStorage.removeItem('hr_reset_tokens');
     setCurrentUser(user);
     setIsAuthenticated(true);
     localStorage.setItem('hr_current_user', JSON.stringify(user));
@@ -300,6 +302,8 @@ export default function App() {
 
   // Xử lý khi đăng xuất
   const handleLogout = () => {
+    localStorage.removeItem('hr_user_accounts');
+    localStorage.removeItem('hr_reset_tokens');
     localStorage.removeItem('hr_current_user');
     setCurrentUser(null);
     setIsAuthenticated(false);
@@ -792,7 +796,7 @@ export default function App() {
             Hệ thống Nhập liệu Hồ sơ Nhân sự AI &bull; Designed by Brian Tran
           </span>
           <span className="font-mono text-[11px] text-slate-400">
-            Tài khoản: {currentUser.email} &bull; Vai trò:{' '}
+            Tài khoản: {currentUser.employeeCode || currentUser.email} &bull; Vai trò:{' '}
             <strong className={isAdmin ? 'text-purple-700' : 'text-sky-700'}>
               {isAdmin ? 'QUẢN TRỊ VIÊN' : 'NHÂN VIÊN TUYỂN DỤNG'}
             </strong>

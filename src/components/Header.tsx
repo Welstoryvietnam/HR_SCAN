@@ -71,11 +71,11 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="hidden sm:block">
                 <div className="flex items-center gap-1.5">
                   <span className="font-bold text-slate-800 max-w-[150px] truncate">
-                    {currentUser.email}
+                    {currentUser.employeeCode || currentUser.email}
                   </span>
                   {isAdmin ? (
                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-purple-100 text-purple-800 text-[10px] font-bold rounded">
-                      <ShieldCheck className="w-3 h-3" /> Admin (Toàn quyền)
+                      <ShieldCheck className="w-3 h-3" /> {currentUser.hrmRole==='quan_ly_nhan_su'?'Quản lý nhân sự':'Admin (Toàn quyền)'}
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 bg-sky-100 text-sky-800 text-[10px] font-bold rounded">

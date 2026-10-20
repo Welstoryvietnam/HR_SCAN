@@ -17,6 +17,7 @@ let urls: string[] = [];
 const json = (body: any,status = 200) => new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json'}});
 
 before(async () => {
+  process.env.HR_ALLOW_LEGACY_TEST_ACCOUNTS='1';
   process.env.VERCEL = '1';
   process.env.FIREBASE_PROJECT_ID = 'hrscan';
   const {privateKey} = generateKeyPairSync('rsa',{modulusLength:2048});
