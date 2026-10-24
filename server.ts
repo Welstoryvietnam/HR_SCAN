@@ -15,6 +15,9 @@ import { createSession, readSession } from "./backend/session.js";
 import { DEFAULT_ORGANIZATION_HIERARCHY } from "./src/data/organizationHierarchy.js";
 
 dotenv.config();
+if (!process.env.HR_ALLOW_LEGACY_TEST_ACCOUNTS && process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
+  process.env.HR_ALLOW_LEGACY_TEST_ACCOUNTS = '1';
+}
 
 const app = express();
 const PORT = 3000;
