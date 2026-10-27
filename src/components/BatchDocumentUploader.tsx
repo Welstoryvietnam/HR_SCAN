@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, Sparkles, ArrowRight, FileText, Camera, Zap } from 'lucide-react';
+import { Plus, Trash2, Sparkles, ArrowRight, FileText, Camera, Zap, Clock, Loader2 } from 'lucide-react';
 import { BatchEmployeeDraft, EmployeeDocumentGroup, OptimizedImageFile } from '../types';
 import { optimizeImageFile } from '../utils/imageOptimizer';
 import { extractOCRGroup } from '../utils/ocrClient';
@@ -23,6 +23,13 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
   const [error, setError] = useState('');
   const [scanMode, setScanMode] = useState<'ai' | 'local'>('ai');
   const [editing,setEditing]=useState<{groupId:string;document:OptimizedImageFile}>();
+  const [progressInfo, setProgressInfo] = useState<{
+    completed: number;
+    total: number;
+    estimatedSecondsLeft: number;
+    percent: number;
+  }>({ completed: 0, total: 0, estimatedSecondsLeft: 0, percent: 0 });
+
   const currentGroups=useRef(groups);currentGroups.current=groups;
   const paused = useRef(false);
   const mounted = useRef(true);
@@ -34,6 +41,28 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
     window.addEventListener('beforeunload',warn);
     return ()=>window.removeEventListener('beforeunload',warn);
   },[busy]);
+
+  // Bộ đếm lùi thời gian ước tính mượt mà mỗi giây khi đang quét
+  useEffect(() => {
+    if (!busy) return;
+    const interval = setInterval(() => {
+      setProgressInfo(prev => {
+        if (prev.estimatedSecondsLeft <= 1) {
+          return { ...prev, estimatedSecondsLeft: 1 };
+        }
+        const nextSeconds = prev.estimatedSecondsLeft - 1;
+        // Tăng dần tỷ lệ phần trăm theo thời gian ước tính trôi qua
+        const dynamicPercent = Math.min(94, prev.percent + 2);
+        return {
+          ...prev,
+          estimatedSecondsLeft: nextSeconds,
+          percent: Math.max(prev.percent, dynamicPercent),
+        };
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [busy]);
+
   const addGroup = () => onChange([...groups, {id:crypto.randomUUID(),label:'',documents:[]}]);
   const upload = async (id: string, files: FileList | null) => {
     if (!files?.length) return;
@@ -57,6 +86,19 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
     setBusy(true);
     onBusyChange(true);
     setError('');
+
+    const groupsWithDocs = groups.filter(g => g.documents.length > 0);
+    const totalCount = groupsWithDocs.length;
+    const perEmpSeconds = scanMode === 'ai' ? 2 : 18;
+    const initialSeconds = Math.max(3, totalCount * perEmpSeconds);
+
+    setProgressInfo({
+      completed: 0,
+      total: totalCount,
+      estimatedSecondsLeft: initialSeconds,
+      percent: totalCount > 0 ? 8 : 100,
+    });
+
     try {
       let lastCheckpoint='';
       let cloudFailed=false;
@@ -68,13 +110,29 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
         progress:async (list,message)=>{
           if(!mounted.current) return;
           onDraftsChange?.(list);setStatus(message);
+
+          const completed = list.filter(employee => ['success','failed'].includes(employee.extractionStatus || '')).length;
+          const remaining = Math.max(0, totalCount - completed);
+          const calculatedSecLeft = Math.max(1, remaining * (scanMode === 'ai' ? 2 : 18));
+          const actualPercent = totalCount > 0 ? Math.round((completed / totalCount) * 100) : 100;
+
+          setProgressInfo({
+            completed,
+            total: totalCount,
+            estimatedSecondsLeft: remaining === 0 ? 0 : calculatedSecLeft,
+            percent: remaining === 0 ? 100 : Math.max(12, Math.min(95, actualPercent)),
+          });
+
           const checkpoint=list.filter(employee=>['success','failed'].includes(employee.extractionStatus || '')).map(employee=>`${employee.id}:${employee.extractionStatus}`).join('|');
           if(checkpoint && checkpoint!==lastCheckpoint && !cloudFailed && onCheckpoint) {
             lastCheckpoint=checkpoint;
             try {await onCheckpoint(list,currentGroups.current);} catch(err) {cloudFailed=true;setError(`Chưa lưu được lên cloud: ${(err as Error).message} Kết quả vẫn còn trên màn hình. Sau khi khắc phục kết nối hoặc cấu hình, bấm Lưu tạm và chờ xác nhận lưu thành công trước khi đóng trang.`);}
           }
         }});
-      if(mounted.current && !paused.current && !cloudFailed && employees.every(employee=>employee.extractionStatus==='success')) onProceed(employees);
+      if(mounted.current && !paused.current && !cloudFailed && employees.every(employee=>employee.extractionStatus==='success')) {
+        setProgressInfo(prev => ({ ...prev, percent: 100, estimatedSecondsLeft: 0 }));
+        onProceed(employees);
+      }
     } catch (err) { setError((err as Error).message); }
     finally {locked.current=false;if(mounted.current) {setBusy(false);onBusyChange(false);}}
   };
@@ -148,9 +206,81 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
     </div>)}</div>
     {!groups.length && <p className="py-6 text-center text-sm text-slate-500">Bấm “Thêm nhân viên” để bắt đầu danh sách.</p>}
     {error && <p role="alert" className="whitespace-pre-wrap text-xs text-rose-700">{error}</p>}
-    {busy && <button type="button" onClick={()=>{paused.current=true;setStatus('Sẽ tạm dừng sau hồ sơ đang xử lý…');}} className="rounded-lg border px-3 py-2 text-xs">Tạm dừng sau hồ sơ này</button>}
+    
+    {/* THANH TIẾN ĐỘ & ĐẾM NGƯỢC THỜI GIAN HOÀN THÀNH KHI ĐANG QUÉT */}
+    {busy && (
+      <div className="rounded-xl border border-blue-200 bg-gradient-to-br from-blue-50 via-indigo-50/40 to-white p-4 shadow-xs space-y-3 animate-fade-in" aria-live="polite">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white shadow-xs">
+              <Loader2 className="h-4 w-4 animate-spin text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-900">
+                  {scanMode === 'ai' ? '⚡ AI Đang Bóc Tách Hồ Sơ Siêu Tốc' : '🖥️ Đang Quét OCR Cục Bộ'}
+                </span>
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+                  {progressInfo.completed} / {progressInfo.total} hồ sơ
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600 truncate max-w-lg">
+                {status || 'Đang nhận diện ký tự, đối soát CCCD & Sơ yếu lý lịch…'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Countdown Badge */}
+            <div className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-xs">
+              <Clock className="h-4 w-4 text-indigo-600 animate-pulse" />
+              <span>
+                {progressInfo.estimatedSecondsLeft > 1
+                  ? `Còn khoảng ${progressInfo.estimatedSecondsLeft} giây...`
+                  : progressInfo.estimatedSecondsLeft === 1
+                  ? 'Còn khoảng 1-2 giây... gần hoàn tất!'
+                  : 'Đang hoàn tất...'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                paused.current = true;
+                setStatus('Sẽ tạm dừng sau hồ sơ đang xử lý…');
+              }}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition cursor-pointer shadow-xs"
+            >
+              Tạm dừng
+            </button>
+          </div>
+        </div>
+
+        {/* Dynamic Animated Progress Bar */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+            <span>Tiến độ bóc tách thông tin</span>
+            <span className="text-blue-700 font-bold">{progressInfo.percent}%</span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200/80 shadow-inner">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-500 transition-all duration-500 ease-out"
+              style={{ width: `${progressInfo.percent}%` }}
+            />
+          </div>
+        </div>
+      </div>
+    )}
+
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 pt-3">
-      <p role="status" className="text-xs text-slate-500">{busy ? status || 'Đang tải tài liệu…' : `${groups.length} nhân viên • ${groups.reduce((sum,group) => sum + group.documents.length,0)} tài liệu`}</p>
+      <p role="status" className="text-xs text-slate-500">
+        {busy
+          ? `Đang xử lý ${progressInfo.completed}/${progressInfo.total} hồ sơ • ${
+              progressInfo.estimatedSecondsLeft > 0
+                ? `Còn khoảng ${progressInfo.estimatedSecondsLeft} giây...`
+                : 'Sắp hoàn tất'
+            }`
+          : `${groups.length} nhân viên • ${groups.reduce((sum,group) => sum + group.documents.length,0)} tài liệu`}
+      </p>
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={busy || !groups.length} onClick={() => void proceed(false)} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:opacity-50">Mở bảng đối chiếu Bước 2<ArrowRight className="h-3 w-3" /></button>
         <button
@@ -165,7 +295,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
         >
           {scanMode === 'ai' ? <Zap className="h-4 w-4 text-amber-300 fill-amber-300" /> : <Sparkles className="h-4 w-4" />}
           {busy
-            ? 'Đang xử lý…'
+            ? `Đang xử lý (${progressInfo.percent}% • Còn ~${progressInfo.estimatedSecondsLeft}s)…`
             : previousEmployees.some(employee => employee.extractionStatus === 'success' || employee.extractionStatus === 'failed')
             ? 'Tiếp tục / thử lại hồ sơ chưa xong'
             : scanMode === 'ai'
