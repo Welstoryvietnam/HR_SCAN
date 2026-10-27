@@ -9,20 +9,21 @@ import {
   Users,
   UploadCloud,
   LayoutDashboard,
-  UserCog
+  UserCog,
+  Download
 } from 'lucide-react';
 
 export type AppTab = 'upload' | 'records' | 'dashboard' | 'salary' | 'emails' | 'users';
-export type WorkspaceModule = 'hrscan' | 'meals' | 'tasks';
+export type WorkspaceModule = 'hrscan' | 'tasks';
 
 interface HeaderProps {
-  module: WorkspaceModule;
-  onModuleChange: (module: WorkspaceModule) => void;
   currentUser: UserProfile;
   onLogout: () => void;
   activeTab: AppTab;
   onTabChange: (tab: AppTab) => void;
   recordsCount: number;
+  module?: WorkspaceModule;
+  onModuleChange?: (module: WorkspaceModule) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -31,8 +32,6 @@ export const Header: React.FC<HeaderProps> = ({
   activeTab,
   onTabChange,
   recordsCount,
-  module,
-  onModuleChange,
 }) => {
   const isAdmin = currentUser.role === 'admin';
 
@@ -86,6 +85,17 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
 
+            {/* Nút Tải Toàn Bộ Code ZIP */}
+            <a
+              href="/source-code.zip"
+              download="hr-scan-source-code.zip"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 rounded-xl text-xs font-semibold transition cursor-pointer shadow-2xs"
+              title="Tải toàn bộ mã nguồn (.ZIP) để đưa lên GitHub thủ công"
+            >
+              <Download className="w-4 h-4 text-indigo-600" />
+              <span className="hidden sm:inline">Tải code (ZIP)</span>
+            </a>
+
             {/* Nút Đăng Xuất */}
             <button
               type="button"
@@ -99,11 +109,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Tab Navigation (Đã ẩn hoàn toàn phần Mã Nguồn Apps Script) */}
-        <nav aria-label="Ứng dụng nhân sự" className="flex gap-2 border-t border-slate-100 overflow-x-auto py-2">
-          {(['hrscan','meals','tasks'] as const).map(item => <button key={item} type="button" aria-current={module===item?'page':undefined} onClick={()=>onModuleChange(item)} className={`px-4 py-2.5 rounded-xl whitespace-nowrap font-semibold text-sm ${module===item?'bg-indigo-600 text-white':'text-slate-600 hover:bg-slate-100'}`}>{({hrscan:'HR Scan · Tiếp nhận nhân sự',meals:'Khai báo tiền ăn bên ngoài',tasks:'Quản lý công việc nhân sự'})[item]}</button>)}
-        </nav>
-        {module === 'hrscan' && <nav aria-label="Chức năng HR Scan" className="flex space-x-1 sm:space-x-4 border-t border-slate-100 overflow-x-auto py-1">
+        {/* Navigation Tabs */}
+        <nav aria-label="Chức năng hệ thống nhân sự" className="flex space-x-1 sm:space-x-4 border-t border-slate-100 overflow-x-auto py-2">
           {/* Tab Nộp hồ sơ: Cả Admin và Nhân viên tuyển dụng đều sử dụng */}
           <button
             type="button"
@@ -201,7 +208,7 @@ export const Header: React.FC<HeaderProps> = ({
               </button>
             </>
           )}
-        </nav>}
+        </nav>
       </div>
     </header>
   );

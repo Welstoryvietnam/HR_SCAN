@@ -781,6 +781,126 @@ const requirePersonnelSession: express.RequestHandler = async (req,res,next) => 
   req.headers['x-user-email'] = user.email;
   next();
 };
+interface MemoryDraft {
+  id: string;
+  userEmail: string;
+  title: string;
+  step: number;
+  employeeCount: number;
+  documentCount: number;
+  timestamp: string;
+  version: string;
+  revision?: string;
+  chunkCount?: number;
+  byteLength?: number;
+  deleting?: boolean;
+  parts: Map<string, string>;
+}
+const inMemoryDrafts = new Map<string, MemoryDraft>();
+
+const memoryDraftStore = {
+  async summaries(email: string) {
+    return Array.from(inMemoryDrafts.values())
+      .filter(d => d.userEmail === email)
+      .map(d => ({
+        id: d.id,
+        title: d.deleting ? 'Đã đóng bản nháp — cần dọn tài liệu tạm' : d.title || 'Bản nháp tải lên chưa hoàn tất',
+        step: d.step || 1,
+        employeeCount: d.employeeCount || 0,
+        documentCount: d.documentCount || 0,
+        timestamp: d.timestamp,
+        version: d.version,
+        ready: Boolean(d.revision) && !d.deleting,
+      }))
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  },
+  async stage(email: string, input: any) {
+    const count = input.chunkCount;
+    if (!Number.isInteger(count) || count < 1 || count > 128 || !Number.isInteger(input.byteLength) || input.byteLength < 1 || input.byteLength > 16 * 1024 * 1024) {
+      throw new StorageError('Bản nháp vượt giới hạn 16 MB. Hãy giảm dung lượng hoặc chia nhỏ đợt nhập.', 400);
+    }
+    const revision = randomUUID();
+    const id = input.id || `draft_${randomUUID()}`;
+    let draft = inMemoryDrafts.get(id);
+    if (draft) {
+      if (input.version && draft.version !== input.version) {
+        throw new StorageError('Bản nháp đã thay đổi trên thiết bị khác. Hãy mở lại bản nháp trước khi lưu tiếp.', 409);
+      }
+    } else {
+      draft = {
+        id,
+        userEmail: email,
+        title: 'Bản nháp tải lên chưa hoàn tất',
+        step: 1,
+        employeeCount: 0,
+        documentCount: 0,
+        timestamp: new Date().toISOString(),
+        version: new Date().toISOString(),
+        parts: new Map(),
+      };
+      inMemoryDrafts.set(id, draft);
+    }
+    draft.revision = revision;
+    draft.chunkCount = count;
+    draft.byteLength = input.byteLength;
+    return { id, revision, version: draft.version, chunkCount: count, byteLength: input.byteLength };
+  },
+  async putPart(email: string, id: string, revision: string, index: number, content: string) {
+    const draft = inMemoryDrafts.get(id);
+    if (!draft || draft.userEmail !== email) throw new StorageError('Không tìm thấy bản nháp của tài khoản này.', 404);
+    if (draft.revision !== revision) throw new StorageError('Phần tải lên không thuộc phiên bản đang xử lý.', 409);
+    const key = `${revision}_${index}`;
+    const existing = draft.parts.get(key);
+    if (existing && existing !== content) throw new StorageError('Phần bản nháp đã tồn tại với nội dung khác.', 409);
+    draft.parts.set(key, content);
+    return { index, revision };
+  },
+  async finish(email: string, id: string, revision: string, version?: string) {
+    const draft = inMemoryDrafts.get(id);
+    if (!draft || draft.userEmail !== email) throw new StorageError('Không tìm thấy bản nháp của tài khoản này.', 404);
+    if (version && draft.version !== version) throw new StorageError('Bản nháp đã thay đổi trên thiết bị khác. Hãy mở lại bản nháp trước khi lưu tiếp.', 409);
+    if (draft.revision !== revision) throw new StorageError('Bản nháp đã thay đổi trên thiết bị khác.', 409);
+    let fullContent = '';
+    for (let i = 0; i < (draft.chunkCount || 0); i++) {
+      const part = draft.parts.get(`${draft.revision}_${i}`);
+      if (part === undefined) throw new StorageError('Thiếu phần bản nháp.', 400);
+      fullContent += part;
+    }
+    try {
+      const snapshot = JSON.parse(fullContent);
+      draft.title = snapshot.employees?.[0]?.hoVaTen || 'Bản nháp tiếp nhận';
+      draft.step = snapshot.step || 1;
+      draft.employeeCount = snapshot.employees?.length || 0;
+      draft.documentCount = snapshot.groups?.reduce((sum: number, g: any) => sum + (g.documents?.length || 0), 0) || 0;
+    } catch {
+      draft.title = 'Bản nháp tiếp nhận';
+    }
+    draft.timestamp = new Date().toISOString();
+    draft.version = new Date().toISOString();
+    return { id, title: draft.title, step: draft.step, employeeCount: draft.employeeCount, documentCount: draft.documentCount, timestamp: draft.timestamp, version: draft.version, chunkCount: draft.chunkCount, byteLength: draft.byteLength, revision: draft.revision };
+  },
+  async open(email: string, id: string) {
+    const draft = inMemoryDrafts.get(id);
+    if (!draft || draft.userEmail !== email) throw new StorageError('Không tìm thấy bản nháp của tài khoản này.', 404);
+    return { id, title: draft.title, step: draft.step, employeeCount: draft.employeeCount, documentCount: draft.documentCount, timestamp: draft.timestamp, version: draft.version, chunkCount: draft.chunkCount, byteLength: draft.byteLength, revision: draft.revision };
+  },
+  async part(email: string, id: string, revision: string, index: number) {
+    const draft = inMemoryDrafts.get(id);
+    if (!draft || draft.userEmail !== email) throw new StorageError('Không tìm thấy bản nháp của tài khoản này.', 404);
+    const part = draft.parts.get(`${revision}_${index}`);
+    if (part === undefined) throw new StorageError('Không tìm thấy phần bản nháp.', 404);
+    return part;
+  },
+  async discard(email: string, id: string, _version?: string) {
+    const draft = inMemoryDrafts.get(id);
+    if (!draft || draft.userEmail !== email) throw new StorageError('Không tìm thấy bản nháp của tài khoản này.', 404);
+    inMemoryDrafts.delete(id);
+    return { success: true };
+  }
+};
+
+const getDraftStore = () => firestoreConfigured() ? draftStore : memoryDraftStore;
+
 app.use('/api/hrm',requirePersonnelSession,createHrmRouter(()=>userAccounts));
 app.use('/api/drafts',requirePersonnelSession,(_req,res,next) => {
   res.setHeader('Cache-Control','no-store');
@@ -790,13 +910,13 @@ const draftRoute = (handler: (req: express.Request,email: string) => Promise<any
   try { res.json({success:true,data:await handler(req,res.locals.personnelUser.email)}); }
   catch (error) { res.status(error instanceof StorageError ? error.status : 500).json({success:false,error:error instanceof StorageError ? error.message : 'Không thể đồng bộ bản nháp. Vui lòng thử lại.'}); }
 };
-app.get('/api/drafts',draftRoute((_req,email) => draftStore.summaries(email)));
-app.post('/api/drafts/stage',draftRoute((req,email) => draftStore.stage(email,req.body)));
-app.put('/api/drafts/:id/parts/:revision/:index',draftRoute((req,email) => draftStore.putPart(email,String(req.params.id),String(req.params.revision),Number(req.params.index),req.body.content)));
-app.post('/api/drafts/:id/finish',draftRoute((req,email) => draftStore.finish(email,String(req.params.id),req.body.revision,req.body.version)));
-app.get('/api/drafts/:id',draftRoute((req,email) => draftStore.open(email,String(req.params.id))));
-app.get('/api/drafts/:id/parts/:revision/:index',draftRoute((req,email) => draftStore.part(email,String(req.params.id),String(req.params.revision),Number(req.params.index))));
-app.delete('/api/drafts/:id',draftRoute((req,email) => draftStore.discard(email,String(req.params.id),req.body.version)));
+app.get('/api/drafts',draftRoute((_req,email) => getDraftStore().summaries(email)));
+app.post('/api/drafts/stage',draftRoute((req,email) => getDraftStore().stage(email,req.body)));
+app.put('/api/drafts/:id/parts/:revision/:index',draftRoute((req,email) => getDraftStore().putPart(email,String(req.params.id),String(req.params.revision),Number(req.params.index),req.body.content)));
+app.post('/api/drafts/:id/finish',draftRoute((req,email) => getDraftStore().finish(email,String(req.params.id),req.body.revision,req.body.version)));
+app.get('/api/drafts/:id',draftRoute((req,email) => getDraftStore().open(email,String(req.params.id))));
+app.get('/api/drafts/:id/parts/:revision/:index',draftRoute((req,email) => getDraftStore().part(email,String(req.params.id),String(req.params.revision),Number(req.params.index))));
+app.delete('/api/drafts/:id',draftRoute((req,email) => getDraftStore().discard(email,String(req.params.id),req.body.version)));
 app.use(['/api/admin','/api/settings'],requirePersonnelSession,(_req,res,next) => {
   if (res.locals.personnelUser.role !== 'admin') {res.status(403).json({success:false,error:'Chỉ Quản trị viên mới có quyền thực hiện thao tác này.'});return;}
   next();
@@ -1694,6 +1814,89 @@ app.post("/api/sheets/tieu-chuan-luong", (req, res) => {
   }
 });
 
+// SHEET: TIEUCHUANLUONG (Đồng bộ hàng loạt từ Google Sheets - Admin)
+app.post("/api/sheets/tieu-chuan-luong/batch", (req, res) => {
+  try {
+    const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
+    const isAdmin = adminEmails.has(userEmail);
+
+    if (!isAdmin) {
+      return res.status(403).json({
+        error: "Từ chối truy cập: Chỉ Quản trị viên (Admin) mới có quyền đồng bộ dữ liệu vào Sheet 'TieuChuanLuong'.",
+      });
+    }
+
+    const { items, mode = 'merge' } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Danh sách tiêu chuẩn lương không được để trống." });
+    }
+
+    const sanitizedItems = items.map((raw: any, index: number) => {
+      const chucVu = String(raw.chucVu || '').trim();
+      const luongCoBan = Number(raw.luongCoBan) || 0;
+      const phuCapChucVu = Number(raw.phuCapChucVu) || 0;
+      const phuCapDienThoai = Number(raw.phuCapDienThoai) || 0;
+      const troCapTayNghe = Number(raw.troCapTayNghe) || 0;
+      const troCapGiaDinh = raw.troCapGiaDinh !== undefined ? Number(raw.troCapGiaDinh) || 0 : 150000;
+      const thuongChuyenCan = raw.thuongChuyenCan !== undefined ? Number(raw.thuongChuyenCan) || 0 : 200000;
+      const thuongSangKien = Number(raw.thuongSangKien) || 0;
+      const computedPhuCapCoDinh = raw.phuCapCoDinh !== undefined
+        ? Number(raw.phuCapCoDinh) || 0
+        : (phuCapChucVu + phuCapDienThoai + troCapTayNghe + troCapGiaDinh + thuongChuyenCan + thuongSangKien);
+
+      return {
+        id: raw.id || `TCL_SYNC_${Date.now()}_${index}`,
+        congViec: String(raw.congViec || 'Khác').trim(),
+        chucVu,
+        luongCoBan,
+        phuCapChucVu,
+        phuCapDienThoai,
+        phuCapMoiTruong: raw.phuCapMoiTruong || 'Thủ công',
+        phuCapXangXe: raw.phuCapXangXe || 'Thủ công',
+        anToanVeSinhVien: raw.anToanVeSinhVien || 'Thủ công',
+        phuCapKinhDoanh: raw.phuCapKinhDoanh || 'Thủ công',
+        phuCapNangNhoc: raw.phuCapNangNhoc || 'Thủ công',
+        troCapTayNghe,
+        troCapGiaDinh,
+        thuongChuyenCan,
+        thuongSangKien,
+        phuCapCoDinh: computedPhuCapCoDinh,
+        moTa: raw.moTa || `Tiêu chuẩn lương cho ${chucVu}`,
+        capNhatLuc: new Date().toISOString(),
+      };
+    }).filter(item => Boolean(item.chucVu));
+
+    if (sanitizedItems.length === 0) {
+      return res.status(400).json({ error: "Không tìm thấy dòng tiêu chuẩn có chức danh hợp lệ." });
+    }
+
+    if (mode === 'replace') {
+      tieuChuanLuong = sanitizedItems;
+    } else {
+      // Merge mode: update if exists (by chucVu or id), append if not
+      for (const item of sanitizedItems) {
+        const idx = tieuChuanLuong.findIndex(
+          t => t.id === item.id || t.chucVu.toLowerCase() === item.chucVu.toLowerCase()
+        );
+        if (idx >= 0) {
+          tieuChuanLuong[idx] = { ...tieuChuanLuong[idx], ...item };
+        } else {
+          tieuChuanLuong.push(item);
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Đã đồng bộ ${sanitizedItems.length} tiêu chuẩn lương thành công (chế độ: ${mode === 'replace' ? 'Ghi đè' : 'Gộp/Cập nhật'}).`,
+      totalCount: tieuChuanLuong.length,
+      list: tieuChuanLuong,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 // Xóa tiêu chuẩn lương (Admin)
 app.delete("/api/sheets/tieu-chuan-luong/:id", (req, res) => {
   const userEmail = ((req.headers["x-user-email"] as string) || "").toLowerCase().trim();
@@ -1726,6 +1929,8 @@ app.post("/api/organization-hierarchy", (req, res) => {
   res.json({ success: true, data: organizationHierarchy });
 });
 
+let inMemoryPersonnelRecords: any[] = [];
+
 // 3. SHEET: DANHSACHNHANSU (Lấy danh sách theo phân quyền tài khoản Google)
 app.use('/api/sheets/danh-sach-nhan-su',requirePersonnelSession);
 app.use('/api/export/csv',requirePersonnelSession);
@@ -1738,7 +1943,9 @@ app.get("/api/sheets/danh-sach-nhan-su", async (req, res) => {
     // Phân quyền thông minh:
     // - Admin: xem toàn bộ hồ sơ của tất cả nhân viên
     // - Nhân viên: chỉ xem lịch sử các hồ sơ do chính tài khoản của họ gửi lên
-    const filtered = await recordStore.list(isAdmin ? undefined : userEmail);
+    const filtered = firestoreConfigured()
+      ? await recordStore.list(isAdmin ? undefined : userEmail)
+      : inMemoryPersonnelRecords.filter(r => isAdmin || r.userEmail === userEmail);
 
     // Sắp xếp mới nhất lên đầu
     const sorted = [...filtered].sort(
@@ -1941,13 +2148,19 @@ app.post("/api/sheets/danh-sach-nhan-su", async (req, res) => {
   try {
     const userEmail = ((req.headers["x-user-email"] as string) || req.body.userEmail || "nhanvien@congty.com").toLowerCase().trim();
     const newRecord = buildPersonnelRecord(req.body, userEmail);
-    const draftCleanupPending = req.body.draftId
-      ? await draftStore.complete(userEmail,req.body.draftId,req.body.draftVersion,[newRecord])
-      : (await recordStore.create([newRecord]),false);
+    let draftCleanupPending = false;
+    if (firestoreConfigured()) {
+      draftCleanupPending = req.body.draftId
+        ? await draftStore.complete(userEmail,req.body.draftId,req.body.draftVersion,[newRecord])
+        : (await recordStore.create([newRecord]),false);
+    } else {
+      inMemoryPersonnelRecords.unshift(newRecord);
+      if (req.body.draftId) inMemoryDrafts.delete(req.body.draftId);
+    }
 
     res.json({
       success: true,
-      message: "Đã lưu hồ sơ vào Firestore.",
+      message: firestoreConfigured() ? "Đã lưu hồ sơ vào Firestore." : "Đã lưu hồ sơ (Bộ nhớ tạm).",
       record: newRecord,
       draftCleanupPending,
       emailSent: false,
@@ -1970,13 +2183,19 @@ app.post("/api/sheets/danh-sach-nhan-su/batch", async (req, res) => {
     }
 
     const savedRecords = batchList.map(item => buildPersonnelRecord(item,userEmail));
-    const draftCleanupPending = req.body.draftId
-      ? await draftStore.complete(userEmail,req.body.draftId,req.body.draftVersion,savedRecords)
-      : (await recordStore.create(savedRecords),false);
+    let draftCleanupPending = false;
+    if (firestoreConfigured()) {
+      draftCleanupPending = req.body.draftId
+        ? await draftStore.complete(userEmail,req.body.draftId,req.body.draftVersion,savedRecords)
+        : (await recordStore.create(savedRecords),false);
+    } else {
+      inMemoryPersonnelRecords.unshift(...savedRecords);
+      if (req.body.draftId) inMemoryDrafts.delete(req.body.draftId);
+    }
 
     res.json({
       success: true,
-      message: `Đã lưu ${savedRecords.length} hồ sơ vào Firestore.`,
+      message: firestoreConfigured() ? `Đã lưu ${savedRecords.length} hồ sơ vào Firestore.` : `Đã lưu ${savedRecords.length} hồ sơ (Bộ nhớ tạm).`,
       count: savedRecords.length,
       records: savedRecords,
       draftCleanupPending,
@@ -1998,7 +2217,16 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", async (req, res) => {
     }
 
     const { id } = req.params;
-    const {record:existing,version} = await recordStore.get(id);
+    let existing: any, version: string | undefined;
+    if (firestoreConfigured()) {
+      const snap = await recordStore.get(id);
+      existing = snap.record;
+      version = snap.version;
+    } else {
+      existing = inMemoryPersonnelRecords.find(r => r.id === id);
+      if (!existing) throw new StorageError('Không tìm thấy hồ sơ.', 404);
+      version = existing.capNhatLuc || existing.timestamp;
+    }
     const body = personnelFields(req.body);
     if (body.thamQuyen && !['Trưởng địa điểm','Dinh dưỡng viên trưởng','Giám sát trưởng'].includes(body.thamQuyen)) throw new StorageError('Thẩm quyền không hợp lệ.',400);
 
@@ -2068,7 +2296,12 @@ app.put("/api/sheets/danh-sach-nhan-su/:id", async (req, res) => {
       capNhatLuc: new Date().toISOString(),
     };
 
-    await recordStore.update(id,updatedRecord,version);
+    if (firestoreConfigured()) {
+      await recordStore.update(id,updatedRecord,version);
+    } else {
+      const idx = inMemoryPersonnelRecords.findIndex(r => r.id === id);
+      if (idx >= 0) inMemoryPersonnelRecords[idx] = updatedRecord;
+    }
 
     res.json({
       success: true,
@@ -2090,7 +2323,11 @@ app.delete("/api/sheets/danh-sach-nhan-su/:id", async (req, res) => {
 
   const { id } = req.params;
   try {
-    await recordStore.delete(id);
+    if (firestoreConfigured()) {
+      await recordStore.delete(id);
+    } else {
+      inMemoryPersonnelRecords = inMemoryPersonnelRecords.filter(r => r.id !== id);
+    }
     res.json({success:true});
   } catch (error) {
     res.status(error instanceof StorageError ? error.status : 503).json({success:false,error:error instanceof StorageError ? error.message : "Không xóa được hồ sơ. Vui lòng thử lại."});
@@ -2156,7 +2393,8 @@ app.get("/api/export/csv", async (req, res) => {
       return `"${s}"`;
     };
 
-    const rows = (await recordStore.list()).map((ns) => {
+    const rawRows = firestoreConfigured() ? await recordStore.list() : inMemoryPersonnelRecords;
+    const rows = rawRows.map((ns) => {
       const familyStr = Array.isArray(ns.thongTinGiaDinh)
         ? ns.thongTinGiaDinh.map((f) => `${f.quanHe}: ${f.hoTen} (${f.namSinh || "?"}) - ${f.ngheNghiep || ""}`).join("; ")
         : "";

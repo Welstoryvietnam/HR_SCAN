@@ -279,7 +279,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             </button>
           </form>
 
-          <p className="text-xs text-slate-500 text-center">Dùng mã nhân viên và mật khẩu của hệ thống tiền ăn / công việc.</p>
+          <p className="text-xs text-slate-500 text-center">Dùng mã nhân viên / email và mật khẩu được cấp để đăng nhập hệ thống.</p>
         </div>
 
         {/* Footer info */}

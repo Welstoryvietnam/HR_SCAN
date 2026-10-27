@@ -22,8 +22,18 @@ export function firebaseCredentials() {
   try {
     const value = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON || '{}');
     const projectId = process.env.FIREBASE_PROJECT_ID;
-    if (!projectId || value.project_id !== projectId || !value.client_email || !value.private_key) throw new Error();
-    return { projectId, email: String(value.client_email), privateKey: String(value.private_key).replace(/\\n/g, '\n') };
+    const privateKey = String(value.private_key || '').replace(/\\n/g, '\n');
+    const email = String(value.client_email || '');
+    if (
+      !projectId ||
+      value.project_id !== projectId ||
+      !email ||
+      !privateKey ||
+      email === 'SERVICE_ACCOUNT_EMAIL' ||
+      !email.includes('@') ||
+      !privateKey.includes('BEGIN')
+    ) throw new Error();
+    return { projectId, email, privateKey };
   } catch {
     throw new StorageError('Chưa cấu hình Firestore. Vui lòng kiểm tra FIREBASE_PROJECT_ID và FIREBASE_SERVICE_ACCOUNT_JSON trên Vercel.');
   }
@@ -74,7 +84,12 @@ export class FirestoreRecordStore {
     const header = Buffer.from(JSON.stringify({alg:'RS256',typ:'JWT'})).toString('base64url');
     const claims = Buffer.from(JSON.stringify({iss:credentials.email,scope:'https://www.googleapis.com/auth/datastore',aud:'https://oauth2.googleapis.com/token',iat:now,exp:now+3600})).toString('base64url');
     const unsigned = `${header}.${claims}`;
-    const signature = createSign('RSA-SHA256').update(unsigned).sign(credentials.privateKey,'base64url');
+    let signature: string;
+    try {
+      signature = createSign('RSA-SHA256').update(unsigned).sign(credentials.privateKey,'base64url');
+    } catch {
+      throw new StorageError('Khóa riêng tư Service Account không hợp lệ hoặc bị lỗi định dạng PEM.', 503);
+    }
     const response = await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion:`${unsigned}.${signature}`}),signal:AbortSignal.timeout(15_000)});
     const body = await response.json();
     if (!response.ok || !body.access_token) throw new StorageError('Không xác thực được Firestore. Vui lòng kiểm tra khóa Service Account trên Vercel.');

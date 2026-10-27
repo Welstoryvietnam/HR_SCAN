@@ -6,7 +6,7 @@ import { EmployeeSalaryGrid } from './EmployeeSalaryGrid';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from '../data/organizationHierarchy';
 import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
 import { findTieuChuanLuong, DEFAULT_TIEU_CHUAN_LUONG } from '../data/tieuChuanLuongData';
-import { generateExcel43Columns, HR_43_COLUMNS } from '../utils/excelExport';
+import { generateExcel43Columns, exportBienDongNhanSuExcel, exportBienDongNhanSuCSV, HR_43_COLUMNS, BIEN_DONG_NHAN_SU_COLUMNS } from '../utils/excelExport';
 import { exportHouseholdAppendix } from '../utils/householdExport';
 import { normalizeHouseholdMembers } from '../utils/household';
 import {
@@ -516,6 +516,41 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         thoiGianGuiEmail: new Date().toISOString(),
       };
     });
+  };
+
+  // Xuất file Biến Động Nhân Sự theo mẫu chuẩn 44 cột (theo file đính kèm & quy định sáp nhập)
+  const handleExportBienDongNhanSu = async () => {
+    setIsExportingExcel(true);
+    try {
+      const recordsToExport = batchList.length > 0 ? getBatchRecordObjects() : [currentRecordObject];
+      const fileName =
+        recordsToExport.length > 1
+          ? `Mau_Bien_Dong_Nhan_Su_${recordsToExport.length}_Nhan_Vien.xlsx`
+          : `Mau_Bien_Dong_Nhan_Su_${hoVaTen.trim().replace(/\s+/g, '_') || 'NhanSu'}.xlsx`;
+
+      await exportBienDongNhanSuExcel(recordsToExport, fileName);
+    } catch (err) {
+      console.error('Lỗi xuất file Biến động nhân sự:', err);
+      alert('Không thể xuất file Biến động nhân sự: ' + (err as Error).message);
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  // Xuất file CSV mẫu Biến Động Nhân Sự chuẩn 44 cột
+  const handleExportBienDongCSV = () => {
+    try {
+      const recordsToExport = batchList.length > 0 ? getBatchRecordObjects() : [currentRecordObject];
+      const fileName =
+        recordsToExport.length > 1
+          ? `Mau_Bien_Dong_Nhan_Su_${recordsToExport.length}_Nhan_Vien.csv`
+          : `Mau_Bien_Dong_Nhan_Su_${hoVaTen.trim().replace(/\s+/g, '_') || 'NhanSu'}.csv`;
+
+      exportBienDongNhanSuCSV(recordsToExport, fileName);
+    } catch (err) {
+      console.error('Lỗi xuất file CSV:', err);
+      alert('Không thể xuất file CSV: ' + (err as Error).message);
+    }
   };
 
   // Xuất file Excel (.xlsx) 43 cột chuẩn màu sắc header (hỗ trợ cả 1 hoặc nhiều người)
@@ -1730,18 +1765,19 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
-                {/* NÚT XUẤT FILE EXCEL (.XLSX) */}
+                {/* NÚT XUẤT FILE BIẾN ĐỘNG NHÂN SỰ THEO MẪU (.XLSX) */}
                 <button
                   type="button"
-                  onClick={handleExportSingleExcel}
+                  onClick={handleExportBienDongNhanSu}
                   disabled={isExportingExcel}
-                  className="w-full sm:w-auto px-5 py-3 bg-white hover:bg-amber-50 text-amber-900 border-2 border-amber-400 rounded-xl text-xs sm:text-sm font-bold shadow-xs transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                  className="w-full sm:w-auto px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs hover:shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                  title="Xuất file mẫu biến động nhân sự chuẩn 44 cột theo quy định sáp nhập & VNeID"
                 >
-                  <Download className="w-4 h-4 text-amber-600" />
+                  <Download className="w-4 h-4 text-white" />
                   <span>
                     {isExportingExcel
                       ? 'Đang tạo File Excel...'
-                      : 'Excel biến động nhân sự'}
+                      : 'Xuất file Biến Động Nhân Sự (44 Cột)'}
                   </span>
                 </button>
 

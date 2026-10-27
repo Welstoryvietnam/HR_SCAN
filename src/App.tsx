@@ -14,8 +14,7 @@ import {
   KhoiNode
 } from './types';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from './data/organizationHierarchy';
-import { Header, AppTab, type WorkspaceModule } from './components/Header';
-const HrmWorkspace = lazy(()=>import('./modules/hrm/HrmWorkspace'));
+import { Header, AppTab } from './components/Header';
 import { LoginScreen } from './components/LoginScreen';
 import { DocumentUploader } from './components/DocumentUploader';
 import { IntakeDraftBar } from './components/IntakeDraftBar';
@@ -61,8 +60,6 @@ export default function App() {
   });
 
   const [activeTab, setActiveTab] = useState<AppTab>('upload');
-  const [workspaceModule,setWorkspaceModule] = useState<WorkspaceModule>('hrscan');
-  const [hrmOpened,setHrmOpened] = useState(false);
   const [images, setImages] = useState<OptimizedImageFile[]>([]);
   const [extractedData, setExtractedData] = useState<DocumentExtractionResult | null>(null);
   const [batchEmployees, setBatchEmployees] = useState<BatchEmployeeDraft[]>([]);
@@ -533,8 +530,6 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
       {/* Header Bar */}
       <Header
-        module={workspaceModule}
-        onModuleChange={module=>{if(uploaderBusy){showNotification('error','Hãy tạm dừng quét trước khi chuyển màn hình.');return;}if(module!=='hrscan')setHrmOpened(true);setWorkspaceModule(module);}}
         currentUser={currentUser}
         onLogout={handleLogout}
         activeTab={activeTab}
@@ -564,8 +559,6 @@ export default function App() {
 
       {/* Main Content Area - Tràn viền tối ưu 100% diện tích thao tác */}
       <main className="flex-1 w-full max-w-[1720px] mx-auto p-3 sm:p-5 lg:p-6 space-y-5">
-        <div hidden={workspaceModule==='hrscan'}>{hrmOpened && <Suspense fallback={<p role="status">Đang mở ứng dụng…</p>}><HrmWorkspace key={currentUser.email} currentUser={currentUser} module={workspaceModule==='tasks'?'tasks':'meals'}/></Suspense>}</div>
-        <div hidden={workspaceModule!=='hrscan'} className="space-y-5">
         {activeTab === 'upload' && (
           <div className="space-y-4 animate-fade-in">
             {/* Banner hiển thị vai trò */}
@@ -767,6 +760,10 @@ export default function App() {
               onDeleteStandard={handleDeleteStandard}
               organizationHierarchy={organizationHierarchy}
               onSaveOrganizationHierarchy={handleSaveOrganizationHierarchy}
+              onStandardsUpdated={(updated) => {
+                setTieuChuanLuong(updated);
+                showNotification('success', `Đã đồng bộ ${updated.length} tiêu chuẩn lương từ Google Sheets vào hệ thống!`);
+              }}
             />
           </div>
         )}
@@ -786,7 +783,6 @@ export default function App() {
             <UserManagement currentUser={currentUser} />
           </div>
         )}
-        </div>
       </main>
 
       {/* Footer */}

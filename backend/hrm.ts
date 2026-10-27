@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
-import { FirestoreRecordStore, StorageError } from './recordStore.js';
+import { FirestoreRecordStore, StorageError, firestoreConfigured } from './recordStore.js';
 import type { SessionUser } from './session.js';
 import type { SystemUserAccount } from '../src/types.js';
 import type { AppSettings, MealSession, Task } from '../src/modules/hrm/types/index.js';
@@ -42,6 +42,11 @@ export function createHrmRouter(accounts: () => SystemUserAccount[]) {
   const tasks = new FirestoreRecordStore('hrm_tasks',v=>v);
   const settings = new FirestoreRecordStore('hrm_settings',v=>v);
   const directory = new FirestoreRecordStore('hrm_directory',v=>v);
+
+  const inMemoryMeals = new Map<string, any>();
+  const inMemoryTasks = new Map<string, any>();
+  let inMemorySettings = { ...HRM_SETTINGS };
+
   const route = (fn: (req: any,user: SessionUser) => Promise<any>): RequestHandler => async (req,res) => {
     res.setHeader('Cache-Control','no-store');
     try { res.json({success:true,data:await fn(req,res.locals.personnelUser)}); }
@@ -49,12 +54,14 @@ export function createHrmRouter(accounts: () => SystemUserAccount[]) {
   };
   const own = async (user: SessionUser,id: string) => {
     if(user.role==='admin'||id===user.id)return;
+    if (!firestoreConfigured()) throw new StorageError('Bạn chỉ có quyền truy cập dữ liệu của mình.',403);
     try {if((await directory.get(id)).record.accountId===user.id)return;}catch(e){if(!(e instanceof StorageError&&e.status===404))throw e;}
     throw new StorageError('Bạn chỉ có quyền truy cập dữ liệu của mình.',403);
   };
   const active = async (id: string) => {
     const account=accounts().find(a=>a.id===id && a.status==='active');
     if(account)return account;
+    if (!firestoreConfigured()) throw new StorageError('Không tìm thấy nhân viên hoặc tài khoản không còn hoạt động.',400);
     try {const profile=(await directory.get(id)).record;return {id:profile.id,email:String(profile.email||'')};} catch(e){if(!(e instanceof StorageError&&e.status===404))throw e;}
     throw new StorageError('Không tìm thấy nhân viên hoặc tài khoản không còn hoạt động.',400);
   };
@@ -63,8 +70,15 @@ export function createHrmRouter(accounts: () => SystemUserAccount[]) {
     const ids=[...new Set([user.id,...(await directory.listMatching('accountId',user.id)).map(p=>p.id)])];
     return (await Promise.all(ids.map(id=>store.listMatching('employeeId',id)))).flat();
   };
-  const getSettings = async () => {try {return (await settings.get('default')).record as AppSettings;} catch(e) {if (e instanceof StorageError && e.status===404) return HRM_SETTINGS; throw e;}};
+  const getSettings = async () => {
+    if (!firestoreConfigured()) return inMemorySettings;
+    try {return (await settings.get('default')).record as AppSettings;} catch(e) {if (e instanceof StorageError && e.status===404) return HRM_SETTINGS; throw e;}
+  };
   router.get('/bootstrap',route(async (_req,user) => {
+    if (!firestoreConfigured()) {
+      const employees=accounts().filter(a=>a.status==='active'&&(user.role==='admin'||a.id===user.id)).map(a=>({id:a.id,name:a.fullName,email:(a as any).contactEmail??a.email,employeeCode:(a as any).employeeCode||a.username,department:(a as any).department||'HR Group',notes:(a as any).notes,phone:(a as any).phone,avatarColor:(a as any).avatarColor,role:(a as any).hrmRole||(a.role==='admin'?'admin':'nhan_vien_nhan_su')}));
+      return {employees,settings:inMemorySettings};
+    }
     const [legacy,config]=await Promise.all([user.role==='admin'?directory.list():directory.listMatching('accountId',user.id),getSettings()]);
     const employees=accounts().filter(a=>a.status==='active'&&(user.role==='admin'||a.id===user.id)).map(a=>({id:a.id,name:a.fullName,email:(a as any).contactEmail??a.email,employeeCode:(a as any).employeeCode||a.username,department:(a as any).department||'HR Group',notes:(a as any).notes,phone:(a as any).phone,avatarColor:(a as any).avatarColor,role:(a as any).hrmRole||(a.role==='admin'?'admin':'nhan_vien_nhan_su')}));
     const primaryIds=new Set(employees.map(a=>a.id));
@@ -72,6 +86,9 @@ export function createHrmRouter(accounts: () => SystemUserAccount[]) {
   }));
   router.get('/directory',route(async(_req,user)=>{
     if(user.role!=='admin')throw new StorageError('Chỉ quản trị viên được liên kết tài khoản.',403);
+    if (!firestoreConfigured()) {
+      return {profiles:[],accounts:accounts().filter(a=>a.status==='active').map(a=>({id:a.id,name:a.fullName,email:a.email}))};
+    }
     return {profiles:await directory.list(),accounts:accounts().filter(a=>a.status==='active').map(a=>({id:a.id,name:a.fullName,email:a.email}))};
   }));
   router.put('/directory/:id',route(async(req,user)=>{
@@ -88,6 +105,11 @@ export function createHrmRouter(accounts: () => SystemUserAccount[]) {
   router.get('/meals',route(async (req,user) => {
     const start=validDate(req.query.start),end=validDate(req.query.end);
     if(end<start || (Date.parse(end)-Date.parse(start))/86400000>62) throw new StorageError('Chỉ tải tối đa 62 ngày mỗi lần.',400);
+    if (!firestoreConfigured()) {
+      const all = Array.from(inMemoryMeals.values());
+      const filtered = user.role === 'admin' ? all : all.filter(r => r.employeeId === user.id);
+      return filtered.filter(r=>r.date>=start && r.date<=end);
+    }
     return (await scopedList(meals,user)).filter(r=>r.date>=start && r.date<=end);
   }));
   router.put('/meals/:employeeId/:date',route(async (req,user) => {
@@ -98,30 +120,75 @@ export function createHrmRouter(accounts: () => SystemUserAccount[]) {
     const sessions=normalizeSessions(req.body.sessions);
     const id=createHash('sha256').update(employeeId+':'+date).digest('hex');
     const record={id,employeeId,userEmail:employee.email.toLowerCase(),date,sessions,mealsCount:sessions.length,timestamp:new Date().toISOString()};
+    if (!firestoreConfigured()) {
+      inMemoryMeals.set(id, record);
+      return record;
+    }
     // Client sends the version it actually viewed, preventing another device's changes being overwritten.
     if(req.body.version) await meals.update(id,record,text(req.body.version,100));
     else await meals.create([record]);
     return record;
   }));
-  router.get('/meals/:id',route(async (req,user) => {const item=await meals.get(String(req.params.id));await own(user,item.record.employeeId);return item;}));
-  router.get('/tasks',route(async (_req,user) => scopedList(tasks,user)));
-  router.get('/tasks/:id',route(async (req,user) => {const item=await tasks.get(String(req.params.id));await own(user,item.record.employeeId);return item;}));
+  router.get('/meals/:id',route(async (req,user) => {
+    if (!firestoreConfigured()) {
+      const item = inMemoryMeals.get(String(req.params.id));
+      if (!item) throw new StorageError('Không tìm thấy bản ghi bữa ăn.', 404);
+      await own(user, item.employeeId);
+      return { record: item, version: '' };
+    }
+    const item=await meals.get(String(req.params.id));await own(user,item.record.employeeId);return item;
+  }));
+  router.get('/tasks',route(async (_req,user) => {
+    if (!firestoreConfigured()) {
+      const all = Array.from(inMemoryTasks.values());
+      return user.role === 'admin' ? all : all.filter(r => r.employeeId === user.id);
+    }
+    return scopedList(tasks,user);
+  }));
+  router.get('/tasks/:id',route(async (req,user) => {
+    if (!firestoreConfigured()) {
+      const item = inMemoryTasks.get(String(req.params.id));
+      if (!item) throw new StorageError('Không tìm thấy công việc.', 404);
+      await own(user, item.employeeId);
+      return { record: item, version: '' };
+    }
+    const item=await tasks.get(String(req.params.id));await own(user,item.record.employeeId);return item;
+  }));
   router.post('/tasks',route(async (req,user) => {
     const task=normalizeTask(req.body,user);const employee=await active(task.employeeId);
+    if (!firestoreConfigured()) {
+      inMemoryTasks.set(task.id, { ...task, userEmail: employee.email.toLowerCase() });
+      return task;
+    }
     await tasks.create([{...task,userEmail:employee.email.toLowerCase()}]);return task;
   }));
   router.put('/tasks/:id',route(async (req,user) => {
-    const previous=await tasks.get(String(req.params.id));
-    await own(user,previous.record.employeeId);
+    let previous: Task;
+    if (!firestoreConfigured()) {
+      const found = inMemoryTasks.get(String(req.params.id));
+      if (!found) throw new StorageError('Không tìm thấy công việc.', 404);
+      previous = found;
+    } else {
+      previous = (await tasks.get(String(req.params.id))).record as Task;
+    }
+    await own(user,previous.employeeId);
     // Ownership of a linked historical profile was verified above. Keep its ID in the record.
-    const validatorUser=user.role==='admin'?user:{...user,id:previous.record.employeeId};
-    const task=normalizeTask(req.body,validatorUser,previous.record as Task);const employee=await active(task.employeeId);
+    const validatorUser=user.role==='admin'?user:{...user,id:previous.employeeId};
+    const task=normalizeTask(req.body,validatorUser,previous);const employee=await active(task.employeeId);
+    if (!firestoreConfigured()) {
+      inMemoryTasks.set(task.id, { ...task, userEmail: employee.email.toLowerCase() });
+      return task;
+    }
     await tasks.update(task.id,{...task,userEmail:employee.email.toLowerCase()},text(req.body.version,100));return task;
   }));
   router.delete('/tasks/:id',route(async (req,user) => {
     if(user.role!=='admin') throw new StorageError('Chỉ quản trị viên được xóa công việc.',403);
-    // Deletion also uses a version so an updated result cannot disappear unnoticed.
-    const id=String(req.params.id);await tasks.get(id);
+    const id=String(req.params.id);
+    if (!firestoreConfigured()) {
+      inMemoryTasks.delete(id);
+      return {id};
+    }
+    await tasks.get(id);
     await tasks.removeVersioned(id,text(req.body.version,100));return {id};
   }));
   router.put('/settings',route(async (req,user) => {
@@ -129,10 +196,17 @@ export function createHrmRouter(accounts: () => SystemUserAccount[]) {
     if(!Number.isInteger(req.body.mealPrice)||req.body.mealPrice<0||req.body.mealPrice>1000000) throw new StorageError('Đơn giá không hợp lệ.',400);
     const value={...HRM_SETTINGS,mealPrice:req.body.mealPrice};
     for(const key of ['companyName','departmentName','preparerName','accountantName','leaderName','directorName'] as const) value[key]=text(req.body[key]||'',300);
+    if (!firestoreConfigured()) {
+      inMemorySettings = value;
+      return value;
+    }
     let previous;try {previous=await settings.get('default');} catch(e){if(!(e instanceof StorageError && e.status===404)) throw e;}
     if(previous) await settings.update('default',value,text(req.body.version,100));else await settings.create([{...value,id:'default'}]);
     return value;
   }));
-  router.get('/settings',route(async()=>{try{return await settings.get('default');}catch(e){if(e instanceof StorageError&&e.status===404)return {record:HRM_SETTINGS,version:''};throw e;}}));
+  router.get('/settings',route(async()=>{
+    if (!firestoreConfigured()) return {record:inMemorySettings,version:''};
+    try{return await settings.get('default');}catch(e){if(e instanceof StorageError&&e.status===404)return {record:HRM_SETTINGS,version:''};throw e;}
+  }));
   return router;
 }

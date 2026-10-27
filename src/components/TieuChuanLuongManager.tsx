@@ -23,10 +23,12 @@ import {
   Save,
   Network,
   FolderTree,
-  CheckCircle2
+  CheckCircle2,
+  FileSpreadsheet
 } from 'lucide-react';
 import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from '../data/organizationHierarchy';
+import { GoogleSheetSyncModal } from './GoogleSheetSyncModal';
 
 interface TieuChuanLuongManagerProps {
   standards: TieuChuanLuongItem[];
@@ -35,6 +37,7 @@ interface TieuChuanLuongManagerProps {
   onDeleteStandard: (id: string) => Promise<void>;
   organizationHierarchy?: KhoiNode[];
   onSaveOrganizationHierarchy?: (newHierarchy: KhoiNode[]) => Promise<void>;
+  onStandardsUpdated?: (updatedList: TieuChuanLuongItem[]) => void;
 }
 
 export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
@@ -44,7 +47,9 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
   onDeleteStandard,
   organizationHierarchy = DEFAULT_ORGANIZATION_HIERARCHY,
   onSaveOrganizationHierarchy,
+  onStandardsUpdated,
 }) => {
+  const [isGoogleSheetModalOpen, setIsGoogleSheetModalOpen] = useState(false);
   // Tab chính của Admin: 1. Tiêu chuẩn lương | 2. Cơ cấu tổ chức
   const [adminSubTab, setAdminSubTab] = useState<'standards' | 'organization'>('standards');
 
@@ -608,8 +613,17 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
                 <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
                   <button
                     type="button"
+                    onClick={() => setIsGoogleSheetModalOpen(true)}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-900 rounded-xl text-xs font-bold shadow-md transition cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-950" />
+                    <span>Kết Nối Google Sheets Lấy Form Tiêu Chuẩn</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={handleStartCreate}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-sm transition cursor-pointer"
                   >
                     <Plus className="w-4 h-4" />
                     <span>+ Thêm Vị Trí Tiêu Chuẩn Mới</span>
@@ -1349,6 +1363,19 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
           )}
         </div>
       )}
+
+      {/* Modal Kết nối Google Sheets lấy Form Tiêu Chuẩn */}
+      <GoogleSheetSyncModal
+        isOpen={isGoogleSheetModalOpen}
+        onClose={() => setIsGoogleSheetModalOpen(false)}
+        currentUser={currentUser}
+        currentStandards={standards}
+        onStandardsUpdated={(updatedList) => {
+          if (onStandardsUpdated) {
+            onStandardsUpdated(updatedList);
+          }
+        }}
+      />
     </div>
   );
 };

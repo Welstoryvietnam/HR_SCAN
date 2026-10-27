@@ -76,6 +76,16 @@ export interface EmployeeIntakeInfo {
   diaChiTamTru?: string;
   emailCaNhan?: string;
   tinhTrangHoSo?: string;
+  nguyenQuan?: string;
+  noiSinh?: string;
+  phuTrachTD?: string;
+  tonGiao?: string;
+  hocVan?: string;
+  tenTruong?: string;
+  nganhHoc?: string;
+  namHoc?: string;
+  xacMinhHocVan?: string;
+  cmndCu?: string;
 }
 
 export interface EmployeeIdentityInfo {
