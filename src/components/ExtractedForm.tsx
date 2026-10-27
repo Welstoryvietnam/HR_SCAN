@@ -268,6 +268,24 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     if (updates.thongTinGiaDinh !== undefined) setThongTinGiaDinh(updates.thongTinGiaDinh);
     if (updates.thanhVienHoGiaDinh !== undefined) setThanhVienHoGiaDinh(updates.thanhVienHoGiaDinh);
     if (updates.ghiChu !== undefined) setGhiChu(updates.ghiChu);
+    if (updates.khoi !== undefined) setKhoi(updates.khoi);
+    if (updates.ban !== undefined) setBan(updates.ban);
+    if (updates.phong !== undefined) setPhong(updates.phong);
+    if (updates.congViecDuKien !== undefined) setCongViecDuKien(updates.congViecDuKien);
+    if (updates.chucVu !== undefined) {
+      setChucVu(updates.chucVu);
+      const std = findTieuChuanLuong(updates.congViecDuKien || congViecDuKien, updates.chucVu);
+      if (std) {
+        setLuongCoBan(std.luongCoBan);
+        setPhuCapChucVu(std.phuCapChucVu);
+        setPhuCapDienThoai(std.phuCapDienThoai);
+        setTroCapTayNghe(std.troCapTayNghe);
+        setTroCapGiaDinh(std.troCapGiaDinh);
+        setThuongChuyenCan(std.thuongChuyenCan);
+        setThuongSangKien(std.thuongSangKien);
+        setLuongDongBHXH((std.luongCoBan || 0) + (std.phuCapChucVu || 0));
+      }
+    }
     const intakeUpdates = Object.fromEntries(Object.entries(updates).filter(([key]) => ['ngayVaoLam','diaChiTamTru','emailCaNhan','tinhTrangHoSo','thamQuyen'].includes(key)));
     if (Object.keys(intakeUpdates).length) onIntakeInfoChange?.(intakeUpdates);
   };
@@ -610,38 +628,47 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
 
   // Áp dụng công việc, chức vụ, phòng ban cho nhiều người cùng lúc (YÊU CẦU CỦA NGƯỜI DÙNG Ở BƯỚC 3)
   const handleApplyBulkPositionToSelected = () => {
-    if (selectedBatchIds.length === 0) {
-      alert('Vui lòng tích chọn ít nhất 1 nhân viên trong danh sách để áp dụng!');
-      return;
-    }
+    const targetIds = selectedBatchIds.length > 0
+      ? selectedBatchIds
+      : batchList.length > 0
+        ? batchList.map((e) => e.id)
+        : ['single-review'];
 
     const std = findTieuChuanLuong(bulkCongViec, bulkChucVu);
-    const updated = batchList.map((emp) => {
-      if (!selectedBatchIds.includes(emp.id)) return emp;
-      return {
-        ...emp,
-        khoi: bulkKhoi,
-        ban: bulkBan,
-        phong: bulkPhong,
-        congViecDuKien: bulkCongViec,
-        chucVu: bulkChucVu,
-        luongCoBan: std?.luongCoBan ?? emp.luongCoBan ?? 0,
-        phuCapChucVu: std?.phuCapChucVu ?? emp.phuCapChucVu ?? 0,
-        phuCapDienThoai: std?.phuCapDienThoai ?? emp.phuCapDienThoai ?? 0,
-        troCapTayNghe: std?.troCapTayNghe ?? emp.troCapTayNghe ?? 0,
-        troCapGiaDinh: std?.troCapGiaDinh ?? emp.troCapGiaDinh ?? 0,
-        thuongChuyenCan: std?.thuongChuyenCan ?? emp.thuongChuyenCan ?? 0,
-        thuongSangKien: std?.thuongSangKien ?? emp.thuongSangKien ?? 0,
-        luongDongBHXH: (std?.luongCoBan ?? emp.luongCoBan ?? 0) + (std?.phuCapChucVu ?? emp.phuCapChucVu ?? 0),
-      };
-    });
+    const bulkUpdates: Partial<BatchEmployeeDraft> = {
+      khoi: bulkKhoi,
+      ban: bulkBan,
+      phong: bulkPhong,
+      congViecDuKien: bulkCongViec,
+      chucVu: bulkChucVu,
+      luongCoBan: std?.luongCoBan ?? 7683000,
+      phuCapChucVu: std?.phuCapChucVu ?? 0,
+      phuCapDienThoai: std?.phuCapDienThoai ?? 0,
+      troCapTayNghe: std?.troCapTayNghe ?? 0,
+      troCapGiaDinh: std?.troCapGiaDinh ?? 0,
+      thuongChuyenCan: std?.thuongChuyenCan ?? 0,
+      thuongSangKien: std?.thuongSangKien ?? 0,
+      luongDongBHXH: (std?.luongCoBan ?? 7683000) + (std?.phuCapChucVu ?? 0),
+    };
 
-    setBatchList(updated);
-    if (onBatchEmployeesChange) {
-      onBatchEmployeesChange(updated);
+    if (batchList.length > 0) {
+      const updated = batchList.map((emp) => {
+        if (!targetIds.includes(emp.id)) return emp;
+        return {
+          ...emp,
+          ...bulkUpdates,
+        };
+      });
+      setBatchList(updated);
+      if (onBatchEmployeesChange) {
+        onBatchEmployeesChange(updated);
+      }
+    } else {
+      handleReviewChange('single-review', bulkUpdates);
     }
+
     setBulkSuccessMsg(
-      `✓ Đã áp dụng thành công Chức vụ "${bulkChucVu}" (${bulkCongViec}) & Cơ cấu "${bulkKhoi} > ${bulkBan}" cho ${selectedBatchIds.length} nhân sự!`
+      `✓ Đã áp dụng thành công Chức vụ "${bulkChucVu}" (${bulkCongViec}) & Cơ cấu "${bulkKhoi} > ${bulkBan}" cho ${targetIds.length} nhân sự!`
     );
     setTimeout(() => setBulkSuccessMsg(null), 5000);
   };
@@ -851,6 +878,36 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     return thongTinChuaRo.some((item) => item.toLowerCase().includes(fieldName.toLowerCase()));
   };
 
+  // Danh sách toàn bộ nhân viên hiển thị tại Bước 3 (Hỗ trợ cả trường hợp 1 nhân sự và nhiều nhân sự)
+  const currentSingleEmployeeDraft: BatchEmployeeDraft = {
+    ...currentRecordObject,
+    id: 'single-review',
+    hoVaTen: hoVaTen || 'Chưa có họ tên',
+    soCCCD: soCCCD || '',
+    soDienThoai: soDienThoai || '',
+    ngaySinh: ngaySinh || '',
+    gioiTinh: gioiTinh || 'Nam',
+    danToc: danToc || '',
+    noiCap: noiCap || '',
+    queQuan: queQuan || '',
+    diaChiThuongTru: diaChiThuongTru || '',
+    nguonDiaChi: nguonDiaChi || 'CCCD',
+    ngayVaoLam: intakeInfo.ngayVaoLam || '',
+    diaChiTamTru: intakeInfo.diaChiTamTru || '',
+    emailCaNhan: intakeInfo.emailCaNhan || '',
+    tinhTrangHoSo: intakeInfo.tinhTrangHoSo || 'Đủ hồ sơ',
+    khoi: khoi || (orgHierarchy[0]?.name || ''),
+    ban: ban || (orgHierarchy[0]?.bans[0]?.name || ''),
+    phong: phong || (orgHierarchy[0]?.bans[0]?.phongs[0]?.name || ''),
+    congViecDuKien: congViecDuKien || (DEFAULT_JOB_POSITIONS[0]?.name || ''),
+    chucVu: chucVu || (DEFAULT_JOB_POSITIONS[0]?.chucVus[0] || 'Nhân viên'),
+    thamQuyen: intakeInfo.thamQuyen || '',
+    luongCoBan: luongCoBan,
+    phuCapChucVu: phuCapChucVu,
+  };
+
+  const step3Employees: BatchEmployeeDraft[] = batchList.length > 0 ? batchList : [currentSingleEmployeeDraft];
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-6">
       {/* Form Header with SOP Steps Navigation */}
@@ -1046,47 +1103,54 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         {/* ========================================================================= */}
         {/* BƯỚC 3: CON NGƯỜI THAO TÁC - LỰA CHỌN PHÒNG BAN, BỘ PHẬN, CÔNG VIỆC CHỨC VỤ */}
         {/* ========================================================================= */}
+        {/* ========================================================================= */}
+        {/* BƯỚC 3: HIỆN TOÀN BỘ NHÂN VIÊN ĐÃ QUÉT Ở BƯỚC 2 DƯỚI DẠNG DANH SÁCH       */}
+        {/* ========================================================================= */}
         {activeTabStep === 3 && (
-          <div className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/20 p-4 sm:p-5 animate-fade-in">
-            <EmployeeIntakeFields
-              employees={batchList.length ? batchList : [{...currentRecordObject, id: 'single-review', hoVaTen}]}
-              onChange={handleReviewChange}
-            />
+          <div className="space-y-5 rounded-xl border border-emerald-200 bg-emerald-50/20 p-4 sm:p-5 animate-fade-in">
             {/* Header Bước 3 */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-100 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-200/80 pb-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="bg-emerald-600 text-white text-xs font-black px-2 py-0.5 rounded">
+                  <span className="bg-emerald-600 text-white text-xs font-black px-2.5 py-1 rounded-lg">
                     BƯỚC 3 (SOP)
                   </span>
-                  <h3 className="text-base font-bold text-slate-900">
-                    Điền Thông Tin Công Việc &amp; Chức Vụ Của Nhiều Người Cùng Lúc
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900">
+                    Bổ Sung Thông Tin Tiếp Nhận, Phòng Ban &amp; Công Việc Chức Vụ
                   </h3>
                 </div>
+                <p className="text-xs text-slate-600 mt-1">
+                  Danh sách toàn bộ <strong>{step3Employees.length} nhân sự</strong> đã quét ở Bước 2. Hãy hoàn thiện thông tin bổ sung tay (ngày vào làm, tạm trú, email, tình trạng hồ sơ), chọn Đơn vị công tác (Khối, Ban, Phòng) và Vị trí (Công việc, Chức vụ, Thẩm quyền) cho từng người.
+                </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCustomOrg(!isCustomOrg)}
-                  className="text-xs text-slate-600 hover:text-emerald-700 font-semibold px-2.5 py-1 rounded bg-white border border-slate-200 transition"
-                >
-                  {isCustomOrg ? 'Dùng cơ cấu chuẩn' : 'Nhập cơ cấu tùy chỉnh'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCustomJob(!isCustomJob);
-                    if (!isCustomJob) setIsManualMode(true);
-                  }}
-                  className="text-xs text-slate-600 hover:text-blue-700 font-semibold px-2.5 py-1 rounded bg-white border border-slate-200 transition"
-                >
-                  {isCustomJob ? 'Dùng 22 chức danh chuẩn' : 'Chức vụ ngoài chuẩn'}
-                </button>
-              </div>
+              {step3Employees.length > 1 && (
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <button
+                    type="button"
+                    onClick={handleToggleSelectAllBatch}
+                    className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    {selectedBatchIds.length === step3Employees.length ? (
+                      <>
+                        <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Đã chọn tất cả ({step3Employees.length})</span>
+                      </>
+                    ) : (
+                      <>
+                        <Square className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Chọn tất cả ({step3Employees.length})</span>
+                      </>
+                    )}
+                  </button>
+                  <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200">
+                    Đã chọn: {selectedBatchIds.length} / {step3Employees.length}
+                  </span>
+                </div>
+              )}
             </div>
 
-            {/* Thông báo áp dụng thành công nếu có */}
+            {/* Thông báo áp dụng thành công */}
             {bulkSuccessMsg && (
               <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 flex items-center gap-2 shadow-2xs">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -1094,632 +1158,456 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               </div>
             )}
 
-            {/* ================= KHỐI CÔNG CỤ ĐIỀN HÀNG LOẠT (BULK ASSIGN TOOLBAR) ================= */}
-            {batchList.length > 0 && (
-              <div className="bg-white rounded-xl border-2 border-emerald-500/80 p-4 shadow-sm space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            {/* Thanh công cụ áp dụng nhanh hàng loạt (khi có nhiều nhân sự) */}
+            {step3Employees.length > 1 && (
+              <div className="bg-white rounded-xl border border-emerald-300 p-4 shadow-xs space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs">
-                      ⚡
-                    </div>
-                    <div>
-                      <h4 className="text-xs sm:text-sm font-bold text-slate-900">
-                        Thanh Công Cụ Điền Hàng Loạt: Gán Vị Trí Cho Nhiều Người Cùng Lúc
-                      </h4>
-                      <p className="text-[11px] text-slate-500">
-                        Tích chọn nhân viên cần gán &rarr; Chọn chức vụ &amp; cơ cấu &rarr; Bấm "Áp Dụng Cho Nhân Sự Đang Chọn".
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Chọn tất cả / Bỏ chọn tất cả */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleToggleSelectAllBatch}
-                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                    >
-                      {selectedBatchIds.length === batchList.length ? (
-                        <>
-                          <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-                          <span>Đã chọn tất cả ({batchList.length})</span>
-                        </>
-                      ) : (
-                        <>
-                          <Square className="w-3.5 h-3.5 text-slate-500" />
-                          <span>Chọn tất cả ({batchList.length})</span>
-                        </>
-                      )}
-                    </button>
-                    <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                      Đang chọn: {selectedBatchIds.length} / {batchList.length} nhân sự
+                    <Sparkles className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-bold text-slate-800">
+                      Gán Nhanh Hàng Loạt Cho Các Nhân Sự Được Chọn
                     </span>
                   </div>
+                  <span className="text-[11px] text-slate-500">
+                    Chọn giá trị rồi nhấn "Áp Dụng" để cập nhật đồng thời
+                  </span>
                 </div>
 
-                {/* Danh sách chip chọn nhanh nhân viên */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[11px] font-bold text-slate-600 mr-1">Tích chọn nhân sự:</span>
-                  {batchList.map((emp, idx) => {
-                    const isSelected = selectedBatchIds.includes(emp.id);
-                    return (
-                      <button
-                        key={emp.id}
-                        type="button"
-                        onClick={() => handleToggleSelectOne(emp.id)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition border cursor-pointer ${
-                          isSelected
-                            ? 'bg-emerald-50 text-emerald-900 border-emerald-400 font-bold shadow-2xs'
-                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {isSelected ? (
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                        ) : (
-                          <div className="w-3 h-3 rounded-sm border border-slate-400" />
-                        )}
-                        <span>{idx + 1}. {emp.hoVaTen}</span>
-                        {emp.chucVu && (
-                          <span className="text-[10px] text-slate-400 font-normal">({emp.chucVu})</span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Form điền hàng loạt */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-200">
-                  {/* Khối */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
                   <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      1. Khối (Hàng loạt)
-                    </label>
+                    <label className="block text-slate-600 font-medium mb-1">Khối</label>
                     <select
                       value={bulkKhoi}
                       onChange={(e) => handleBulkKhoiChange(e.target.value)}
-                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-emerald-500"
+                      className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded-lg bg-white font-medium"
                     >
                       {orgHierarchy.map((k) => (
-                        <option key={k.name} value={k.name}>
-                          {k.name}
-                        </option>
+                        <option key={k.id || k.name} value={k.name}>{k.name}</option>
                       ))}
                     </select>
                   </div>
 
-                  {/* Ban */}
                   <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      2. Ban (Hàng loạt)
-                    </label>
+                    <label className="block text-slate-600 font-medium mb-1">Ban</label>
                     <select
                       value={bulkBan}
                       onChange={(e) => {
                         setBulkBan(e.target.value);
                         const kObj = orgHierarchy.find((k) => k.name === bulkKhoi);
                         const bObj = kObj?.bans.find((b) => b.name === e.target.value);
-                        if (bObj && bObj.phongs.length > 0) {
-                          setBulkPhong(bObj.phongs[0].name);
-                        } else {
-                          setBulkPhong('');
-                        }
+                        setBulkPhong(bObj?.phongs[0]?.name || '');
                       }}
-                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-emerald-500"
+                      className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded-lg bg-white font-medium"
                     >
                       {orgHierarchy.find((k) => k.name === bulkKhoi)?.bans.map((b) => (
-                        <option key={b.name} value={b.name}>
-                          {b.name}
-                        </option>
+                        <option key={b.id || b.name} value={b.name}>{b.name}</option>
                       ))}
                     </select>
                   </div>
 
-                  {/* Phòng */}
                   <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      3. Phòng (Hàng loạt)
-                    </label>
+                    <label className="block text-slate-600 font-medium mb-1">Phòng</label>
                     <select
                       value={bulkPhong}
                       onChange={(e) => setBulkPhong(e.target.value)}
-                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-medium focus:ring-1 focus:ring-emerald-500"
+                      className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded-lg bg-white font-medium"
                     >
-                      {orgHierarchy.find((k) => k.name === bulkKhoi)
-                        ?.bans.find((b) => b.name === bulkBan)
-                        ?.phongs.map((p) => (
-                          <option key={p.name} value={p.name}>
-                            {p.name}
-                          </option>
-                        ))}
+                      {orgHierarchy.find((k) => k.name === bulkKhoi)?.bans.find((b) => b.name === bulkBan)?.phongs.map((p) => (
+                        <option key={p.id || p.name} value={p.name}>{p.name}</option>
+                      ))}
                     </select>
                   </div>
 
-                  {/* Công việc */}
                   <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      4. Công việc dự kiến
-                    </label>
+                    <label className="block text-slate-600 font-medium mb-1">Công việc</label>
                     <select
                       value={bulkCongViec}
                       onChange={(e) => handleBulkCongViecChange(e.target.value)}
-                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white font-bold text-blue-900 focus:ring-1 focus:ring-emerald-500"
+                      className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded-lg bg-white font-bold text-blue-900"
                     >
                       {DEFAULT_JOB_POSITIONS.map((j) => (
-                        <option key={j.name} value={j.name}>
-                          {j.name}
-                        </option>
+                        <option key={j.id || j.name} value={j.name}>{j.name}</option>
                       ))}
                     </select>
                   </div>
 
-                  {/* Chức vụ */}
                   <div>
-                    <label className="block text-slate-700 font-semibold mb-1">
-                      5. Chức vụ (Title)
-                    </label>
+                    <label className="block text-slate-600 font-medium mb-1">Chức vụ</label>
                     <select
                       value={bulkChucVu}
                       onChange={(e) => setBulkChucVu(e.target.value)}
-                      className="w-full text-xs px-2.5 py-1.5 border border-emerald-400 rounded-lg bg-white font-bold text-emerald-900 focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                      className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded-lg bg-white font-bold text-emerald-900"
                     >
                       {DEFAULT_JOB_POSITIONS.find((j) => j.name === bulkCongViec)?.chucVus.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
+                        <option key={t} value={t}>{t}</option>
                       ))}
                     </select>
                   </div>
 
-                  {/* Nút hành động áp dụng */}
                   <div className="flex items-end">
                     <button
                       type="button"
                       onClick={handleApplyBulkPositionToSelected}
                       disabled={selectedBatchIds.length === 0}
-                      className="w-full px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-lg font-bold text-xs shadow-md transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer h-[34px]"
+                      className="w-full h-[32px] px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs transition flex items-center justify-center gap-1 disabled:opacity-50 cursor-pointer"
                     >
-                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Áp Dụng Cho {selectedBatchIds.length} Người</span>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Áp Dụng ({selectedBatchIds.length})</span>
                     </button>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* ================= BẢNG MA TRẬN PHÂN BỔ VỊ TRÍ CHI TIẾT CỦA TỪNG NHÂN SỰ ================= */}
-            {batchList.length > 0 && (
-              <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white">
-                <div className="px-4 py-3 bg-slate-100 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Briefcase className="w-4 h-4 text-emerald-700" />
-                    <span className="text-xs font-bold text-slate-800">
-                      Bảng Phân Bổ Công Việc &amp; Chức Vụ Chi Tiết ({batchList.length} nhân sự)
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-slate-500">
-                    Bạn có thể chỉnh sửa trực tiếp từng dòng hoặc dùng thanh công cụ ở trên để gán hàng loạt
-                  </span>
-                </div>
+            {/* DANH SÁCH TOÀN BỘ NHÂN VIÊN ĐÃ QUÉT Ở BƯỚC 2 */}
+            <div className="space-y-4">
+              {step3Employees.map((emp, idx) => {
+                const isSelected = selectedBatchIds.includes(emp.id);
+                const currentKhoi = emp.khoi || orgHierarchy[0]?.name || '';
+                const kObj = orgHierarchy.find((k) => k.name === currentKhoi) || orgHierarchy[0];
+                const currentBan = emp.ban || kObj?.bans[0]?.name || '';
+                const bObj = kObj?.bans.find((b) => b.name === currentBan) || kObj?.bans[0];
+                const currentPhong = emp.phong || bObj?.phongs[0]?.name || '';
 
-                <div className="overflow-x-auto max-h-[460px]">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-50 text-slate-700 sticky top-0 border-b border-slate-200 font-bold z-10">
-                      <tr>
-                        <th className="py-2.5 px-3 text-center w-10">
+                const currentJob = emp.congViecDuKien || DEFAULT_JOB_POSITIONS[0]?.name || '';
+                const jObj = DEFAULT_JOB_POSITIONS.find((j) => j.name === currentJob) || DEFAULT_JOB_POSITIONS[0];
+                const currentTitle = emp.chucVu || jObj?.chucVus[0] || '';
+                const std = findTieuChuanLuong(currentJob, currentTitle);
+
+                return (
+                  <div
+                    key={emp.id}
+                    className={`bg-white rounded-xl border transition shadow-xs overflow-hidden ${
+                      isSelected ? 'border-emerald-500 ring-2 ring-emerald-100' : 'border-slate-200 hover:border-slate-300'
+                    }`}
+                  >
+                    {/* Header tóm tắt nhân sự từ Bước 2 */}
+                    <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        {step3Employees.length > 1 && (
                           <input
                             type="checkbox"
-                            checked={selectedBatchIds.length === batchList.length && batchList.length > 0}
-                            onChange={handleToggleSelectAllBatch}
-                            className="rounded text-emerald-600"
-                            title="Chọn / Bỏ chọn tất cả"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelectOne(emp.id)}
+                            className="w-4 h-4 rounded text-emerald-600 cursor-pointer"
+                            title="Chọn nhân viên này để áp dụng hàng loạt"
                           />
-                        </th>
-                        <th className="py-2.5 px-3 text-center w-10">STT</th>
-                        <th className="py-2.5 px-3 min-w-[140px]">Họ và Tên &amp; CCCD</th>
-                        <th className="py-2.5 px-3 min-w-[130px]">Khối &amp; Ban</th>
-                        <th className="py-2.5 px-3 min-w-[140px]">Công Việc</th>
-                        <th className="py-2.5 px-3 min-w-[140px]">Chức Vụ (Title)</th>
-                        <th className="py-2.5 px-3 min-w-[130px]">Điểm Làm Việc</th>
-                        <th className="py-2.5 px-3 min-w-[130px]">Loại Hợp Đồng</th>
-                        <th className="py-2.5 px-3 text-center min-w-[90px]">Lương Chuẩn</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {batchList.map((emp, idx) => {
-                        const isSelected = selectedBatchIds.includes(emp.id);
-                        const std = findTieuChuanLuong(emp.congViecDuKien, emp.chucVu);
-                        return (
-                          <tr
-                            key={emp.id}
-                            className={`hover:bg-emerald-50/30 transition ${
-                              isSelected ? 'bg-emerald-50/15' : ''
-                            }`}
+                        )}
+                        <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white font-bold flex items-center justify-center text-xs shadow-2xs">
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
+                              {emp.hoVaTen || 'Chưa có họ tên'}
+                            </h4>
+                            {emp.nguonDiaChi === 'VNeID' && (
+                              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded">
+                                VNeID
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                            <span>CCCD: <strong className="font-mono text-slate-700">{emp.soCCCD || 'Chưa có'}</strong></span>
+                            <span>SĐT: <strong className="font-mono text-slate-700">{emp.soDienThoai || 'Chưa có'}</strong></span>
+                            <span>Ngày sinh: <strong className="text-slate-700">{emp.ngaySinh || 'Chưa có'}</strong></span>
+                            <span>Giới tính: <strong className="text-slate-700">{emp.gioiTinh || 'Nam'}</strong></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {std && (
+                          <span className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold px-2.5 py-1 rounded-lg">
+                            Lương CB: {formatVND(std.luongCoBan)} đ
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleSelectStep(2)}
+                          className="text-[11px] text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer"
+                        >
+                          Xem lại Bước 2
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Lưới 3 khối thông tin theo đúng 4 yêu cầu của người dùng */}
+                    <div className="p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 text-xs">
+                      {/* Khối 1: Thông tin cần bổ sung tay */}
+                      <div className="lg:col-span-4 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                        <div className="flex items-center gap-1.5 text-slate-800 font-bold border-b border-slate-200 pb-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                          <span className="uppercase text-[11px] tracking-wider">1. Thông Tin Bổ Sung Tay</span>
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Ngày vào làm việc <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={emp.ngayVaoLam || ''}
+                            onChange={(e) => handleReviewChange(emp.id, { ngayVaoLam: e.target.value })}
+                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Địa chỉ tạm trú hiện tại
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Nhập địa chỉ đang tạm trú..."
+                            value={emp.diaChiTamTru || ''}
+                            onChange={(e) => handleReviewChange(emp.id, { diaChiTamTru: e.target.value })}
+                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Email cá nhân (nếu có)
+                          </label>
+                          <input
+                            type="email"
+                            placeholder="ten@example.com"
+                            value={emp.emailCaNhan || ''}
+                            onChange={(e) => handleReviewChange(emp.id, { emailCaNhan: e.target.value })}
+                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Tình trạng hồ sơ
+                          </label>
+                          <select
+                            value={emp.tinhTrangHoSo || 'Đủ hồ sơ'}
+                            onChange={(e) => handleReviewChange(emp.id, { tinhTrangHoSo: e.target.value })}
+                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
                           >
-                            {/* Checkbox chọn */}
-                            <td className="py-2 px-3 text-center">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => handleToggleSelectOne(emp.id)}
-                                className="rounded text-emerald-600 cursor-pointer"
-                              />
-                            </td>
+                            <option value="Đủ hồ sơ">Đủ hồ sơ</option>
+                            <option value="Chờ bổ sung CCCD">Chờ bổ sung CCCD</option>
+                            <option value="Chờ bổ sung bằng cấp">Chờ bổ sung bằng cấp</option>
+                            <option value="Chờ xác minh học vấn">Chờ xác minh học vấn</option>
+                            <option value="Thiếu giấy khám sức khỏe">Thiếu giấy khám sức khỏe</option>
+                            <option value="Hồ sơ thử việc">Hồ sơ thử việc</option>
+                          </select>
+                        </div>
+                      </div>
 
-                            {/* STT */}
-                            <td className="py-2 px-3 text-center font-mono text-slate-500">
-                              {idx + 1}
-                            </td>
+                      {/* Khối 2: Lựa chọn phòng ban (Khối, Ban, Phòng) */}
+                      <div className="lg:col-span-4 bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-200 space-y-3">
+                        <div className="flex items-center gap-1.5 text-emerald-950 font-bold border-b border-emerald-200/70 pb-1.5">
+                          <Building className="w-3.5 h-3.5 text-emerald-700" />
+                          <span className="uppercase text-[11px] tracking-wider">2. Lựa Chọn Phòng Ban</span>
+                        </div>
 
-                            {/* Họ tên & CCCD */}
-                            <td className="py-2 px-3">
-                              <div className="font-bold text-slate-900 uppercase">
-                                {emp.hoVaTen}
-                              </div>
-                              <div className="text-[11px] font-mono text-slate-500 flex items-center gap-1">
-                                <span>CCCD: {emp.soCCCD}</span>
-                                {emp.nguonDiaChi === 'VNeID' && (
-                                  <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded font-bold">
-                                    VNeID
-                                  </span>
-                                )}
-                              </div>
-                            </td>
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Cấp Khối <span className="text-rose-500">*</span>
+                          </label>
+                          <select
+                            value={currentKhoi}
+                            onChange={(e) => {
+                              const newK = e.target.value;
+                              const newKObj = orgHierarchy.find((k) => k.name === newK);
+                              const firstBan = newKObj?.bans[0]?.name || '';
+                              const firstPhong = newKObj?.bans[0]?.phongs[0]?.name || '';
+                              handleReviewChange(emp.id, {
+                                khoi: newK,
+                                ban: firstBan,
+                                phong: firstPhong,
+                              });
+                            }}
+                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
+                          >
+                            {orgHierarchy.map((k) => (
+                              <option key={k.id || k.name} value={k.name}>
+                                {k.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                            {/* Khối & Ban */}
-                            <td className="py-2 px-3">
-                              <select
-                                value={emp.khoi || bulkKhoi}
-                                onChange={(e) => {
-                                  const newKhoi = e.target.value;
-                                  const kObj = orgHierarchy.find((k) => k.name === newKhoi);
-                                  const firstBan = kObj && kObj.bans.length > 0 ? kObj.bans[0].name : '';
-                                  const firstPhong = kObj && kObj.bans.length > 0 && kObj.bans[0].phongs.length > 0 ? kObj.bans[0].phongs[0].name : '';
-                                  handleUpdateBatchEmployeeRow(emp.id, {
-                                    khoi: newKhoi,
-                                    ban: firstBan,
-                                    phong: firstPhong,
-                                  });
-                                }}
-                                className="w-full text-xs px-2 py-1 bg-white border border-slate-300 rounded font-semibold text-slate-700"
-                              >
-                                {orgHierarchy.map((k) => (
-                                  <option key={k.name} value={k.name}>
-                                    {k.name}
-                                  </option>
-                                ))}
-                              </select>
-                              <div className="text-[10px] text-slate-500 mt-0.5 truncate">
-                                Ban: {emp.ban || bulkBan} | {emp.phong || bulkPhong}
-                              </div>
-                            </td>
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Cấp Ban <span className="text-rose-500">*</span>
+                          </label>
+                          <select
+                            value={currentBan}
+                            onChange={(e) => {
+                              const newB = e.target.value;
+                              const newBObj = kObj?.bans.find((b) => b.name === newB);
+                              const firstPhong = newBObj?.phongs[0]?.name || '';
+                              handleReviewChange(emp.id, {
+                                ban: newB,
+                                phong: firstPhong,
+                              });
+                            }}
+                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
+                          >
+                            {kObj?.bans.map((b) => (
+                              <option key={b.id || b.name} value={b.name}>
+                                {b.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                            {/* Công việc */}
-                            <td className="py-2 px-3">
-                              <select
-                                value={emp.congViecDuKien || bulkCongViec}
-                                onChange={(e) => {
-                                  const newJob = e.target.value;
-                                  const jobObj = DEFAULT_JOB_POSITIONS.find((j) => j.name === newJob);
-                                  const firstTitle = jobObj && jobObj.chucVus.length > 0 ? jobObj.chucVus[0] : '';
-                                  handleUpdateBatchEmployeeRow(emp.id, {
-                                    congViecDuKien: newJob,
-                                    chucVu: firstTitle,
-                                  });
-                                }}
-                                className="w-full text-xs px-2 py-1 bg-white border border-slate-300 rounded font-bold text-blue-900"
-                              >
-                                {DEFAULT_JOB_POSITIONS.map((j) => (
-                                  <option key={j.name} value={j.name}>
-                                    {j.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Cấp Phòng <span className="text-rose-500">*</span>
+                          </label>
+                          <select
+                            value={currentPhong}
+                            onChange={(e) => handleReviewChange(emp.id, { phong: e.target.value })}
+                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
+                          >
+                            {bObj?.phongs.map((p) => (
+                              <option key={p.id || p.name} value={p.name}>
+                                {p.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
 
-                            {/* Chức vụ */}
-                            <td className="py-2 px-3">
-                              <select
-                                value={emp.chucVu || bulkChucVu}
-                                onChange={(e) => {
-                                  handleUpdateBatchEmployeeRow(emp.id, {
-                                    chucVu: e.target.value,
-                                  });
-                                }}
-                                className="w-full text-xs px-2 py-1 bg-white border border-emerald-300 rounded font-bold text-emerald-900"
-                              >
-                                {DEFAULT_JOB_POSITIONS.find(
-                                  (j) => j.name === (emp.congViecDuKien || bulkCongViec)
-                                )?.chucVus.map((t) => (
-                                  <option key={t} value={t}>
-                                    {t}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
+                      {/* Khối 3: Lựa chọn công việc & chức vụ (Công việc, Chức vụ, Thẩm quyền) */}
+                      <div className="lg:col-span-4 bg-indigo-50/40 p-3.5 rounded-xl border border-indigo-200 space-y-3">
+                        <div className="flex items-center gap-1.5 text-indigo-950 font-bold border-b border-indigo-200/70 pb-1.5">
+                          <Briefcase className="w-3.5 h-3.5 text-indigo-700" />
+                          <span className="uppercase text-[11px] tracking-wider">3. Công Việc, Chức Vụ &amp; Thẩm Quyền</span>
+                        </div>
 
-                            {/* Điểm làm việc */}
-                            <td className="py-2 px-3">
-                              <input
-                                type="text"
-                                value={emp.diemLamViec || bulkDiemLamViec}
-                                onChange={(e) =>
-                                  handleUpdateBatchEmployeeRow(emp.id, {
-                                    diemLamViec: e.target.value,
-                                  })
-                                }
-                                className="w-full text-xs px-2 py-1 bg-white border border-slate-300 rounded text-slate-700"
-                              />
-                            </td>
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Nhóm Công Việc <span className="text-rose-500">*</span>
+                          </label>
+                          <select
+                            value={currentJob}
+                            onChange={(e) => {
+                              const newJ = e.target.value;
+                              const newJObj = DEFAULT_JOB_POSITIONS.find((j) => j.name === newJ);
+                              const firstTitle = newJObj?.chucVus[0] || '';
+                              const newStd = findTieuChuanLuong(newJ, firstTitle);
+                              handleReviewChange(emp.id, {
+                                congViecDuKien: newJ,
+                                chucVu: firstTitle,
+                                ...(newStd ? {
+                                  luongCoBan: newStd.luongCoBan,
+                                  phuCapChucVu: newStd.phuCapChucVu,
+                                  phuCapDienThoai: newStd.phuCapDienThoai,
+                                  troCapTayNghe: newStd.troCapTayNghe,
+                                  troCapGiaDinh: newStd.troCapGiaDinh,
+                                  thuongChuyenCan: newStd.thuongChuyenCan,
+                                  thuongSangKien: newStd.thuongSangKien,
+                                  luongDongBHXH: (newStd.luongCoBan || 0) + (newStd.phuCapChucVu || 0),
+                                } : {}),
+                              });
+                            }}
+                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-bold text-blue-900"
+                          >
+                            {DEFAULT_JOB_POSITIONS.map((j) => (
+                              <option key={j.id || j.name} value={j.name}>
+                                {j.name} ({j.chucVus.length} chức vụ)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                            {/* Loại HĐ */}
-                            <td className="py-2 px-3">
-                              <select
-                                value={emp.loaiHopDong || bulkLoaiHopDong}
-                                onChange={(e) =>
-                                  handleUpdateBatchEmployeeRow(emp.id, {
-                                    loaiHopDong: e.target.value,
-                                  })
-                                }
-                                className="w-full text-xs px-2 py-1 bg-white border border-slate-300 rounded text-slate-700"
-                              >
-                                <option value="Toàn thời gian (Chính thức)">Toàn thời gian</option>
-                                <option value="Hợp đồng thử việc (60 ngày)">Thử việc 60 ngày</option>
-                                <option value="Hợp đồng xác định thời hạn (12 tháng)">12 tháng</option>
-                                <option value="Hợp đồng không xác định thời hạn">Không thời hạn</option>
-                                <option value="Bán thời gian (Part-time)">Part-time</option>
-                                <option value="Thời vụ / Khoán việc">Thời vụ</option>
-                              </select>
-                            </td>
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Chức Vụ Tương Ứng <span className="text-rose-500">*</span>
+                          </label>
+                          <select
+                            value={currentTitle}
+                            onChange={(e) => {
+                              const newT = e.target.value;
+                              const newStd = findTieuChuanLuong(currentJob, newT);
+                              handleReviewChange(emp.id, {
+                                chucVu: newT,
+                                ...(newStd ? {
+                                  luongCoBan: newStd.luongCoBan,
+                                  phuCapChucVu: newStd.phuCapChucVu,
+                                  phuCapDienThoai: newStd.phuCapDienThoai,
+                                  troCapTayNghe: newStd.troCapTayNghe,
+                                  troCapGiaDinh: newStd.troCapGiaDinh,
+                                  thuongChuyenCan: newStd.thuongChuyenCan,
+                                  thuongSangKien: newStd.thuongSangKien,
+                                  luongDongBHXH: (newStd.luongCoBan || 0) + (newStd.phuCapChucVu || 0),
+                                } : {}),
+                              });
+                            }}
+                            className="w-full text-xs px-2.5 py-2 border border-indigo-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-bold text-indigo-900"
+                          >
+                            {jObj?.chucVus.map((t) => {
+                              const tStd = DEFAULT_TIEU_CHUAN_LUONG.find((s) => s.congViec === currentJob && s.chucVu === t);
+                              return (
+                                <option key={t} value={t}>
+                                  {t} {tStd ? `[Lương CB: ${formatVND(tStd.luongCoBan)} đ]` : ''}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
 
-                            {/* Lương chuẩn tự động gợi ý */}
-                            <td className="py-2 px-3 text-center">
-                              {std ? (
-                                <span className="inline-block px-2 py-0.5 bg-emerald-100 text-emerald-900 rounded font-mono font-bold text-[10px]" title={`Lương CB: ${formatVND(std.luongCoBan)} đ, PC: ${formatVND(std.phuCapChucVu)} đ`}>
-                                  {formatVND(std.luongCoBan)} đ
-                                </span>
-                              ) : (
-                                <span className="text-[10px] text-slate-400 italic">Theo vị trí</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Thẻ tóm tắt hồ sơ nhân sự đang xử lý */}
-            <div className="bg-white p-3.5 rounded-xl border border-emerald-300 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-sm">
-                  {hoVaTen ? hoVaTen.trim().charAt(0) : 'NV'}
-                </div>
-                <div>
-                  <div className="text-[11px] text-slate-500">Đang phân bổ nhân sự:</div>
-                  <div className="text-sm font-bold text-slate-900 tracking-wide uppercase">
-                    {hoVaTen || 'Ứng viên chưa đặt tên'}
+                        <div>
+                          <label className="block text-slate-700 font-semibold mb-1">
+                            Thẩm Quyền
+                          </label>
+                          <select
+                            value={emp.thamQuyen || ''}
+                            onChange={(e) => handleReviewChange(emp.id, { thamQuyen: e.target.value as any })}
+                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium text-slate-700"
+                          >
+                            <option value="">Chưa chọn</option>
+                            <option value="Trưởng địa điểm">Trưởng địa điểm</option>
+                            <option value="Dinh dưỡng viên trưởng">Dinh dưỡng viên trưởng</option>
+                            <option value="Giám sát trưởng">Giám sát trưởng</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-500 flex flex-wrap gap-x-3 mt-0.5">
-                    <span>CCCD: <strong className="text-slate-700 font-mono">{soCCCD || 'Chưa có'}</strong></span>
-                    <span>SĐT: <strong className="text-slate-700 font-mono">{soDienThoai || 'Chưa có'}</strong></span>
-                    <span>Ngày sinh: <strong className="text-slate-700">{ngaySinh || 'Chưa có'}</strong></span>
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleSelectStep(2)}
-                className="text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-                <span>Kiểm tra lại thông tin cá nhân (Bước 2)</span>
-              </button>
-            </div>
-
-            {/* Trường chọn Cơ Cấu Tổ Chức */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wide block">
-                1. Lựa Chọn Phòng Ban &amp; Đơn Vị Công Tác
-              </span>
-              {!isCustomOrg ? (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Cấp Khối <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={khoi}
-                      onChange={(e) => handleKhoiChange(e.target.value)}
-                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium"
-                    >
-                      {orgHierarchy.map((k) => (
-                        <option key={k.id} value={k.name}>
-                          {k.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Cấp Ban <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={ban}
-                      onChange={(e) => handleBanChange(e.target.value)}
-                      disabled={!khoi}
-                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium disabled:bg-slate-100"
-                    >
-                      {orgHierarchy.find((k) => k.name === khoi)?.bans.map((b) => (
-                        <option key={b.id} value={b.name}>
-                          {b.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Cấp Phòng <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={phong}
-                      onChange={(e) => setPhong(e.target.value)}
-                      disabled={!ban}
-                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium disabled:bg-slate-100"
-                    >
-                      {orgHierarchy.find((k) => k.name === khoi)
-                        ?.bans.find((b) => b.name === ban)
-                        ?.phongs.map((p) => (
-                          <option key={p.id} value={p.name}>
-                            {p.name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <input
-                    type="text"
-                    placeholder="Tên Khối"
-                    value={khoi}
-                    onChange={(e) => setKhoi(e.target.value)}
-                    className="text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Tên Ban"
-                    value={ban}
-                    onChange={(e) => setBan(e.target.value)}
-                    className="text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Tên Phòng"
-                    value={phong}
-                    onChange={(e) => setPhong(e.target.value)}
-                    className="text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Trường chọn Công Việc & Chức Vụ */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wide block">
-                2. Lựa Chọn Công Việc &amp; Chức Vụ
-              </span>
-              {!isCustomJob ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Nhóm Công Việc <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={congViecDuKien}
-                      onChange={(e) => handleJobChange(e.target.value)}
-                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-medium"
-                    >
-                      {DEFAULT_JOB_POSITIONS.map((job) => (
-                        <option key={job.id} value={job.name}>
-                          {job.name} ({job.chucVus.length} chức vụ)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">
-                      Chức Vụ Tương Ứng <span className="text-rose-500">*</span>
-                    </label>
-                    <select
-                      value={chucVu}
-                      onChange={(e) => setChucVu(e.target.value)}
-                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white font-bold text-indigo-900"
-                    >
-                      {DEFAULT_JOB_POSITIONS.find((j) => j.name === congViecDuKien)?.chucVus.map((pos) => {
-                        const std = DEFAULT_TIEU_CHUAN_LUONG.find((t) => t.chucVu === pos && t.congViec === congViecDuKien);
-                        return (
-                          <option key={pos} value={pos}>
-                            {pos} {std ? `[Lương CB: ${formatVND(std.luongCoBan)} đ]` : ''}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    placeholder="Nhập tên công việc..."
-                    value={congViecDuKien}
-                    onChange={(e) => setCongViecDuKien(e.target.value)}
-                    className="text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Nhập tên chức vụ..."
-                    value={chucVu}
-                    onChange={(e) => setChucVu(e.target.value)}
-                    className="text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg font-bold text-indigo-900"
-                  />
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {(batchList.length ? batchList : [{...currentRecordObject, id: 'single-review', hoVaTen}]).map((employee, index) => (
-                  <div key={employee.id}>
-                    <label htmlFor={`authority-${employee.id}`} className="block text-xs font-semibold text-slate-700 mb-1">
-                      Thẩm quyền
-                      {batchList.length > 1 && <span className="ml-1 font-normal text-slate-500">— {index + 1}. {employee.hoVaTen || 'Chưa có họ tên'}</span>}
-                    </label>
-                    <select
-                      id={`authority-${employee.id}`}
-                      aria-label={`Thẩm quyền nhân viên ${index + 1}`}
-                      value={employee.thamQuyen || ''}
-                      onChange={event => handleReviewChange(employee.id, {thamQuyen: event.target.value as EmployeeIntakeInfo['thamQuyen']})}
-                      className="w-full text-xs sm:text-sm px-3 py-2 border border-slate-300 rounded-lg bg-white focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
-                    >
-                      <option value="">Chưa chọn</option>
-                      {['Trưởng địa điểm', 'Dinh dưỡng viên trưởng', 'Giám sát trưởng'].map(value => <option key={value} value={value}>{value}</option>)}
-                    </select>
-                  </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
 
             {/* Điều hướng Bước 3 */}
-            {activeTabStep === 3 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => handleSelectStep(2)}
-                  className="w-full sm:w-auto px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  <span>Quay Lại Bước 2 (Thông tin cá nhân &amp; VNeID)</span>
-                </button>
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => handleSelectStep(2)}
+                className="w-full sm:w-auto px-4 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                <span>Quay Lại Bước 2 (Thông tin cá nhân &amp; VNeID)</span>
+              </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!chucVu.trim() || !congViecDuKien.trim()) {
-                      setValidationError('Vui lòng chọn Công việc và Chức vụ trước khi sang Bước 4.');
-                      return;
-                    }
-                    setValidationError(null);
-                    handleSelectStep(4);
-                  }}
-                  className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
-                >
-                  <span>Xác Nhận Bước 3 &amp; Sang Bước 4 (Lương &amp; Xuất File)</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+              <button
+                type="button"
+                onClick={() => {
+                  const unassigned = step3Employees.find(
+                    (e) => !e.chucVu?.trim() || !e.congViecDuKien?.trim()
+                  );
+                  if (unassigned) {
+                    setValidationError(
+                      `Vui lòng chọn Công việc và Chức vụ cho nhân sự "${unassigned.hoVaTen || 'trong danh sách'}" trước khi tiếp tục.`
+                    );
+                    return;
+                  }
+                  setValidationError(null);
+                  handleSelectStep(4);
+                }}
+                className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+              >
+                <span>Xác Nhận Bước 3 &amp; Sang Bước 4 (Bảng Lương &amp; Lưu)</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         )}
 
