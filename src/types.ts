@@ -94,6 +94,7 @@ export interface EmployeeIdentityInfo {
   aiVisionExtracted?: boolean;
   tinhTrangHonNhan?: string;
   ngayHetHanCCCD?: string;
+  canh_bao_sai_lech?: string;
 }
 
 export interface NhanSuRecord extends EmployeeIntakeInfo, EmployeeIdentityInfo, EmployeeHouseholdInfo {

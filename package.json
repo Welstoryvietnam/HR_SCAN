@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test tests/ocr.test.ts tests/ocr-orientation.test.ts tests/gemini-ocr.test.ts tests/ai-resilience.test.ts tests/sop-intake-processing.test.ts tests/vercel-api.test.ts tests/api-helper.test.ts tests/firestore.test.ts tests/personnel-export.test.ts tests/dashboard-stats.test.ts tests/household-export.test.ts tests/hrm-migration.test.ts tests/hrm-auth.test.ts tests/hrm-meal-summary.test.ts tests/google-sheets-sync.test.ts",
+    "test": "node --import tsx --test tests/ocr.test.ts tests/ocr-orientation.test.ts tests/gemini-ocr.test.ts tests/fast-gemini-ocr.test.ts tests/ai-resilience.test.ts tests/sop-intake-processing.test.ts tests/vercel-api.test.ts tests/api-helper.test.ts tests/firestore.test.ts tests/personnel-export.test.ts tests/dashboard-stats.test.ts tests/household-export.test.ts tests/hrm-migration.test.ts tests/hrm-auth.test.ts tests/hrm-meal-summary.test.ts tests/google-sheets-sync.test.ts",
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@google/genai": "^2.31.0",
     "@tailwindcss/vite": "^4.1.14",
     "@tesseract.js-data/eng": "^1.0.0",
     "@tesseract.js-data/vie": "^1.0.0",

@@ -23,6 +23,7 @@ export function EmployeeReviewGrid({ employees, existingRecords, onChange }: Pro
       employees.some(other => other.id !== employee.id && other.soCCCD.trim() === employee.soCCCD.trim()) ||
       existingRecords.some(record => record.soCCCD.trim() === employee.soCCCD.trim())
     )) messages.push('Trùng CCCD');
+    if (employee.canh_bao_sai_lech) messages.push(`⚠️ Đối soát chéo: ${employee.canh_bao_sai_lech}`);
     return [...messages, ...(employee.cauHoiLamRo || [])];
   };
   const incompleteCount = employees.filter(employee => issues(employee).length > 0).length;

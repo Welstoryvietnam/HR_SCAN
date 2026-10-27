@@ -10,7 +10,7 @@ export function geminiOCRConfig(env:NodeJS.ProcessEnv=process.env):Config {
 }
 export function geminiOCRCapabilities() {
   const config=geminiOCRConfig();
-  return {enabled:config.enabled && Boolean(config.apiKey),revision:`gemini-assist-v3:${config.model}`};
+  return {enabled:config.enabled && Boolean(config.apiKey),aiVisionAvailable:Boolean(process.env.GEMINI_API_KEY),revision:`gemini-assist-v3:${config.model}`};
 }
 const profile=(page:OCRPage)=>parseOCRProfile([{id:'page',docType:'khac',pages:[page]}],{allowIncomplete:true});
 const fold=(value:string)=>value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/gi,'d').toLowerCase().replace(/\s+/g,' ').trim();

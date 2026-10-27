@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { recognizeImage, OCRError } from "./backend/ocrService.js";
 import { parseOCRProfile } from "./backend/ocrProfile.js";
 import {assistGeminiOCR,geminiOCRCapabilities} from './backend/geminiOCR.js';
+import { extractEmployeeWithGeminiVision } from './backend/fastGeminiOCR.js';
 import { recordStore, personnelFields, firestoreConfigured, StorageError } from "./backend/recordStore.js";
 import { draftStore } from './backend/draftStore.js';
 import { normalizeHouseholdMembers } from './src/utils/household.js';
@@ -1737,6 +1738,34 @@ app.post('/api/ocr/extract-profile',(req,res)=>{
   } catch(error) {
     const failure=error instanceof OCRError ? error : new OCRError('Không tách được thông tin từ văn bản OCR.',422);
     res.status(failure.status).json({success:false,error:failure.message,retryable:false});
+  }
+});
+app.post('/api/ocr/extract-fast',async(req,res)=>{
+  const requestId=randomUUID(),start=Date.now();
+  try {
+    const {documents,label}=req.body || {};
+    if(!Array.isArray(documents) || !documents.length) {
+      return res.status(400).json({success:false,error:'Không có tài liệu để trích xuất.',requestId});
+    }
+    const {result,pages}=await extractEmployeeWithGeminiVision(documents,label);
+    const salary=timLuongTheoChucVu(result.chucVu || result.congViecDuKien || '');
+    console.info('[OCR fast]',JSON.stringify({requestId,status:200,durationMs:Date.now()-start}));
+    res.json({
+      success:true,
+      data:{
+        ...result,
+        suggestedLuongCoBan:salary.luongCoBan,
+        suggestedPhuCapCoDinh:salary.phuCapCoDinh,
+        matchedChucVu:salary.matchedChucVu,
+      },
+      pages,
+      engine:'gemini-vision',
+      requestId,
+    });
+  } catch(error) {
+    const failure=error instanceof OCRError ? error : new OCRError((error as Error).message || 'Không thể trích xuất qua Gemini Vision.',500);
+    console.warn('[OCR fast error]',JSON.stringify({requestId,error:failure.message,status:failure.status,durationMs:Date.now()-start}));
+    res.status(failure.status).json({success:false,error:failure.message,retryable:failure.status===429 || failure.status===503,requestId});
   }
 });
 // Old browser builds must refresh; do not silently fall back to Gemini.

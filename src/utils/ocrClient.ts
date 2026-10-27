@@ -13,11 +13,70 @@ async function recognize(mimeType:string,base64Data:string):Promise<OCRPage> {
   if(!reply.ok || !reply.data?.success || !reply.data.data) throw new OCRRequestError({ok:false,data:{success:false,error:reply.data?.error || reply.error,retryable:reply.data?.retryable,retryAfterSeconds:reply.data?.retryAfterSeconds}},reply.data?.status);
   return reply.data.data;
 }
-export async function extractOCRGroup(group:EmployeeDocumentGroup,onDocument:(doc:OptimizedImageFile)=>void,onStatus:(message:string)=>void):Promise<ExtractReply> {
+export async function extractOCRGroup(
+  group:EmployeeDocumentGroup,
+  onDocument:(doc:OptimizedImageFile)=>void,
+  onStatus:(message:string)=>void,
+  scanMode:'ai'|'local'='ai'
+):Promise<ExtractReply> {
   const documents: {id:string;fileName:string;docType:string;pages:OCRPage[]}[]=[];
   try {
-    const capabilities=await safeFetchJson<{success:boolean;data?:{enabled:boolean;revision:string}}>('/api/ocr/capabilities',{signal:AbortSignal.timeout(10_000)});
+    const capabilities=await safeFetchJson<{success:boolean;data?:{enabled:boolean;aiVisionAvailable?:boolean;revision:string}}>('/api/ocr/capabilities',{signal:AbortSignal.timeout(10_000)});
     const config=capabilities.ok && capabilities.data?.success ? capabilities.data.data : undefined;
+
+    // Fast AI Vision Mode: directly extract using Gemini 3.8 Flash multimodal API
+    if (scanMode === 'ai' && config?.aiVisionAvailable && group.documents.length > 0) {
+      onStatus(`⚡ Đang Quét AI Siêu Tốc (${group.documents.length} tài liệu)…`);
+      const fastReply = await safeFetchJson<{
+        success: boolean;
+        data?: DocumentExtractionResult;
+        pages?: Record<string, OCRPage>;
+        error?: string;
+        retryable?: boolean;
+      }>('/api/ocr/extract-fast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(30_000),
+        body: JSON.stringify({
+          documents: group.documents.map(d => ({
+            id: d.id,
+            fileName: d.fileName,
+            docType: d.docType,
+            mimeType: d.mimeType,
+            base64Data: d.base64Data,
+          })),
+          label: group.label,
+        }),
+      });
+
+      if (fastReply.ok && fastReply.data?.success && fastReply.data.data) {
+        const pagesMap = fastReply.data.pages || {};
+        for (const doc of group.documents) {
+          const docPage: OCRPage = pagesMap[doc.id] || {
+            page: 1,
+            text: fastReply.data.data.hoVaTen || '',
+            confidence: 99,
+            lines: [],
+            engine: 'gemini',
+            assistance: { status: 'used' },
+          };
+          onDocument({
+            ...doc,
+            ocrPages: [docPage],
+            ocrVersion: OCR_ENGINE_VERSION,
+          });
+        }
+        return {
+          ok: true,
+          data: {
+            success: true,
+            data: fastReply.data.data,
+          },
+        };
+      }
+      onStatus('Quét AI siêu tốc gặp trục trặc tạm thời, đang chuyển sang OCR cục bộ…');
+    }
+
     const needsAssist=(page:OCRPage)=>Boolean(config?.enabled && page.engine!=='gemini' && page.assistanceRevision!==config.revision);
     const assist=async(mimeType:string,base64Data:string,page:OCRPage):Promise<OCRPage>=>{
       if(!needsAssist(page)) return page;
