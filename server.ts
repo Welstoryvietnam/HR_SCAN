@@ -20,7 +20,15 @@ if (!process.env.HR_ALLOW_LEGACY_TEST_ACCOUNTS && process.env.NODE_ENV !== 'prod
 }
 
 const app = express();
-const PORT = 3000;
+function getListenPort(): number {
+  const portArgIdx = process.argv.indexOf("--port");
+  if (portArgIdx !== -1 && process.argv[portArgIdx + 1]) {
+    const p = parseInt(process.argv[portArgIdx + 1], 10);
+    if (!isNaN(p) && p > 0) return p;
+  }
+  return 3000;
+}
+const PORT = getListenPort();
 
 app.get("/api/health", (_req, res) => {
   res.set("Cache-Control", "no-store");
@@ -2543,7 +2551,7 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -2577,11 +2585,35 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`HR Document AI Web App running on http://localhost:${PORT}`);
   });
+
+  server.on("error", (err: any) => {
+    if (err.code === "EADDRINUSE") {
+      console.warn(`Port ${PORT} in use, retrying in 1 second...`);
+      setTimeout(() => {
+        server.close();
+        server.listen(PORT, "0.0.0.0");
+      }, 1000);
+    } else {
+      console.error("Server listen error:", err);
+    }
+  });
+
+  const handleShutdown = () => {
+    server.close(() => {
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 2000).unref();
+  };
+  process.on("SIGTERM", handleShutdown);
+  process.on("SIGINT", handleShutdown);
 }
 
 if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
-  startServer();
+  startServer().catch((err) => {
+    console.error("Failed to start server:", err);
+    process.exit(1);
+  });
 }
