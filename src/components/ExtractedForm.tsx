@@ -553,17 +553,17 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     }
   };
 
-  // Xuất file Excel (.xlsx) 43 cột chuẩn màu sắc header (hỗ trợ cả 1 hoặc nhiều người)
+  // Xuất file Excel (.xlsx) biến động nhân sự theo mẫu chuẩn 44 cột
   const handleExportSingleExcel = async () => {
     setIsExportingExcel(true);
     try {
       const recordsToExport = batchList.length > 0 ? getBatchRecordObjects() : [currentRecordObject];
       const fileName =
         recordsToExport.length > 1
-          ? `Bang_Luong_Nhan_Su_Chuan_43_Cot_${recordsToExport.length}_Nhan_Vien.xlsx`
-          : `HoSo_${hoVaTen.trim().replace(/\s+/g, '_') || 'NhanSu'}_Chuan_43_Cot.xlsx`;
+          ? `Mau_Bien_Dong_Nhan_Su_${recordsToExport.length}_Nhan_Vien.xlsx`
+          : `Mau_Bien_Dong_Nhan_Su_${hoVaTen.trim().replace(/\s+/g, '_') || 'NhanSu'}.xlsx`;
 
-      await generateExcel43Columns(recordsToExport, fileName);
+      await exportBienDongNhanSuExcel(recordsToExport, fileName);
     } catch (err) {
       console.error('Lỗi xuất file Excel:', err);
       alert('Không thể xuất file Excel: ' + (err as Error).message);

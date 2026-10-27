@@ -9,12 +9,10 @@ import {
   Users,
   UploadCloud,
   LayoutDashboard,
-  UserCog,
-  Download
+  UserCog
 } from 'lucide-react';
 
 export type AppTab = 'upload' | 'records' | 'dashboard' | 'salary' | 'emails' | 'users';
-export type WorkspaceModule = 'hrscan' | 'tasks';
 
 interface HeaderProps {
   currentUser: UserProfile;
@@ -22,8 +20,6 @@ interface HeaderProps {
   activeTab: AppTab;
   onTabChange: (tab: AppTab) => void;
   recordsCount: number;
-  module?: WorkspaceModule;
-  onModuleChange?: (module: WorkspaceModule) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -85,16 +81,6 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
             </div>
 
-            {/* Nút Tải Toàn Bộ Code ZIP */}
-            <a
-              href="/source-code.zip"
-              download="hr-scan-source-code.zip"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 rounded-xl text-xs font-semibold transition cursor-pointer shadow-2xs"
-              title="Tải toàn bộ mã nguồn (.ZIP) để đưa lên GitHub thủ công"
-            >
-              <Download className="w-4 h-4 text-indigo-600" />
-              <span className="hidden sm:inline">Tải code (ZIP)</span>
-            </a>
 
             {/* Nút Đăng Xuất */}
             <button

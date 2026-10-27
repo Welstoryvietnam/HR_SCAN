@@ -81,7 +81,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
         alert('Không có bản ghi nào để xuất file Excel.');
         return;
       }
-      await generateExcel43Columns(recordsToExport, 'Bang_Tong_Hop_Nhan_Su_Chuan_43_Cot.xlsx');
+      await generateExcel43Columns(recordsToExport, 'Mau_Bien_Dong_Nhan_Su_Tong_Hop.xlsx');
     } catch (err) {
       alert('Lỗi xuất file Excel: ' + (err as Error).message);
     } finally {
@@ -158,10 +158,10 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
             onClick={handleDownloadExcel43}
             disabled={isExporting || records.length === 0}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-slate-900 rounded-xl text-xs sm:text-sm font-bold shadow-sm transition disabled:opacity-50"
-            title="Xuất file Excel (.xlsx) chuẩn 43 cột với format 4 màu header"
+            title="Xuất file Excel (.xlsx) mẫu biến động nhân sự chuẩn 44 cột"
           >
             <Download className="w-4 h-4 text-slate-900" />
-            <span>{isExporting ? 'Đang xuất Excel...' : 'Xuất Excel 43 Cột (.xlsx)'}</span>
+            <span>{isExporting ? 'Đang xuất Excel...' : 'Xuất Mẫu Biến Động (.xlsx)'}</span>
           </button>
 
           {isAdmin && (

@@ -3,7 +3,43 @@ import { createHash, randomUUID } from 'node:crypto';
 import { FirestoreRecordStore, StorageError, firestoreConfigured } from './recordStore.js';
 import type { SessionUser } from './session.js';
 import type { SystemUserAccount } from '../src/types.js';
-import type { AppSettings, MealSession, Task } from '../src/modules/hrm/types/index.js';
+export type MealType = 'Bữa Sáng' | 'Bữa Trưa' | 'Bữa Tối' | 'Bữa Đêm';
+
+export interface MealSession {
+  id: string;
+  mealType: MealType;
+  startTime: string;
+  endTime: string;
+  location: string;
+  purpose: string;
+  mealsCount: number;
+}
+
+export interface Task {
+  id: string;
+  employeeId: string;
+  title: string;
+  description: string;
+  dueDate: string;
+  status: 'pending' | 'in-progress' | 'completed';
+  assignedBy: string;
+  priority?: 'urgent' | 'high' | 'medium' | 'low';
+  progress?: number;
+  completedAt?: string;
+  resultNote?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AppSettings {
+  mealPrice: number;
+  companyName: string;
+  departmentName: string;
+  preparerName: string;
+  accountantName: string;
+  leaderName: string;
+  directorName: string;
+}
 
 export const HRM_SETTINGS: AppSettings = { mealPrice:40000, companyName:'Công ty TNHH Welstory Việt Nam', departmentName:'HR Group', preparerName:'', accountantName:'', leaderName:'', directorName:'' };
 const text = (value: unknown, max = 2000) => {
