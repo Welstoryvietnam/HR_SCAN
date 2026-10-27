@@ -4,10 +4,10 @@
 export async function safeFetchJson<T = any>(
   input: RequestInfo | URL,
   init?: RequestInit
-): Promise<{ ok: boolean; data?: T; error?: string }> {
+): Promise<{ ok: boolean; data?: T; error?: string; status?: number }> {
   try {
-    if ((String(input).includes('/api/ai/extract-documents') || String(input).includes('/api/ocr/')) && typeof init?.body === 'string' && new TextEncoder().encode(init.body).byteLength > 4_000_000) {
-      return { ok: false, error: 'Tổng dung lượng tài liệu quá lớn cho một lần trích xuất. Vui lòng giảm dung lượng hoặc số trang PDF/ảnh của nhân viên này rồi thử lại.' };
+    if (String(input).includes('/api/ai/extract-documents') && typeof init?.body === 'string' && new TextEncoder().encode(init.body).byteLength > 4_000_000) {
+      return { ok: false, error: 'Tổng dung lượng tài liệu quá lớn cho một lần trích xuất. Vui lòng giảm dung lượng hoặc số trang PDF/ảnh của nhân viên này rồi thử lại.', status: 413 };
     }
     const headers = new Headers(init?.headers);
     // Attach the signed session only to this app's relative API URLs.
@@ -23,13 +23,14 @@ export async function safeFetchJson<T = any>(
     if (!text || text.trim() === '') {
       return {
         ok: false,
+        status: res.status,
         error: res.ok ? undefined : `Máy chủ phản hồi rỗng (HTTP ${res.status}). Vui lòng thử lại.`,
       };
     }
 
     try {
       const data = JSON.parse(text);
-      return { ok: res.ok, data, error: data?.error };
+      return { ok: res.ok, status: res.status, data, error: data?.error };
     } catch {
       // Nếu server/proxy trả về text hoặc HTML (ví dụ: lỗi Cloud Run, Vercel Edge, Nginx, hoặc 404/502)
       let sanitizedError = `Lỗi phản hồi từ máy chủ (HTTP ${res.status})`;

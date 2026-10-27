@@ -70,11 +70,12 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
     onBusyChange(true);
     setError('');
     try {
-      const documents: OptimizedImageFile[] = [];
-      for (const file of Array.from(files)) {
+      const fileList = Array.from(files);
+      for (const file of fileList) {
         if (!/\.(jpe?g|png|webp|pdf)$/i.test(file.name)) throw new Error('Chỉ hỗ trợ JPG, PNG, WEBP hoặc PDF.');
-        documents.push(await optimizeImageFile(file));
       }
+      // Tối ưu hóa song song tất cả các tệp hình ảnh
+      const documents = await Promise.all(fileList.map(file => optimizeImageFile(file)));
       onChange(groups.map(group => group.id === id ? {...group,documents:[...group.documents,...documents]} : group));
     } catch (err) { setError((err as Error).message); }
     finally { setBusy(false); onBusyChange(false); }
@@ -89,8 +90,9 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
 
     const groupsWithDocs = groups.filter(g => g.documents.length > 0);
     const totalCount = groupsWithDocs.length;
-    const perEmpSeconds = scanMode === 'ai' ? 2 : 18;
-    const initialSeconds = Math.max(3, totalCount * perEmpSeconds);
+    const concurrency = scanMode === 'ai' ? 2 : 1;
+    const perBatchSeconds = scanMode === 'ai' ? 2 : 16;
+    const initialSeconds = Math.max(2, Math.ceil(totalCount / concurrency) * perBatchSeconds);
 
     setProgressInfo({
       completed: 0,
@@ -102,7 +104,11 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
     try {
       let lastCheckpoint='';
       let cloudFailed=false;
-      const employees=await runBatchExtraction({groups,previous:previousEmployees,cancelled:()=>paused.current,
+      const employees=await runBatchExtraction({
+        groups,
+        previous:previousEmployees,
+        cancelled:()=>paused.current,
+        concurrency,
         extract:group=>extractOCRGroup(currentGroups.current.find(item=>item.id===group.id) || group,document=>{
           currentGroups.current=currentGroups.current.map(item=>item.id===group.id ? {...item,documents:item.documents.map(previous=>previous.id===document.id ? document : previous)} : item);
           onChange(currentGroups.current);
@@ -113,7 +119,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
 
           const completed = list.filter(employee => ['success','failed'].includes(employee.extractionStatus || '')).length;
           const remaining = Math.max(0, totalCount - completed);
-          const calculatedSecLeft = Math.max(1, remaining * (scanMode === 'ai' ? 2 : 18));
+          const calculatedSecLeft = Math.max(1, Math.ceil(remaining / concurrency) * perBatchSeconds);
           const actualPercent = totalCount > 0 ? Math.round((completed / totalCount) * 100) : 100;
 
           setProgressInfo({

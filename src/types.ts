@@ -258,6 +258,8 @@ export interface OptimizedImageFile {
 
 export interface DocumentExtractionResult extends EmployeeIdentityInfo, EmployeeHouseholdInfo {
   emailCaNhan?: string;
+  diaChiTamTru?: string;
+  tonGiao?: string;
   hoVaTen: string;
   ngaySinh: string;
   gioiTinh: string;

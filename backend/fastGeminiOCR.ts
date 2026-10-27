@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+import sharp from 'sharp';
 import { OCRError, type OCRPage } from './ocrService.js';
 import type { DocumentExtractionResult, ThanhVienGiaDinh, ThanhVienHoGiaDinh } from '../src/types.js';
 
@@ -27,92 +28,44 @@ function getGenAIClient(): GoogleGenAI | null {
   });
 }
 
-const FAST_SYSTEM_INSTRUCTION = `Bạn là chuyên gia số hóa hồ sơ nhân sự (HR Data Extraction Specialist). Nhiệm vụ của bạn là bóc tách thông tin từ ảnh chụp/bản scan Căn cước công dân (CCCD) và Sơ yếu lý lịch (bao gồm cả chữ viết tay và chữ in).
+const FAST_SYSTEM_INSTRUCTION = `Bạn là chuyên gia số hóa hồ sơ nhân sự (HR Data Extraction Specialist) tốc độ cao. Nhiệm vụ của bạn là bóc tách thông tin từ ảnh chụp/bản scan Căn cước công dân (CCCD) và Sơ yếu lý lịch (bao gồm cả chữ viết tay và chữ in) và trả về định dạng JSON thuần.
 
 Quy tắc xử lý bắt buộc:
 1. Tính trung thực và nguyên bản: Tuyệt đối không tự suy đoán hay bịa thông tin. Nếu chữ viết tay quá mờ, bị gạch xóa hoặc rách không đọc được, hãy điền giá trị null hoặc chuỗi rỗng "".
 2. Chuẩn hóa ngày tháng: Mọi trường ngày tháng phải chuyển về định dạng chuẩn YYYY-MM-DD. Nếu chỉ có năm, ghi rõ YYYY.
 3. Chuẩn hóa CCCD: Số CCCD phải là chuỗi số liền mạch (12 số với thẻ căn cước mới, 9 số với CMND cũ), loại bỏ khoảng trắng hoặc ký tự đặc biệt.
 4. Đối soát chéo (Cross-check): So sánh thông tin giữa CCCD và Sơ yếu lý lịch. Nếu phát hiện sai lệch về họ tên, ngày sinh hoặc số định danh giữa 2 nguồn tài liệu, phải ghi rõ cảnh báo vào trường "canh_bao_sai_lech".
-5. Trả về đúng cấu trúc JSON được chỉ định, không thêm bất kỳ văn bản giải thích nào ngoài JSON.`;
-
-const FAST_RESPONSE_SCHEMA = {
-  type: Type.OBJECT,
-  properties: {
-    hoVaTen: { type: Type.STRING, description: 'Họ và tên viết hoa có dấu của nhân viên' },
-    ngaySinh: { type: Type.STRING, description: 'Ngày sinh định dạng YYYY-MM-DD hoặc YYYY' },
-    gioiTinh: { type: Type.STRING, description: 'Nam hoặc Nữ hoặc Khác' },
-    soCCCD: { type: Type.STRING, description: 'Số CCCD liền mạch 12 số hoặc 9 số CMND cũ' },
-    ngayCap: { type: Type.STRING, description: 'Ngày cấp CCCD YYYY-MM-DD' },
-    ngayHetHanCCCD: { type: Type.STRING, description: 'Ngày hết hạn CCCD YYYY-MM-DD hoặc Không thời hạn' },
-    noiCap: { type: Type.STRING, description: 'Nơi cấp CCCD' },
-    queQuan: { type: Type.STRING, description: 'Quê quán' },
-    diaChiThuongTru: { type: Type.STRING, description: 'Địa chỉ thường trú' },
-    diaChiTamTru: { type: Type.STRING, description: 'Địa chỉ tạm trú nếu có trong hồ sơ' },
-    soDienThoai: { type: Type.STRING, description: 'Số điện thoại di động liên hệ của nhân viên' },
-    emailCaNhan: { type: Type.STRING, description: 'Email cá nhân của nhân viên' },
-    danToc: { type: Type.STRING, description: 'Dân tộc (ví dụ Kinh, Tày, Nùng...)' },
-    tonGiao: { type: Type.STRING, description: 'Tôn giáo' },
-    tinhTrangHonNhan: { type: Type.STRING, description: 'Tình trạng hôn nhân (Độc thân, Đã kết hôn...)' },
-    nguyenQuan: { type: Type.STRING, description: 'Nguyên quán' },
-    noiSinh: { type: Type.STRING, description: 'Nơi sinh' },
-    hocVan: { type: Type.STRING, description: 'Trình độ học vấn' },
-    canh_bao_sai_lech: { type: Type.STRING, description: 'Cảnh báo đối soát chéo nếu có sai lệch về họ tên, ngày sinh, CCCD giữa các tài liệu' },
-    thongTinChuaRo: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: 'Danh sách các trường bị mờ, rách hoặc không đọc được trên tài liệu',
-    },
-    cauHoiLamRo: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: 'Lưu ý hoặc câu hỏi cần người dùng kiểm tra lại',
-    },
-    thongTinGiaDinh: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          quanHe: { type: Type.STRING },
-          hoTen: { type: Type.STRING },
-          namSinh: { type: Type.STRING },
-          ngheNghiep: { type: Type.STRING },
-        },
-      },
-      description: 'Thông tin gia đình (Bố, Mẹ, Vợ/Chồng, Con...) trong Sơ yếu lý lịch',
-    },
-    thanhVienHoGiaDinh: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          hoTen: { type: Type.STRING },
-          ngaySinh: { type: Type.STRING },
-          quanHeVoiChuHo: { type: Type.STRING },
-          gioiTinh: { type: Type.STRING },
-          diaChiThuongTru: { type: Type.STRING },
-          quocTich: { type: Type.STRING },
-          danToc: { type: Type.STRING },
-        },
-      },
-      description: 'Thành viên hộ gia đình nếu có văn bản VNeID cư trú',
-    },
-    text: { type: Type.STRING, description: 'Nguyên văn tóm tắt toàn bộ nội dung đọc được' },
-  },
-  required: [
-    'hoVaTen',
-    'ngaySinh',
-    'gioiTinh',
-    'soCCCD',
-    'ngayCap',
-    'ngayHetHanCCCD',
-    'noiCap',
-    'queQuan',
-    'diaChiThuongTru',
-    'soDienThoai',
-    'text',
+5. Trả về đúng JSON thuần với cấu trúc các trường sau:
+{
+  "hoVaTen": "Họ và tên viết hoa có dấu của nhân viên",
+  "ngaySinh": "YYYY-MM-DD hoặc YYYY",
+  "gioiTinh": "Nam hoặc Nữ hoặc Khác",
+  "soCCCD": "12 số CCCD hoặc 9 số CMND liền mạch",
+  "ngayCap": "YYYY-MM-DD",
+  "ngayHetHanCCCD": "YYYY-MM-DD hoặc Không thời hạn",
+  "noiCap": "Nơi cấp CCCD",
+  "queQuan": "Quê quán",
+  "diaChiThuongTru": "Địa chỉ thường trú",
+  "diaChiTamTru": "Địa chỉ tạm trú nếu có",
+  "soDienThoai": "Số điện thoại di động",
+  "emailCaNhan": "Email cá nhân nếu có",
+  "danToc": "Dân tộc (ví dụ Kinh, Tày...)",
+  "tonGiao": "Tôn giáo",
+  "tinhTrangHonNhan": "Độc thân / Đã kết hôn",
+  "nguyenQuan": "Nguyên quán",
+  "noiSinh": "Nơi sinh",
+  "hocVan": "Trình độ học vấn",
+  "canh_bao_sai_lech": "Cảnh báo sai lệch giữa các tài liệu nếu có, hoặc chuỗi rỗng",
+  "thongTinChuaRo": ["Danh sách các trường bị mờ, rách hoặc không đọc được"],
+  "cauHoiLamRo": ["Lưu ý hoặc câu hỏi cần HR kiểm tra lại"],
+  "thongTinGiaDinh": [
+    { "quanHe": "Bố/Mẹ/Vợ/Chồng...", "hoTen": "...", "namSinh": "YYYY", "ngheNghiep": "..." }
   ],
-};
+  "thanhVienHoGiaDinh": [
+    { "hoTen": "...", "ngaySinh": "YYYY-MM-DD", "quanHeVoiChuHo": "...", "gioiTinh": "Nam/Nữ", "diaChiThuongTru": "...", "quocTich": "Việt Nam", "danToc": "Kinh" }
+  ],
+  "text": "Nguyên văn tóm tắt toàn bộ nội dung đọc được trên tài liệu"
+}`;
 
 // Normalize date string into YYYY-MM-DD or YYYY if valid
 export function normalizeDateToISO(val: string): string {
@@ -170,13 +123,32 @@ export async function extractEmployeeWithGeminiVision(
     };
   }
 
-  // Build multimodal parts: one inlineData part per image + instruction text
+  // Build multimodal parts: optimize images with sharp if oversized for instant transfer
   const parts: any[] = [];
   for (const doc of documents) {
+    let base64ToSend = doc.base64Data;
+    let mimeToSend = doc.mimeType || 'image/jpeg';
+
+    if (doc.base64Data && !doc.mimeType?.includes('pdf')) {
+      try {
+        const buffer = Buffer.from(doc.base64Data, 'base64');
+        if (buffer.length > 200_000) {
+          const resized = await sharp(buffer)
+            .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 85 })
+            .toBuffer();
+          base64ToSend = resized.toString('base64');
+          mimeToSend = 'image/jpeg';
+        }
+      } catch {
+        base64ToSend = doc.base64Data;
+      }
+    }
+
     parts.push({
       inlineData: {
-        mimeType: doc.mimeType || 'image/jpeg',
-        data: doc.base64Data,
+        mimeType: mimeToSend,
+        data: base64ToSend,
       },
     });
   }
@@ -187,25 +159,44 @@ export async function extractEmployeeWithGeminiVision(
     }Thực hiện kiểm tra chéo (Cross-check) thông tin giữa CCCD và Sơ yếu lý lịch và cảnh báo nếu có mâu thuẫn. Chuẩn hóa ngày tháng theo YYYY-MM-DD và CCCD theo chuỗi số liền mạch.`,
   });
 
-  const response = await ai.models.generateContent({
-    model: 'gemini-3.8-flash',
-    contents: {
-      parts,
-    },
-    config: {
-      systemInstruction: FAST_SYSTEM_INSTRUCTION,
-      temperature: 0.1,
-      maxOutputTokens: 4096,
-      responseMimeType: 'application/json',
-      responseSchema: FAST_RESPONSE_SCHEMA,
-    },
-  });
+  // Call gemini-3.8-flash with ThinkingLevel.LOW and no responseSchema for maximum speed (sub-3s)
+  let response: any;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: {
+          parts,
+        },
+        config: {
+          systemInstruction: FAST_SYSTEM_INSTRUCTION,
+          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+          temperature: 0.1,
+          maxOutputTokens: 4096,
+          responseMimeType: 'application/json',
+        },
+      });
+      break;
+    } catch (err: any) {
+      if (attempt === 0 && (err?.status === 503 || err?.status === 429 || String(err?.message).includes('high demand'))) {
+        await new Promise((r) => setTimeout(r, 600));
+        continue;
+      }
+      throw err;
+    }
+  }
 
-  const rawText = response.text?.trim() || '{}';
+  let rawText = response?.text?.trim() || '{}';
+  if (rawText.startsWith('```json')) {
+    rawText = rawText.replace(/^```json\s*/, '').replace(/```\s*$/, '').trim();
+  } else if (rawText.startsWith('```')) {
+    rawText = rawText.replace(/^```\s*/, '').replace(/```\s*$/, '').trim();
+  }
+
   let parsed: any;
   try {
     parsed = JSON.parse(rawText);
-  } catch (err) {
+  } catch {
     throw new OCRError('Gemini Vision không trả về định dạng JSON hợp lệ.', 500);
   }
 
@@ -237,10 +228,12 @@ export async function extractEmployeeWithGeminiVision(
     noiCap: (parsed.noiCap || '').toString().trim(),
     queQuan: (parsed.queQuan || '').toString().trim(),
     diaChiThuongTru: (parsed.diaChiThuongTru || '').toString().trim(),
+    diaChiTamTru: (parsed.diaChiTamTru || '').toString().trim(),
     nguonDiaChi: 'CCCD',
     soDienThoai: (parsed.soDienThoai || '').toString().trim(),
     emailCaNhan: (parsed.emailCaNhan || '').toString().trim(),
     danToc: (parsed.danToc || '').toString().trim(),
+    tonGiao: (parsed.tonGiao || '').toString().trim(),
     tinhTrangHonNhan: (parsed.tinhTrangHonNhan || '').toString().trim(),
     congViecDuKien: '',
     chucVu: '',
