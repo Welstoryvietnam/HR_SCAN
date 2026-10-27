@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NhanSuRecord, UserProfile, TieuChuanLuongItem } from '../types';
-import { generateExcel43Columns } from '../utils/excelExport';
+import { exportBienDongNhanSuExcel } from '../utils/excelExport';
+import { exportHouseholdAppendix } from '../utils/householdExport';
 import { EditRecordModal } from './EditRecordModal';
 import {
   Download,
@@ -72,8 +73,8 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
   // Danh sách các Khối duy nhất hiện có trong dữ liệu
   const uniqueKhois = Array.from(new Set(records.map((r) => r.khoi).filter(Boolean)));
 
-  // Xuất file Excel (.xlsx) chuẩn 43 cột định dạng 4 dải màu Header
-  const handleDownloadExcel43 = async () => {
+  // Xuất file Excel (.xlsx) Mẫu Biến Động Nhân Sự chuẩn 44 cột (theo quy định sáp nhập & VNeID)
+  const handleDownloadExcelBienDong = async () => {
     setIsExporting(true);
     try {
       const recordsToExport = filteredRecords.length > 0 ? filteredRecords : records;
@@ -81,7 +82,11 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
         alert('Không có bản ghi nào để xuất file Excel.');
         return;
       }
-      await generateExcel43Columns(recordsToExport, 'Mau_Bien_Dong_Nhan_Su_Tong_Hop.xlsx');
+      const fileName =
+        recordsToExport.length === 1
+          ? `Mau_Bien_Dong_Nhan_Su_${recordsToExport[0].hoVaTen.trim().replace(/\s+/g, '_')}.xlsx`
+          : `Mau_Bien_Dong_Nhan_Su_${recordsToExport.length}_Nhan_Vien.xlsx`;
+      await exportBienDongNhanSuExcel(recordsToExport, fileName);
     } catch (err) {
       alert('Lỗi xuất file Excel: ' + (err as Error).message);
     } finally {
@@ -89,40 +94,20 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
     }
   };
 
-  // Tải xuống file CSV chuẩn Excel "Bang_Tong_Hop_Nhan_Su.csv" (Chỉ Quản trị viên)
-  const handleDownloadCsv = async () => {
-    if (!isAdmin) {
-      alert('Chỉ Quản trị viên (Admin) mới có quyền tải xuống file Bảng tổng hợp nhân sự.');
-      return;
-    }
-
-    setIsExporting(true);
+  const [isExportingHousehold, setIsExportingHousehold] = useState(false);
+  const handleExportHousehold = async () => {
+    setIsExportingHousehold(true);
     try {
-      const response = await fetch('/api/export/csv', {
-        headers: {
-          'x-user-email': currentUser.email,
-          'Authorization': `Bearer ${currentUser.sessionToken || ''}`,
-        },
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || 'Không thể tải xuống file CSV');
+      const recordsToExport = filteredRecords.length > 0 ? filteredRecords : records;
+      if (recordsToExport.length === 0) {
+        alert('Không có bản ghi nào để xuất phụ lục hộ gia đình.');
+        return;
       }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'Bang_Tong_Hop_Nhan_Su.csv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      await exportHouseholdAppendix(recordsToExport);
     } catch (err) {
-      alert('Lỗi xuất file CSV: ' + (err as Error).message);
+      alert('Lỗi xuất phụ lục hộ gia đình: ' + (err as Error).message);
     } finally {
-      setIsExporting(false);
+      setIsExportingHousehold(false);
     }
   };
 
@@ -147,34 +132,34 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             {isAdmin
-              ? 'Quản trị viên có đặc quyền xem toàn bộ nhân sự các phòng ban và xuất báo cáo Excel/CSV.'
+              ? 'Quản trị viên có đặc quyền xem toàn bộ nhân sự các phòng ban và xuất file Biến Động Nhân Sự (44 Cột).'
               : `Chế độ nhân viên: Bạn chỉ xem được các hồ sơ được gửi từ tài khoản ${currentUser.email}.`}
           </p>
         </div>
 
-        {/* Nút bấm tải xuống Excel 43 cột và CSV */}
+        {/* Nút bấm xuất file Biến Động Nhân Sự (44 Cột) & Phụ lục hộ gia đình - Giống hệt Bước 4 */}
         <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={handleDownloadExcel43}
+            type="button"
+            onClick={handleDownloadExcelBienDong}
             disabled={isExporting || records.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-yellow-400 hover:bg-yellow-300 text-slate-900 rounded-xl text-xs sm:text-sm font-bold shadow-sm transition disabled:opacity-50"
-            title="Xuất file Excel (.xlsx) mẫu biến động nhân sự chuẩn 44 cột"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs hover:shadow-md transition disabled:opacity-50 cursor-pointer"
+            title="Xuất file mẫu biến động nhân sự chuẩn 44 cột theo quy định sáp nhập & VNeID"
           >
-            <Download className="w-4 h-4 text-slate-900" />
-            <span>{isExporting ? 'Đang xuất Excel...' : 'Xuất Mẫu Biến Động (.xlsx)'}</span>
+            <Download className="w-4 h-4 text-white" />
+            <span>{isExporting ? 'Đang tạo File Excel...' : 'Xuất file Biến Động Nhân Sự (44 Cột)'}</span>
           </button>
 
-          {isAdmin && (
-            <button
-              onClick={handleDownloadCsv}
-              disabled={isExporting || records.length === 0}
-              className="inline-flex items-center gap-2 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs sm:text-sm font-medium transition disabled:opacity-50"
-              title="Tải bảng tổng hợp toàn bộ nhân sự chuẩn UTF-8 CSV"
-            >
-              <Download className="w-4 h-4" />
-              <span>CSV</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleExportHousehold}
+            disabled={isExportingHousehold || records.length === 0}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-indigo-50 text-indigo-800 border-2 border-indigo-300 rounded-xl text-xs sm:text-sm font-bold shadow-2xs hover:shadow-xs transition disabled:opacity-50 cursor-pointer"
+            title="Xuất phụ lục hộ gia đình theo chuẩn 8 cột từ dữ liệu VNeID"
+          >
+            <Users className="w-4 h-4 text-indigo-700" />
+            <span>{isExportingHousehold ? 'Đang tạo phụ lục...' : 'Xuất phụ lục hộ gia đình'}</span>
+          </button>
         </div>
       </div>
 
