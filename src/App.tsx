@@ -631,6 +631,7 @@ export default function App() {
                   onCheckpoint={saveExtractionCheckpoint}
                   employeeGroups={employeeGroups}
                   onEmployeeGroupsChange={setEmployeeGroups}
+                  existingRecords={records}
                   onProceedToStep2WithBatch={(list) => {
                     setDraftFormState(undefined);
                     setImages(employeeGroups.flatMap(group => group.documents));

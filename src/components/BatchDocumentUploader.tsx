@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, Sparkles, ArrowRight, FileText, Camera, Zap, Clock, Loader2 } from 'lucide-react';
-import { BatchEmployeeDraft, EmployeeDocumentGroup, OptimizedImageFile } from '../types';
+import { Plus, Trash2, Sparkles, ArrowRight, FileText, Camera, Zap, Clock, Loader2, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { BatchEmployeeDraft, EmployeeDocumentGroup, NhanSuRecord, OptimizedImageFile } from '../types';
 import { optimizeImageFile } from '../utils/imageOptimizer';
 import { extractOCRGroup } from '../utils/ocrClient';
 import { prepareEmployees, runBatchExtraction } from '../utils/batchExtraction';
-import {DocumentImageEditor} from './DocumentImageEditor';
+import { DocumentImageEditor } from './DocumentImageEditor';
+import { checkGroupDuplicateCCCD } from '../utils/duplicateCheck';
 
 
 interface Props {
@@ -15,9 +16,10 @@ interface Props {
   employees: BatchEmployeeDraft[];
   onDraftsChange?: (employees: BatchEmployeeDraft[]) => void;
   onCheckpoint?: (employees:BatchEmployeeDraft[],groups:EmployeeDocumentGroup[]) => Promise<void>;
+  existingRecords?: NhanSuRecord[];
 }
 
-export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChange, employees: previousEmployees, onDraftsChange, onCheckpoint }: Props) {
+export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChange, employees: previousEmployees, onDraftsChange, onCheckpoint, existingRecords = [] }: Props) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
@@ -200,16 +202,213 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
       <div><h3 className="font-bold text-slate-900">Tài liệu theo từng nhân viên</h3></div>
       <button type="button" disabled={busy} onClick={addGroup} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 disabled:opacity-50"><Plus className="h-4 w-4" />Thêm nhân viên</button>
     </div>
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{groups.map((group,index) => <div key={group.id} className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
-      <div className="flex items-center justify-between"><span className="text-xs font-bold text-blue-700">Nhân viên {index + 1}</span><button type="button" disabled={busy} aria-label={`Bỏ nhóm nhân viên ${index + 1}`} onClick={() => onChange(groups.filter(item => item.id !== group.id))} className="rounded p-1 text-slate-400 hover:text-rose-600 disabled:opacity-50"><Trash2 className="h-4 w-4" /></button></div>
-      <input aria-label={`Tên nhóm nhân viên ${index + 1}`} placeholder="Họ tên nhân viên (có thể bổ sung sau)" disabled={busy} value={group.label} onChange={event => onChange(groups.map(item => item.id === group.id ? {...item,label:event.target.value} : item))} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs" />
-      <label className="block rounded-lg border border-dashed border-blue-300 bg-blue-50/40 p-3 text-xs text-blue-700"><span className="mb-2 block font-semibold">Thêm ảnh / PDF cho nhân viên {index + 1}</span><input aria-label={`Tài liệu nhân viên ${index + 1}`} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple disabled={busy} onChange={event => { const input=event.currentTarget; void upload(group.id,input.files); input.value=''; }} className="w-full text-[11px] file:mr-2 file:rounded file:border-0 file:bg-blue-100 file:px-2 file:py-1 file:text-blue-700" /></label>
-      <ul className="space-y-2">{group.documents.map(document => <li key={document.id} className="rounded border border-slate-100 p-2 text-xs text-slate-600"><div className="flex items-center gap-1"><FileText className="h-3 w-3 shrink-0" /><span className="truncate flex-1">{document.fileName}</span><button type="button" disabled={busy} aria-label={`Bỏ ${document.fileName} của nhân viên ${index + 1}`} onClick={() => onChange(groups.map(item => item.id === group.id ? {...item,documents:item.documents.filter(file => file.id !== document.id)} : item))} className="p-1 text-slate-400 hover:text-rose-600"><Trash2 className="h-3 w-3" /></button></div>{document.mimeType.startsWith('image/') && <button type="button" disabled={busy} onClick={()=>setEditing({groupId:group.id,document})} aria-label={`Xem, xoay hoặc cắt ảnh ${document.fileName} nhân viên ${index+1}`} className="mt-1 rounded bg-blue-50 px-2 py-1.5 font-semibold text-blue-700">Xem / Xoay / Cắt</button>}</li>)}</ul>
-      <label className={`inline-flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 ${busy ? 'opacity-50' : 'cursor-pointer hover:bg-blue-50'}`}><Camera className="h-3.5 w-3.5" />Chụp ảnh / chọn ảnh<input className="sr-only" aria-label={`Chụp ảnh cho nhân viên ${index + 1}`} type="file" accept="image/*" capture="environment" disabled={busy} onChange={event => {const input=event.currentTarget; void upload(group.id,input.files); input.value='';}} /></label>
-      <p className="text-[11px] text-slate-400">{group.documents.length} tài liệu • 1 nhân viên</p>
-      <p className="text-xs font-semibold text-blue-700">{({waiting:'Đang chờ',running:scanMode === 'ai' ? '⚡ Đang quét AI Siêu Tốc…' : 'Đang quét…',success:'Đã trích xuất',failed:'Cần thử lại / nhập tay'})[previousEmployees.find(employee=>employee.id===group.id)?.extractionStatus || 'waiting']}</p>
-      {previousEmployees.find(employee=>employee.id===group.id)?.extractionError && <p className="text-xs text-rose-700">{previousEmployees.find(employee=>employee.id===group.id)?.extractionError}</p>}
-    </div>)}</div>
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{groups.map((group,index) => {
+      const draftEmployee = previousEmployees.find(employee => employee.id === group.id);
+      const duplicateInfo = checkGroupDuplicateCCCD(group, draftEmployee, existingRecords, groups, previousEmployees);
+      const isSystemDup = duplicateInfo?.duplicateType === 'system';
+
+      return (
+        <div
+          key={group.id}
+          className={`space-y-3 rounded-xl border p-3.5 transition-colors ${
+            duplicateInfo
+              ? isSystemDup
+                ? 'border-rose-400 bg-rose-50/20 shadow-xs'
+                : 'border-amber-400 bg-amber-50/20 shadow-xs'
+              : 'border-slate-200 bg-white'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-bold text-blue-700">Nhân viên {index + 1}</span>
+              {duplicateInfo && (
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                    isSystemDup
+                      ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                      : 'bg-amber-100 text-amber-800 border border-amber-300'
+                  }`}
+                  title={duplicateInfo.message}
+                >
+                  <AlertTriangle className="h-3 w-3 shrink-0" />
+                  {isSystemDup ? 'Trùng CCCD Hệ Thống' : 'Trùng CCCD Đợt Tải'}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={`Bỏ nhóm nhân viên ${index + 1}`}
+              onClick={() => onChange(groups.filter(item => item.id !== group.id))}
+              className="rounded p-1 text-slate-400 hover:text-rose-600 disabled:opacity-50"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+
+          <input
+            aria-label={`Tên nhóm nhân viên ${index + 1}`}
+            placeholder="Họ tên nhân viên (có thể bổ sung sau)"
+            disabled={busy}
+            value={group.label}
+            onChange={event => onChange(groups.map(item => item.id === group.id ? {...item,label:event.target.value} : item))}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+          />
+
+          <label className="block rounded-lg border border-dashed border-blue-300 bg-blue-50/40 p-3 text-xs text-blue-700">
+            <span className="mb-2 block font-semibold">Thêm ảnh / PDF cho nhân viên {index + 1}</span>
+            <input
+              aria-label={`Tài liệu nhân viên ${index + 1}`}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              multiple
+              disabled={busy}
+              onChange={event => {
+                const input = event.currentTarget;
+                void upload(group.id, input.files);
+                input.value = '';
+              }}
+              className="w-full text-[11px] file:mr-2 file:rounded file:border-0 file:bg-blue-100 file:px-2 file:py-1 file:text-blue-700"
+            />
+          </label>
+
+          <ul className="space-y-2">
+            {group.documents.map(document => (
+              <li key={document.id} className="rounded border border-slate-100 p-2 text-xs text-slate-600">
+                <div className="flex items-center gap-1">
+                  <FileText className="h-3 w-3 shrink-0" />
+                  <span className="truncate flex-1">{document.fileName}</span>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-label={`Bỏ ${document.fileName} của nhân viên ${index + 1}`}
+                    onClick={() => onChange(groups.map(item => item.id === group.id ? {...item,documents:item.documents.filter(file => file.id !== document.id)} : item))}
+                    className="p-1 text-slate-400 hover:text-rose-600"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
+                {document.mimeType.startsWith('image/') && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setEditing({groupId:group.id,document})}
+                    aria-label={`Xem, xoay hoặc cắt ảnh ${document.fileName} nhân viên ${index+1}`}
+                    className="mt-1 rounded bg-blue-50 px-2 py-1.5 font-semibold text-blue-700"
+                  >
+                    Xem / Xoay / Cắt
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <label className={`inline-flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 ${busy ? 'opacity-50' : 'cursor-pointer hover:bg-blue-50'}`}>
+            <Camera className="h-3.5 w-3.5" />
+            Chụp ảnh / chọn ảnh
+            <input
+              className="sr-only"
+              aria-label={`Chụp ảnh cho nhân viên ${index + 1}`}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              disabled={busy}
+              onChange={event => {
+                const input = event.currentTarget;
+                void upload(group.id, input.files);
+                input.value = '';
+              }}
+            />
+          </label>
+
+          <p className="text-[11px] text-slate-400">{group.documents.length} tài liệu • 1 nhân viên</p>
+
+          <p className="text-xs font-semibold text-blue-700">
+            {({waiting:'Đang chờ',running:scanMode === 'ai' ? '⚡ Đang quét AI Siêu Tốc…' : 'Đang quét…',success:'Đã trích xuất',failed:'Cần thử lại / nhập tay'})[draftEmployee?.extractionStatus || 'waiting']}
+          </p>
+
+          {draftEmployee?.extractionError && (
+            <p className="text-xs text-rose-700">{draftEmployee.extractionError}</p>
+          )}
+
+          {/* HỘP CẢNH BÁO TRÙNG LẶP CCCD CHI TIẾT */}
+          {duplicateInfo && (
+            <div
+              className={`rounded-xl border p-3 text-xs space-y-2 shadow-2xs ${
+                isSystemDup
+                  ? 'border-rose-300 bg-rose-50/95 text-rose-950'
+                  : 'border-amber-300 bg-amber-50/95 text-amber-950'
+              }`}
+              role="alert"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 font-bold text-xs">
+                  <AlertTriangle className={`h-4 w-4 shrink-0 ${isSystemDup ? 'text-rose-600' : 'text-amber-600'}`} />
+                  <span>{isSystemDup ? 'Cảnh báo: Đã tồn tại trong hệ thống' : 'Cảnh báo: Trùng lặp trong đợt tải'}</span>
+                </div>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white font-bold border border-slate-200">
+                  {duplicateInfo.detectedCCCD}
+                </span>
+              </div>
+
+              <p className="text-[11px] leading-relaxed">
+                Số CCCD <strong>{duplicateInfo.detectedCCCD}</strong> {
+                  duplicateInfo.detectionSource === 'ocr'
+                    ? 'trích xuất được từ ảnh CCCD/VNeID sau khi quét'
+                    : duplicateInfo.detectionSource === 'filename'
+                    ? 'phát hiện ngay từ tên tệp hình ảnh đính kèm'
+                    : 'nhập từ nhãn nhân viên'
+                } trùng với hồ sơ:
+              </p>
+
+              {duplicateInfo.matchedRecord && (
+                <div className="rounded-lg bg-white p-2.5 border border-rose-200 text-[11px] space-y-1 shadow-2xs">
+                  <div className="font-bold text-slate-900 flex items-center justify-between">
+                    <span>👤 {duplicateInfo.matchedRecord.hoVaTen || 'Chưa rõ họ tên'}</span>
+                    {duplicateInfo.matchedRecord.id && (
+                      <span className="font-mono text-[10px] text-slate-500 font-normal">
+                        Mã: {duplicateInfo.matchedRecord.id}
+                      </span>
+                    )}
+                  </div>
+                  {duplicateInfo.matchedRecord.chucVu && (
+                    <div className="text-slate-700">
+                      💼 Chức vụ: <span className="font-semibold text-slate-900">{duplicateInfo.matchedRecord.chucVu}</span> {duplicateInfo.matchedRecord.congViecDuKien ? `(${duplicateInfo.matchedRecord.congViecDuKien})` : ''}
+                    </div>
+                  )}
+                  {(duplicateInfo.matchedRecord.khoi || duplicateInfo.matchedRecord.ban || duplicateInfo.matchedRecord.phong) && (
+                    <div className="text-slate-600">
+                      🏢 Đơn vị: {[duplicateInfo.matchedRecord.khoi, duplicateInfo.matchedRecord.ban, duplicateInfo.matchedRecord.phong].filter(Boolean).join(' > ')}
+                    </div>
+                  )}
+                  {duplicateInfo.matchedRecord.ngayVaoLam && (
+                    <div className="text-slate-600">
+                      📅 Ngày vào làm: <strong>{duplicateInfo.matchedRecord.ngayVaoLam}</strong>
+                    </div>
+                  )}
+                  {duplicateInfo.matchedRecord.timestamp && (
+                    <div className="text-[10px] text-slate-400">
+                      Đã lưu lúc: {new Date(duplicateInfo.matchedRecord.timestamp).toLocaleDateString('vi-VN')} {duplicateInfo.matchedRecord.userEmail ? `• Người tạo: ${duplicateInfo.matchedRecord.userEmail}` : ''}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {duplicateInfo.matchedBatchEmployee && (
+                <div className="rounded-lg bg-white p-2.5 border border-amber-200 text-[11px] space-y-1 shadow-2xs">
+                  <div className="font-bold text-slate-900">
+                    ⚠️ Trùng với: Nhân viên {(duplicateInfo.matchedBatchIndex ?? 0) + 1} ({duplicateInfo.matchedBatchEmployee.hoVaTen || 'Chưa đặt tên'})
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    Cả hai nhóm đều có số CCCD {duplicateInfo.detectedCCCD}. Vui lòng gom chung tài liệu vào một nhóm hoặc kiểm tra lại tệp ảnh.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    })}</div>
     {!groups.length && <p className="py-6 text-center text-sm text-slate-500">Bấm “Thêm nhân viên” để bắt đầu danh sách.</p>}
     {error && <p role="alert" className="whitespace-pre-wrap text-xs text-rose-700">{error}</p>}
     
@@ -276,6 +475,41 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
         </div>
       </div>
     )}
+
+    {/* TỔNG HỢP CẢNH BÁO TRÙNG LẶP NẾU CÓ */}
+    {(() => {
+      const duplicateSummaries = groups
+        .map((g, idx) => ({
+          index: idx + 1,
+          label: g.label || `Nhân viên ${idx + 1}`,
+          dup: checkGroupDuplicateCCCD(g, previousEmployees.find(e => e.id === g.id), existingRecords, groups, previousEmployees)
+        }))
+        .filter((item): item is { index: number; label: string; dup: NonNullable<typeof item.dup> } => item.dup !== null);
+
+      if (!duplicateSummaries.length) return null;
+
+      return (
+        <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-3.5 text-xs text-amber-950 shadow-xs space-y-2" role="alert">
+          <div className="flex items-center gap-2 font-bold text-amber-900 text-sm">
+            <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+            <span>Cảnh báo trùng lặp: Phát hiện {duplicateSummaries.length} hồ sơ trùng số CCCD!</span>
+          </div>
+          <p className="text-[11px] text-amber-800">
+            Hệ thống phát hiện các hồ sơ sau có số CCCD trùng lặp với danh sách nhân sự đã lưu hoặc trùng nhau trong cùng đợt tải:
+          </p>
+          <ul className="space-y-1 pl-4 list-disc text-[11px] text-slate-800">
+            {duplicateSummaries.map((item, i) => (
+              <li key={i}>
+                <strong className="text-amber-950">{item.label} (NV {item.index}):</strong> {item.dup.message}
+              </li>
+            ))}
+          </ul>
+          <p className="text-[10px] text-amber-700 italic">
+            * Lưu ý: Vui lòng rà soát kỹ các hồ sơ trên để tránh nhập trùng dữ liệu. Bạn vẫn có thể tiếp tục đối chiếu ở Bước 2 nếu đây là cập nhật hồ sơ cũ.
+          </p>
+        </div>
+      );
+    })()}
 
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-blue-100 pt-3">
       <p role="status" className="text-xs text-slate-500">

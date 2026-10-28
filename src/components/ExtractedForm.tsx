@@ -1059,6 +1059,39 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               </div>
             </div>
 
+            {/* CẢNH BÁO TRÙNG LẶP CCCD VỚI HỆ THỐNG */}
+            {(() => {
+              const duplicateRecordsInForm = (batchList.length ? batchList : [currentRecordObject])
+                .map((emp, idx) => {
+                  const clean = (emp.soCCCD || '').replace(/\D/g, '');
+                  if (clean.length < 9) return null;
+                  const matched = existingRecords?.find(r => r.soCCCD && r.soCCCD.replace(/\D/g, '') === clean);
+                  return matched ? { employee: emp, matched, index: idx + 1 } : null;
+                })
+                .filter((item): item is { employee: BatchEmployeeDraft | NhanSuRecord; matched: NhanSuRecord; index: number } => item !== null);
+
+              if (!duplicateRecordsInForm.length) return null;
+
+              return (
+                <div className="rounded-xl border border-rose-300 bg-rose-50/95 p-3.5 text-xs text-rose-950 shadow-xs space-y-2 animate-fade-in" role="alert">
+                  <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
+                    <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
+                    <span>Cảnh báo: Phát hiện {duplicateRecordsInForm.length} nhân viên có số CCCD đã tồn tại trong hệ thống!</span>
+                  </div>
+                  <ul className="space-y-1.5 pl-4 list-disc text-[11px] text-slate-800">
+                    {duplicateRecordsInForm.map((item, i) => (
+                      <li key={i}>
+                        <strong>NV {item.index} ({item.employee.hoVaTen || 'Chưa rõ họ tên'}) - CCCD {item.employee.soCCCD}:</strong> Trùng với hồ sơ đã lưu <strong className="text-rose-950">{item.matched.hoVaTen}</strong> (Chức vụ: {item.matched.chucVu || 'Chưa rõ'}{[item.matched.khoi, item.matched.phong].filter(Boolean).length ? ` - ${[item.matched.khoi, item.matched.phong].filter(Boolean).join(' > ')}` : ''}{item.matched.id ? ` - Mã: ${item.matched.id}` : ''}).
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[10px] text-rose-700 italic">
+                    * Lưu ý: Vui lòng kiểm tra kỹ để tránh trùng lặp dữ liệu trước khi hoàn tất lưu vào danh sách nhân sự chính thức.
+                  </p>
+                </div>
+              );
+            })()}
+
             <EmployeeReviewGrid
               employees={batchList.length ? batchList : [{...currentRecordObject, id: 'single-review', hoVaTen, cauHoiLamRo: initialData?.cauHoiLamRo, thongTinChuaRo: initialData?.thongTinChuaRo}]}
               existingRecords={existingRecords}

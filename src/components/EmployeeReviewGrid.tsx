@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { BatchEmployeeDraft, NhanSuRecord } from '../types';
 import { Search, Users, AlertTriangle, Plus, Trash2 } from 'lucide-react';
 import { HouseholdMembersEditor } from './HouseholdMembersEditor';
+import { findSystemDuplicateCCCD, findBatchDuplicateCCCD, normalizeCCCD } from '../utils/duplicateCheck';
 
 interface Props {
   employees: BatchEmployeeDraft[];
@@ -19,10 +20,19 @@ export function EmployeeReviewGrid({ employees, existingRecords, onChange }: Pro
     if (!/^\d{12}$/.test(employee.soCCCD.trim())) messages.push('CCCD cần đủ 12 chữ số');
     if (!employee.ngaySinh.trim()) messages.push('Thiếu ngày sinh');
     if (!employee.diaChiThuongTru.trim()) messages.push('Thiếu địa chỉ');
-    if (employee.soCCCD.trim() && (
-      employees.some(other => other.id !== employee.id && other.soCCCD.trim() === employee.soCCCD.trim()) ||
-      existingRecords.some(record => record.soCCCD.trim() === employee.soCCCD.trim())
-    )) messages.push('Trùng CCCD');
+    if (employee.soCCCD.trim()) {
+      const clean = normalizeCCCD(employee.soCCCD);
+      if (clean.length >= 9) {
+        const sysMatch = findSystemDuplicateCCCD(clean, existingRecords);
+        if (sysMatch) {
+          messages.push(`Trùng CCCD (${clean}) với hồ sơ đã lưu: ${sysMatch.hoVaTen} (${sysMatch.chucVu || 'Chưa rõ'}, mã: ${sysMatch.id})`);
+        }
+        const batchMatch = findBatchDuplicateCCCD(clean, employee.id, employees);
+        if (batchMatch) {
+          messages.push(`Trùng CCCD (${clean}) với Nhân viên ${batchMatch.index + 1} (${batchMatch.employee.hoVaTen || 'Chưa đặt tên'}) trong cùng đợt tải`);
+        }
+      }
+    }
     if (employee.canh_bao_sai_lech) messages.push(`⚠️ Đối soát chéo: ${employee.canh_bao_sai_lech}`);
     return [...messages, ...(employee.cauHoiLamRo || [])];
   };
@@ -68,7 +78,42 @@ export function EmployeeReviewGrid({ employees, existingRecords, onChange }: Pro
                   <label className="block space-y-1"><span className="text-[10px] text-slate-500">Giới tính</span><select aria-label={`Giới tính nhân viên ${index + 1}`} value={employee.gioiTinh} onChange={event => onChange(employee.id, {gioiTinh:event.target.value})} className={inputClass}><option value="">Chưa rõ</option>{['Nam','Nữ','Khác'].map(value => <option key={value}>{value}</option>)}</select></label>
                 </td>
                 <td className="min-w-32 border-b border-slate-200 p-3">{field('danToc','Dân tộc','OCR trích xuất hoặc nhập bổ sung')}</td>
-                <td className="min-w-56 space-y-2 border-b border-slate-200 p-3">{field('soCCCD','Số CCCD')}{field('ngayCap','Ngày cấp','DD/MM/YYYY')}{field('ngayHetHanCCCD','Ngày hết hạn CCCD','DD/MM/YYYY hoặc Không thời hạn')}{field('noiCap','Nơi cấp')}</td>
+                <td className="min-w-56 space-y-2 border-b border-slate-200 p-3">
+                  {field('soCCCD','Số CCCD')}
+                  {(() => {
+                    const clean = normalizeCCCD(employee.soCCCD);
+                    if (clean.length < 9) return null;
+                    const sys = findSystemDuplicateCCCD(clean, existingRecords);
+                    if (sys) {
+                      return (
+                        <div className="rounded-lg border border-rose-300 bg-rose-50 p-2 text-[11px] text-rose-900 shadow-2xs space-y-1">
+                          <div className="font-bold flex items-center gap-1 text-rose-700">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            <span>Đã tồn tại trong hệ thống!</span>
+                          </div>
+                          <div>👤 <strong>{sys.hoVaTen}</strong></div>
+                          {sys.chucVu && <div className="text-[10px] text-slate-600">💼 {sys.chucVu} (Mã: {sys.id})</div>}
+                        </div>
+                      );
+                    }
+                    const batch = findBatchDuplicateCCCD(clean, employee.id, employees);
+                    if (batch) {
+                      return (
+                        <div className="rounded-lg border border-amber-300 bg-amber-50 p-2 text-[11px] text-amber-900 shadow-2xs space-y-1">
+                          <div className="font-bold flex items-center gap-1 text-amber-700">
+                            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                            <span>Trùng với NV {batch.index + 1}!</span>
+                          </div>
+                          <div>👤 <strong>{batch.employee.hoVaTen || 'Chưa đặt tên'}</strong></div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                  {field('ngayCap','Ngày cấp','DD/MM/YYYY')}
+                  {field('ngayHetHanCCCD','Ngày hết hạn CCCD','DD/MM/YYYY hoặc Không thời hạn')}
+                  {field('noiCap','Nơi cấp')}
+                </td>
                 <td className="min-w-64 space-y-2 border-b border-slate-200 p-3">{field('soDienThoai','Số điện thoại')}{field('queQuan','Quê quán')}{field('diaChiThuongTru','Địa chỉ thường trú')}</td>
                 <td className="min-w-64 space-y-2 border-b border-slate-200 p-3">
                   {field('ghiChu','Ghi chú hồ sơ')}
