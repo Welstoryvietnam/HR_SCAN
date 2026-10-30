@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { CheckSquare, Download, Plus, RefreshCw, Save, Utensils, X } from 'lucide-react';
+import { Save, X } from 'lucide-react';
 import type { UserProfile } from '../../types';
-import type { AppSettings, Employee, EmployeeMealData, MealSession, MealType, Task, AuthUser } from './types';
+import type { AppSettings, Employee, EmployeeMealData, MealSession, Task } from './types';
+import TaskModule from './TaskModule';
 import MealModule,{MealDayDialog,defaultMealSession} from './MealModule';
 import { safeFetchJson } from '../../utils/apiHelper';
-import { getCurrentCycle, getCycleConfig, getCycleDays, getTodayDateString, formatVND } from './utils/cycleHelper';
+import { getCurrentCycle, getTodayDateString } from './utils/cycleHelper';
 
 type Meal = {id:string;employeeId:string;date:string;sessions:MealSession[];mealsCount:number};
 type Versioned<T> = {record:T;version:string};
@@ -18,7 +19,6 @@ const inputClass='w-full rounded-lg border border-slate-300 bg-white px-3 py-2 t
 const buttonClass='inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50';
 const statuses={pending:'Chưa thực hiện','in-progress':'Đang thực hiện',completed:'Hoàn thành'};
 const priorities={urgent:'Khẩn cấp',high:'Cao',medium:'Trung bình',low:'Thấp'};
-const mealTypes:MealType[]=['Bữa Sáng','Bữa Trưa','Bữa Tối','Bữa Đêm'];
 const newSession=()=>defaultMealSession('Bữa Trưa');
 const emptyTask=(id:string):Task=>({id:'',employeeId:id,title:'',description:'',dueDate:getTodayDateString(),status:'pending',assignedBy:'',priority:'medium',progress:0,resultNote:'',createdAt:'',updatedAt:''});
 
@@ -37,8 +37,6 @@ export default function HrmWorkspace({currentUser,module}:{currentUser:UserProfi
   const [settingsEditor,setSettingsEditor]=useState<Versioned<AppSettings>|null>(null);
   const [directory,setDirectory]=useState<{profiles:LegacyProfile[];accounts:{id:string;name:string;email:string}[]}|null>(null);
   const [profileEditor,setProfileEditor]=useState<Versioned<LegacyProfile>|null>(null);
-  const [statusFilter,setStatusFilter]=useState('all'),[assigneeFilter,setAssigneeFilter]=useState('all'),[query,setQuery]=useState('');
-  const [taskView,setTaskView]=useState<'list'|'board'>('board');
   const isAdmin=currentUser.role==='admin';
   const generation=useRef(0);
   useEffect(()=>{
@@ -57,10 +55,6 @@ export default function HrmWorkspace({currentUser,module}:{currentUser:UserProfi
   const refresh=()=>setRevision(n=>n+1);
   const mealData:Record<string,EmployeeMealData>={};
   for(const meal of meals){mealData[meal.employeeId]??={employeeId:meal.employeeId,records:{}};mealData[meal.employeeId].records[meal.date]=meal;}
-  const selectedMeals=meals.filter(m=>m.employeeId===employeeId);
-  const total=selectedMeals.reduce((sum,m)=>sum+m.mealsCount,0);
-  const name=(id:string)=>employees.find(e=>e.id===id)?.name || id;
-  const visibleTasks=tasks.filter(t=>(statusFilter==='all'||t.status===statusFilter)&&(assigneeFilter==='all'||t.employeeId===assigneeFilter)&&`${t.title} ${t.description} ${name(t.employeeId)}`.toLocaleLowerCase('vi').includes(query.toLocaleLowerCase('vi'))).sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
   const openMeal=(date:string,targetId=employeeId)=>action(async()=>{
     const previous=meals.find(m=>m.employeeId===targetId&&m.date===date);
     const loaded=previous?await api<Versioned<Meal>>('/meals/'+previous.id):null;
@@ -73,26 +67,13 @@ export default function HrmWorkspace({currentUser,module}:{currentUser:UserProfi
   });
 
   return <section className="space-y-5" aria-label={module==='meals'?'Khai báo tiền ăn bên ngoài':'Quản lý công việc nhân sự'}>
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h2 className="text-2xl font-bold flex items-center gap-2">{module==='meals'?<Utensils className="text-amber-600"/>:<CheckSquare className="text-indigo-600"/>}{module==='meals'?'Khai báo tiền ăn bên ngoài':'Quản lý công việc nhân sự'}</h2><p className="mt-1 text-sm text-slate-500">{module==='meals'?'Theo dõi bữa ăn khi đi tuyển dụng và công tác.':'Giao việc, theo dõi hạn hoàn thành và cập nhật kết quả.'}</p></div>
-      <button type="button" disabled={busy||loading} onClick={refresh} className="flex gap-2 items-center text-sm border rounded-lg bg-white px-3 py-2"><RefreshCw size={16}/>Tải lại</button>
-    </div>
     {error&&<div role="alert" className="border border-rose-200 rounded-xl bg-rose-50 text-rose-800 p-4">{error}<button type="button" disabled={busy||loading} className="ml-4 underline" onClick={refresh}>Thử tải lại</button></div>}
     {message&&<p role="status" className="bg-emerald-50 text-emerald-800 p-3 rounded-xl">{message}</p>}
     {loading&&<p role="status">Đang tải dữ liệu cloud…</p>}
-    {isAdmin&&<div className="space-y-3"><button type="button" disabled={busy} onClick={()=>action(async()=>setDirectory(directory?null:await api('/directory')))} className="text-sm text-indigo-700 underline">{directory?'Đóng liên kết tài khoản':'Nhân viên HRM-Mini & liên kết tài khoản'}</button>{directory&&<div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3"><p className="text-sm text-slate-600">Tài khoản HRM-Mini dùng mã nhân viên để đăng nhập. Chỉ liên kết thêm khi đã đối chiếu đúng người sở hữu hồ sơ.</p>{directory.profiles.length?directory.profiles.map(profile=><div key={profile.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 py-2"><div><p className="font-medium text-sm">{profile.name}</p><p className="text-xs text-slate-500">{profile.email} · {directory.accounts.find(a=>a.id===profile.accountId)?.name||'Chưa liên kết tài khoản'}</p></div><button type="button" disabled={busy} className="text-sm text-indigo-700 underline" onClick={()=>action(async()=>setProfileEditor(await api('/directory/'+profile.id)))}>Liên kết</button></div>):<p className="text-sm">Chưa có nhân viên được chuyển từ HRM-Mini.</p>}</div>}</div>}
+    {isAdmin&&module==='tasks'&&<div className="space-y-3"><button type="button" disabled={busy} onClick={()=>action(async()=>setDirectory(directory?null:await api('/directory')))} className="text-sm text-indigo-700 underline">{directory?'Đóng liên kết tài khoản':'Nhân viên HRM-Mini & liên kết tài khoản'}</button>{directory&&<div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3"><p className="text-sm text-slate-600">Tài khoản HRM-Mini dùng mã nhân viên để đăng nhập. Chỉ liên kết thêm khi đã đối chiếu đúng người sở hữu hồ sơ.</p>{directory.profiles.length?directory.profiles.map(profile=><div key={profile.id} className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 py-2"><div><p className="font-medium text-sm">{profile.name}</p><p className="text-xs text-slate-500">{profile.email} · {directory.accounts.find(a=>a.id===profile.accountId)?.name||'Chưa liên kết tài khoản'}</p></div><button type="button" disabled={busy} className="text-sm text-indigo-700 underline" onClick={()=>action(async()=>setProfileEditor(await api('/directory/'+profile.id)))}>Liên kết</button></div>):<p className="text-sm">Chưa có nhân viên được chuyển từ HRM-Mini.</p>}</div>}</div>}
     {!loading&&ready&&settings&&<>
       <fieldset disabled={busy} className="min-w-0 space-y-5">
-      {module==='meals'?<MealModule employees={employees} mealData={mealData} cycle={cycle} settings={settings} currentUser={{id:currentUser.id!,name:currentUser.name,employeeCode:currentUser.employeeCode,department:currentUser.department||'HR Group',role:currentUser.hrmRole||(isAdmin?'admin':'nhan_vien_nhan_su')}} selectedEmployeeId={employeeId} onSelectEmployee={setEmployeeId} onCycleChange={setCycle} busy={busy} onOpenDay={openMeal} onExport={exportMeals} onExportAll={()=>action(async()=>{const {exportDepartmentMealAllowanceToExcel}=await import('./utils/excelExport');await exportDepartmentMealAllowanceToExcel(employees,mealData,cycle,settings);})} onSettings={()=>action(async()=>setSettingsEditor(await api<Versioned<AppSettings>>('/settings')))}/>:<>
-        <div className="flex flex-wrap gap-3 bg-white border rounded-2xl p-4">
-          <label className="grow min-w-48 text-sm">Tìm công việc<input className={inputClass+' mt-1'} value={query} onChange={e=>setQuery(e.target.value)} placeholder="Tên công việc, người nhận…"/></label>
-          <label className="text-sm">Trạng thái<select className={inputClass+' mt-1'} value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}><option value="all">Tất cả</option>{Object.entries(statuses).map(([v,label])=><option key={v} value={v}>{label}</option>)}</select></label>
-          {isAdmin&&<label className="text-sm">Người nhận<select className={inputClass+' mt-1'} value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)}><option value="all">Tất cả nhân viên</option>{employees.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>}
-          <div className="flex items-end gap-2"><button type="button" className="border px-3 py-2 rounded-lg text-sm" onClick={()=>setTaskView(v=>v==='board'?'list':'board')}>{taskView==='board'?'Dạng danh sách':'Dạng bảng tiến độ'}</button>{isAdmin&&<button type="button" className={buttonClass} onClick={()=>setTaskEditor({task:emptyTask(employeeId),version:''})}><Plus size={16}/>Giao công việc</button>}</div>
-        </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[...Object.entries(statuses),['overdue','Quá hạn']].map(([status,label])=><div key={status} className="bg-white rounded-xl border p-4"><p className="text-sm text-slate-500">{label}</p><p className="text-2xl font-bold">{tasks.filter(t=>status==='overdue'?t.status!=='completed'&&t.dueDate<getTodayDateString():t.status===status).length}</p></div>)}</div>
-        {!visibleTasks.length?<div className="bg-white border rounded-2xl p-12 text-center text-slate-500">Chưa có công việc phù hợp.</div>:taskView==='board'?<div className="grid grid-cols-1 lg:grid-cols-3 gap-4">{Object.entries(statuses).map(([status,label])=><div key={status} className="rounded-2xl bg-slate-100 p-3 space-y-3"><h3 className="font-semibold px-1">{label} <span className="text-slate-500">({visibleTasks.filter(t=>t.status===status).length})</span></h3>{visibleTasks.filter(t=>t.status===status).map(task=><button type="button" key={task.id} onClick={()=>openTask(task)} className="block w-full rounded-xl border bg-white p-4 text-left shadow-sm hover:border-indigo-400"><span className="text-xs text-indigo-700">{priorities[task.priority || 'medium']}</span><h4 className="font-semibold mt-1">{task.title}</h4><p className="text-sm text-slate-500 mt-2">{name(task.employeeId)}</p><p className={`text-xs mt-2 ${task.dueDate<getTodayDateString()&&task.status!=='completed'?'text-rose-600':'text-slate-500'}`}>Hạn: {task.dueDate.split('-').reverse().join('/')}</p><progress aria-label={`Tiến độ ${task.title}`} className="w-full mt-3 accent-indigo-600" max={100} value={task.progress||0}/><p className="text-xs text-slate-500">{task.progress||0}% hoàn thành</p></button>)}</div>)}</div>:<div className="overflow-x-auto rounded-2xl border bg-white"><table className="w-full text-sm text-left"><thead className="bg-slate-100"><tr>{['Công việc','Người nhận','Hạn hoàn thành','Trạng thái','Tiến độ',''].map((h,i)=><th key={i} scope="col" className="p-3">{h}</th>)}</tr></thead><tbody>{visibleTasks.map(t=><tr className="border-t" key={t.id}><td className="p-3">{t.title}</td><td className="p-3">{name(t.employeeId)}</td><td className="p-3">{t.dueDate}</td><td className="p-3">{statuses[t.status]}</td><td className="p-3">{t.progress||0}%</td><td className="p-3"><button type="button" className="text-indigo-700 underline" onClick={()=>openTask(t)}>Chi tiết</button></td></tr>)}</tbody></table></div>}
-      </>}
+      {module==='meals'?<MealModule employees={employees} mealData={mealData} cycle={cycle} settings={settings} currentUser={{id:currentUser.id!,name:currentUser.name,employeeCode:currentUser.employeeCode,department:currentUser.department||'HR Group',role:currentUser.hrmRole||(isAdmin?'admin':'nhan_vien_nhan_su')}} selectedEmployeeId={employeeId} onSelectEmployee={setEmployeeId} onCycleChange={setCycle} busy={busy} onOpenDay={openMeal} onExport={exportMeals} onExportAll={()=>action(async()=>{const {exportDepartmentMealAllowanceToExcel}=await import('./utils/excelExport');await exportDepartmentMealAllowanceToExcel(employees,mealData,cycle,settings);})} onSettings={()=>action(async()=>setSettingsEditor(await api<Versioned<AppSettings>>('/settings')))}/>:<TaskModule employees={employees} tasks={tasks} ownEmployeeId={currentUser.id || employeeId} isAdmin={isAdmin} onCreate={(targetId=employeeId,date=getTodayDateString())=>setTaskEditor({task:{...emptyTask(targetId),dueDate:date},version:''})} onOpen={openTask}/>}
       </fieldset>
     </>}
 
@@ -125,3 +106,4 @@ function Editor({title,busy,error,onClose,onSubmit,children}:{title:string;busy:
   useEffect(()=>{ref.current?.showModal();},[]);
   return <dialog ref={ref} aria-label={title} onCancel={event=>{event.preventDefault();if(!busy)onClose();}} className="m-auto w-[min(94vw,640px)] max-h-[90dvh] rounded-2xl border border-slate-200 p-0 backdrop:bg-slate-900/40"><form onSubmit={e=>{e.preventDefault();onSubmit();}} className="p-5 space-y-4"><div className="flex items-center justify-between gap-4"><h3 className="font-bold text-lg">{title}</h3><button disabled={busy} type="button" onClick={onClose} aria-label="Đóng"><X size={20}/></button></div>{error&&<p role="alert" className="text-rose-800 bg-rose-50 rounded-lg p-3 text-sm">{error} Nếu dữ liệu đã thay đổi trên thiết bị khác, đóng hộp thoại, tải lại rồi mở lại để chỉnh sửa.</p>}<fieldset disabled={busy} className="space-y-4 min-w-0">{children}</fieldset><div className="flex justify-end gap-3"><button type="button" disabled={busy} onClick={onClose} className="border px-4 py-2 rounded-lg text-sm">Đóng</button><button type="submit" disabled={busy} className={buttonClass}><Save size={16}/>{busy?'Đang lưu…':'Lưu lên cloud'}</button></div></form></dialog>;
 }
+
