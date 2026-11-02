@@ -215,9 +215,14 @@ export async function extractOCRGroup(
         return {id:document.id,fileName:document.fileName,docType:document.docType,pages};
       })
     );
-    return await safeFetchJson<{success:boolean;data?:DocumentExtractionResult;error?:string;retryable?:boolean}>('/api/ocr/extract-profile',{
+    const result=await safeFetchJson<{success:boolean;data?:DocumentExtractionResult;error?:string;retryable?:boolean}>('/api/ocr/extract-profile',{
       method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({documents}),signal:AbortSignal.timeout(20_000),
     });
+    if(result.ok && result.data?.success && result.data.data && documents.some(document=>document.pages.some(page=>page.manualRotationSuggested))) {
+      const warning='Một hoặc nhiều ảnh có thể bị xoay ngang hoặc chữ chưa rõ. Hãy dùng “Xem / Xoay / Cắt” ở Bước 1 rồi quét lại riêng ảnh đó nếu thông tin còn thiếu.';
+      result.data.data.cauHoiLamRo=[...new Set([...(result.data.data.cauHoiLamRo || []),warning])];
+    }
+    return result;
   } catch(error) {
     return error instanceof OCRRequestError ? error.reply : {ok:false,error:(error as Error).message || 'Không đọc được tài liệu. Hãy kiểm tra PDF/ảnh.'};
   }
