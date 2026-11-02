@@ -131,13 +131,18 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
             percent: remaining === 0 ? 100 : Math.max(12, Math.min(95, actualPercent)),
           });
 
-          const checkpoint=list.filter(employee=>['success','failed'].includes(employee.extractionStatus || '')).map(employee=>`${employee.id}:${employee.extractionStatus}`).join('|');
-          if(checkpoint && checkpoint!==lastCheckpoint && !cloudFailed && onCheckpoint) {
+          // Do not upload all source images while a request is still retrying,
+          // and never turn an OCR failure into a second, confusing cloud-save
+          // failure. Save a checkpoint only after the batch finished and at
+          // least one profile was actually extracted.
+          const successful=list.filter(employee=>employee.extractionStatus==='success');
+          const checkpoint=successful.map(employee=>`${employee.id}:${employee.extractionStatus}`).join('|');
+          if(completed===totalCount && checkpoint && checkpoint!==lastCheckpoint && !cloudFailed && onCheckpoint) {
             lastCheckpoint=checkpoint;
-            try {await onCheckpoint(list,currentGroups.current);} catch(err) {cloudFailed=true;setError(`Chưa lưu được lên cloud: ${(err as Error).message} Kết quả vẫn còn trên màn hình. Sau khi khắc phục kết nối hoặc cấu hình, bấm Lưu tạm và chờ xác nhận lưu thành công trước khi đóng trang.`);}
+            try {await onCheckpoint(list,currentGroups.current);} catch(err) {cloudFailed=true;setError(`OCR đã xong nhưng chưa lưu được bản nháp cloud: ${(err as Error).message} Kết quả vẫn còn trên màn hình; bấm Lưu tạm khi mạng ổn định trước khi đóng trang.`);}
           }
         }});
-      if(mounted.current && !paused.current && !cloudFailed && employees.every(employee=>employee.extractionStatus==='success')) {
+      if(mounted.current && !paused.current && employees.every(employee=>employee.extractionStatus==='success')) {
         setProgressInfo(prev => ({ ...prev, percent: 100, estimatedSecondsLeft: 0 }));
         onProceed(employees);
       }

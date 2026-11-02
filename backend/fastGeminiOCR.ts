@@ -14,6 +14,11 @@ interface FastDocumentInput {
 
 // Memory cache for fast OCR calls (TTL 10 mins)
 const fastCache = new Map<string, { until: number; result: DocumentExtractionResult; pages: OCRPage[] }>();
+type FastVisionResult={result:DocumentExtractionResult;pages:Record<string,OCRPage>};
+// A mobile browser may retry after a slow connection even though the first
+// function invocation is still running. On the same function instance,
+// coalesce that exact work so its result can be reused by both requests.
+const fastInFlight = new Map<string, Promise<FastVisionResult>>();
 
 function getGenAIClient(): GoogleGenAI | null {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -98,7 +103,7 @@ export function formatISOToDisplayDate(val: string): string {
 export async function extractEmployeeWithGeminiVision(
   documents: FastDocumentInput[],
   label?: string
-): Promise<{ result: DocumentExtractionResult; pages: Record<string, OCRPage> }> {
+): Promise<FastVisionResult> {
   const ai = getGenAIClient();
   if (!ai) {
     throw new OCRError('Khóa GEMINI_API_KEY chưa được cấu hình trên máy chủ.', 503);
@@ -123,9 +128,22 @@ export async function extractEmployeeWithGeminiVision(
     };
   }
 
+  const pending=fastInFlight.get(cacheKey);
+  if(pending) return pending;
+  const task=extractUncached(ai,documents,label,cacheKey);
+  fastInFlight.set(cacheKey,task);
+  try {return await task;} finally {fastInFlight.delete(cacheKey);}
+}
+
+async function extractUncached(
+  ai: GoogleGenAI,
+  documents: FastDocumentInput[],
+  label: string | undefined,
+  cacheKey: string,
+): Promise<FastVisionResult> {
+
   // Build multimodal parts: optimize images with sharp if oversized for instant transfer
-  const parts: any[] = [];
-  for (const doc of documents) {
+  const parts:any[]=(await Promise.all(documents.map(async doc=>{
     let base64ToSend = doc.base64Data;
     let mimeToSend = doc.mimeType || 'image/jpeg';
 
@@ -133,7 +151,10 @@ export async function extractEmployeeWithGeminiVision(
       try {
         const buffer = Buffer.from(doc.base64Data, 'base64');
         if (buffer.length > 200_000) {
-          const resized = await sharp(buffer)
+          const resized = await sharp(buffer,{limitInputPixels:12_000_000})
+            // Applies EXIF camera orientation only; it never guesses or turns
+            // a document sideways based on OCR content.
+            .rotate()
             .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
             .jpeg({ quality: 85 })
             .toBuffer();
@@ -145,13 +166,13 @@ export async function extractEmployeeWithGeminiVision(
       }
     }
 
-    parts.push({
+    return {
       inlineData: {
         mimeType: mimeToSend,
         data: base64ToSend,
       },
-    });
-  }
+    };
+  })));
 
   parts.push({
     text: `Vui lòng bóc tách toàn bộ thông tin nhân sự từ các ảnh tài liệu đính kèm (CCCD, Sơ yếu lý lịch, v.v.). ${

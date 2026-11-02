@@ -2,14 +2,15 @@ import { OptimizedImageFile } from '../types';
 
 /**
  * Tối ưu hóa ảnh phía Client trước khi gửi lên API OCR:
- * - Giữ chữ nhỏ: tối đa 1800px ngang / 3200px dọc, giữ tỉ lệ
+ * - Giữ chữ nhỏ nhưng giới hạn payload di động để một hồ sơ nhiều ảnh không
+ *   làm Safari/Vercel hủy request trước khi AI trả kết quả.
  * - JPEG thích ứng, giữ PNG khi PNG nhỏ hơn; PDF giữ bản gốc
  * - Chuyển sang Base64 chuẩn và đo lường dung lượng tiết kiệm
  */
 export async function optimizeImageFile(
   file: File,
   docType: OptimizedImageFile['docType'] = 'khac',
-  maxWidth: number = 1800,
+  maxWidth: number = 1600,
   quality: number = 0.85
 ): Promise<OptimizedImageFile> {
   return new Promise((resolve, reject) => {
@@ -65,7 +66,7 @@ export async function optimizeImageFile(
             // Preserve aspect ratio and enough detail for Vietnamese diacritics.
             // Bound short/long edges independently of orientation. A sideways
             // portrait must keep the same detail as an upright portrait.
-            const ratio=Math.min(1,maxWidth/Math.min(width,height),3200/Math.max(width,height));
+            const ratio=Math.min(1,maxWidth/Math.min(width,height),2600/Math.max(width,height));
             width=Math.round(width*ratio);height=Math.round(height*ratio);
 
             // Tạo canvas để nén
@@ -85,15 +86,29 @@ export async function optimizeImageFile(
             // Vẽ ảnh lên canvas với kích thước mới
             ctx.drawImage(img, 0, 0, width, height);
 
-            // Adapt quality to bytes while preserving readable resolution.
+            // Keep every mobile upload below roughly 450 KB (600k Base64
+            // characters). Four images then remain comfortably below the API
+            // request ceiling, while 1,400px+ documents still retain CCCD text.
+            const maxBase64Length=600_000;
             let dataUrl = canvas.toDataURL('image/jpeg', quality);
             // Keep small screenshots lossless when PNG is smaller than JPEG.
             if(file.type==='image/png') {
               const png=canvas.toDataURL('image/png');
               if(png.length<dataUrl.length) dataUrl=png;
             }
-            // Adaptive JPEG compression without shrinking tiny text further.
-            for(let nextQuality=quality-0.08;dataUrl.length>850_000 && nextQuality>=0.65;nextQuality-=0.08) dataUrl=canvas.toDataURL('image/jpeg',nextQuality);
+            // First reduce JPEG quality, then (only if still needed) reduce
+            // dimensions. This is more reliable than sending four near-limit
+            // images from mobile Safari in one request.
+            for(let nextQuality=quality-0.08;dataUrl.length>maxBase64Length && nextQuality>=0.62;nextQuality-=0.08) dataUrl=canvas.toDataURL('image/jpeg',nextQuality);
+            while(dataUrl.length>maxBase64Length && Math.max(width,height)>1400) {
+              width=Math.max(1,Math.round(width*0.86));
+              height=Math.max(1,Math.round(height*0.86));
+              canvas.width=width;canvas.height=height;
+              ctx.fillStyle='#FFFFFF';ctx.fillRect(0,0,width,height);
+              ctx.drawImage(img,0,0,width,height);
+              dataUrl=canvas.toDataURL('image/jpeg',0.72);
+            }
+            width=canvas.width;height=canvas.height;
             // Tách phần Base64 thuần túy an toàn trên mọi trình duyệt (Safari/Chrome/Firefox)
             const rawBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
             const base64Data = rawBase64.replace(/[\r\n\s]+/g, '');

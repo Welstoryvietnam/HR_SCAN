@@ -6,6 +6,15 @@ type OCRPage=NonNullable<OptimizedImageFile['ocrPages']>[number];
 class OCRRequestError extends Error {
   constructor(public reply:ExtractReply,public status=0) {super(reply.data?.error || reply.error || 'Không nhận được kết quả OCR.');}
 }
+type FastVisionReply = {
+  success: boolean;
+  data?: DocumentExtractionResult;
+  pages?: Record<string, OCRPage>;
+  error?: string;
+  retryable?: boolean;
+};
+const FAST_VISION_TIMEOUT_MS=55_000;
+const MAX_FAST_VISION_REQUEST_BYTES=3_000_000;
 async function recognize(mimeType:string,base64Data:string):Promise<OCRPage> {
   for (let attempt = 0; attempt < 8; attempt++) {
     const reply = await safeFetchJson<{
@@ -59,52 +68,36 @@ export async function extractOCRGroup(
     // Fast AI Vision Mode: directly extract using Gemini 3.8 Flash multimodal API (~2 seconds)
     if (scanMode === 'ai' && group.documents.length > 0) {
       onStatus(`⚡ Đang Quét AI Siêu Tốc (${group.documents.length} tài liệu)…`);
-      let fastReply = await safeFetchJson<{
-        success: boolean;
-        data?: DocumentExtractionResult;
-        pages?: Record<string, OCRPage>;
-        error?: string;
-        retryable?: boolean;
-      }>('/api/ocr/extract-fast', {
+      const fastPayload={
+        documents: group.documents.map(d => ({
+          id: d.id,
+          fileName: d.fileName,
+          docType: d.docType,
+          mimeType: d.mimeType,
+          base64Data: d.base64Data,
+        })),
+        label: group.label,
+      };
+      const fastBody=JSON.stringify(fastPayload);
+      const fastBytes=new TextEncoder().encode(fastBody).byteLength;
+      if(fastBytes>MAX_FAST_VISION_REQUEST_BYTES) {
+        return {ok:false,data:{success:false,retryable:false,error:'Bốn ảnh hiện vượt dung lượng ổn định cho một lần quét trên điện thoại. Hãy dùng “Xem / Xoay / Cắt” để giảm/cắt ảnh, hoặc tải lại ảnh để hệ thống nén trước khi quét.'}};
+      }
+      const requestFastVision=()=>safeFetchJson<FastVisionReply>('/api/ocr/extract-fast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(25_000),
-        body: JSON.stringify({
-          documents: group.documents.map(d => ({
-            id: d.id,
-            fileName: d.fileName,
-            docType: d.docType,
-            mimeType: d.mimeType,
-            base64Data: d.base64Data,
-          })),
-          label: group.label,
-        }),
+        signal: AbortSignal.timeout(FAST_VISION_TIMEOUT_MS),
+        body: fastBody,
       });
+      let fastReply=await requestFastVision();
 
-      // Transient retry if 503 / 429
-      if (!fastReply.ok && (fastReply.status === 503 || fastReply.status === 429 || fastReply.data?.retryable)) {
-        await new Promise(r => setTimeout(r, 600));
-        fastReply = await safeFetchJson<{
-          success: boolean;
-          data?: DocumentExtractionResult;
-          pages?: Record<string, OCRPage>;
-          error?: string;
-          retryable?: boolean;
-        }>('/api/ocr/extract-fast', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(25_000),
-          body: JSON.stringify({
-            documents: group.documents.map(d => ({
-              id: d.id,
-              fileName: d.fileName,
-              docType: d.docType,
-              mimeType: d.mimeType,
-              base64Data: d.base64Data,
-            })),
-            label: group.label,
-          }),
-        });
+      // Retry once for a transient connection issue. The server reuses an
+      // identical in-flight request when both calls reach the same instance.
+      const transient=/mất kết nối|timed out|timeout|http 5\d\d|phản hồi rỗng/i.test(fastReply.error || fastReply.data?.error || '');
+      if (!fastReply.ok && (fastReply.status === 503 || fastReply.status === 429 || fastReply.data?.retryable || transient)) {
+        onStatus('Kết nối AI đang chậm, giữ nguyên hồ sơ và thử lại một lần…');
+        await new Promise(r => setTimeout(r, 900));
+        fastReply=await requestFastVision();
       }
 
       if (fastReply.ok && fastReply.data?.success && fastReply.data.data) {
@@ -132,7 +125,10 @@ export async function extractOCRGroup(
           },
         };
       }
-      onStatus('Quét AI siêu tốc gặp trục trặc tạm thời, đang chuyển sang OCR cục bộ…');
+      const message=fastReply.data?.error || fastReply.error || 'Quét AI chưa hoàn thành.';
+      const retryable=fastReply.data?.retryable || transient;
+      onStatus('Quét AI chưa hoàn thành. Ảnh và kết quả đang được giữ nguyên để thử lại.');
+      return {ok:false,data:{success:false,error:message,retryable,retryAfterSeconds:retryable ? 2 : 0}};
     }
 
     const capabilities=await safeFetchJson<{success:boolean;data?:{enabled:boolean;aiVisionAvailable?:boolean;revision:string}}>('/api/ocr/capabilities',{signal:AbortSignal.timeout(10_000)});

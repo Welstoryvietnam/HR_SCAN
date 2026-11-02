@@ -6,7 +6,7 @@ export async function safeFetchJson<T = any>(
   init?: RequestInit
 ): Promise<{ ok: boolean; data?: T; error?: string; status?: number }> {
   try {
-    if (String(input).includes('/api/ai/extract-documents') && typeof init?.body === 'string' && new TextEncoder().encode(init.body).byteLength > 4_000_000) {
+    if ((String(input).includes('/api/ai/extract-documents') || String(input).includes('/api/ocr/')) && typeof init?.body === 'string' && new TextEncoder().encode(init.body).byteLength > 4_000_000) {
       return { ok: false, error: 'Tổng dung lượng tài liệu quá lớn cho một lần trích xuất. Vui lòng giảm dung lượng hoặc số trang PDF/ảnh của nhân viên này rồi thử lại.', status: 413 };
     }
     const headers = new Headers(init?.headers);
@@ -50,13 +50,16 @@ export async function safeFetchJson<T = any>(
 
       return {
         ok: false,
+        status: res.status,
         error: sanitizedError,
       };
     }
   } catch (err) {
     const rawMsg = (err as Error)?.message || '';
     let userMsg = rawMsg || 'Không thể kết nối đến máy chủ.';
-    if (/failed to fetch|fetch failed|networkerror|network request failed|load failed/i.test(rawMsg)) {
+    if (/abort|timed out|timeout/i.test(rawMsg)) {
+      userMsg = 'Yêu cầu quét quá thời gian chờ. Ảnh vẫn được giữ nguyên; hãy thử lại hồ sơ này khi mạng ổn định.';
+    } else if (/failed to fetch|fetch failed|networkerror|network request failed|load failed/i.test(rawMsg)) {
       const local = typeof window !== 'undefined' && ['localhost','127.0.0.1','[::1]'].includes(window.location.hostname);
       userMsg = local
         ? 'Không kết nối được máy chủ local. Hãy khởi động lại máy chủ; để lưu cloud, bản local cần cấu hình Firebase. Giữ nguyên trang để tránh mất dữ liệu chưa lưu.'
@@ -66,6 +69,7 @@ export async function safeFetchJson<T = any>(
     }
     return {
       ok: false,
+      status: 0,
       error: userMsg,
     };
   }
