@@ -5,14 +5,13 @@ import path from 'node:path';
 import {Worker} from 'node:worker_threads';
 // Keep the isolated worker's dependency graph visible to Vercel file tracing.
 import 'tesseract.js';
-import 'sharp';
 import {parseOCRProfile} from './ocrProfile.js';
 const require=createRequire(path.resolve(process.cwd(),'package.json'));
 export class OCRError extends Error {
   constructor(message:string,public status=400,public retryable=false) {super(message);}
 }
 export interface OCRLine {text:string;x:number;y:number;width:number;height:number;}
-export interface OCRPage {page:number;text:string;confidence:number;lines:OCRLine[];rotation?:0|90|180|270;processing?:{passes:number;partial:boolean};engine?:'tesseract'|'gemini';assistance?:{status:'used'|'disabled'|'not-needed'|'unavailable'|'conflict';message?:string};}
+export interface OCRPage {page:number;text:string;confidence:number;lines:OCRLine[];rotation?:0|90|180|270;manualRotationSuggested?:boolean;processing?:{passes:number;partial:boolean};engine?:'tesseract'|'gemini';assistance?:{status:'used'|'disabled'|'not-needed'|'unavailable'|'conflict';message?:string};}
 
 export function scoreOCRPage(page:OCRPage) {
   // Both modules expose functions only; this call happens after their module
@@ -70,7 +69,7 @@ export async function recognizeImage(input:unknown):Promise<OCRPage> {
   try {
     const langPath=await prepareModels();
     worker=new Worker(path.resolve(process.cwd(),'backend/ocrWorker.cjs'),{
-      workerData:{image,langPath,engineEntry:require.resolve('tesseract.js'),sharpEntry:require.resolve('sharp')},execArgv:[],stdout:true,stderr:true,
+      workerData:{image,langPath,engineEntry:require.resolve('tesseract.js')},execArgv:[],stdout:true,stderr:true,
     });
     // Engine diagnostics can contain OCR text: do not forward them to logs.
     worker.stdout?.resume();worker.stderr?.resume();

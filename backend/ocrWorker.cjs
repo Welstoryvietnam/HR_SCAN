@@ -53,10 +53,6 @@ function shouldRetryOrientations(page) {
   if(!quality.labels && page.confidence>=86 && page.text.length>=700) return false;
   return true;
 }
-function needsRecognitionRetry(page) {
-  const quality=candidateQuality(page);
-  return page.confidence<70 || page.text.trim().length<40 || (!quality.complete && (quality.name || quality.birth || quality.id));
-}
 function chooseCandidate(current,next) {
   if(!next?.text?.trim() || next.text.length>100_000) return current;
   if(!current || candidateQuality(next).score>candidateQuality(current).score) return next;
@@ -65,13 +61,8 @@ function chooseCandidate(current,next) {
 async function run() {
   let worker;
   let best;
-  let bestImage;
-  let uprightOriginal=false;
   let passes=0;
-  const deadline=Date.now()+39_000;
   try {
-    const sharp=require(workerData.sharpEntry);
-    sharp.cache(false);sharp.concurrency(1);
     const {createWorker,PSM}=require(workerData.engineEntry);
     const engineRequire=createRequire(workerData.engineEntry);
     worker=await createWorker(['vie','eng'],1,{
@@ -88,51 +79,17 @@ async function run() {
       const text=data.text?.trim();
       if(!text || text.length>100_000) return;
       const lines=(data.blocks || []).flatMap(block=>(block.paragraphs || []).flatMap(paragraph=>(paragraph.lines || []).map(line=>({text:line.text.trim(),x:line.bbox.x0,y:line.bbox.y0,width:line.bbox.x1-line.bbox.x0,height:line.bbox.y1-line.bbox.y0}))));
-      const next={page:1,text,confidence:Number(data.confidence) || 0,lines,rotation,processing:{passes,partial:false}};
-      if(rotation===0 && !shouldRetryOrientations(next)) uprightOriginal=true;
-      // Parent scores every pass using the real field parser. A heuristic
-      // winner can still contain less usable data than an earlier rotation.
+      const next={page:1,text,confidence:Number(data.confidence) || 0,lines,rotation,manualRotationSuggested:shouldRetryOrientations({text,confidence:Number(data.confidence) || 0,lines}),processing:{passes,partial:false}};
+      // Keep the original orientation. The user can rotate a questionable
+      // document in the editor and re-run just that file.
       parentPort.postMessage({checkpoint:true,data:next});
       const chosen=chooseCandidate(best,next);
       if(chosen!==best) {
-        best=chosen;bestImage=image;
+        best=chosen;
       }
     }
     await recognize(original,0,PSM.AUTO);
-    // Try a different text layout on the unchanged image before any physical
-    // quarter-turn. This also improves faint fields on an already upright page.
-    if((!best || shouldRetryOrientations(best) || needsRecognitionRetry(best)) && Date.now()<deadline-5_000) {
-      await recognize(original,0,PSM.SPARSE_TEXT);
-    }
-    if(!uprightOriginal && (!best || shouldRetryOrientations(best))) {
-      for(const rotation of [90,270,180]) {
-        if(Date.now()>deadline-5_000) break;
-        const image=await sharp(original,{limitInputPixels:12_000_000}).rotate(rotation).png().toBuffer();
-        await recognize(image,rotation,PSM.AUTO);
-        if(best && !shouldRetryOrientations(best)) break;
-      }
-      if(!best || shouldRetryOrientations(best)) {
-        // AUTO can find only page decorations on a card surrounded by blank
-        // space. Try sparse layout in the other orientations too; selecting
-        // sparse only on AUTO's winner would never rescue a sideways card.
-        const rotations=[...new Set([best?.rotation,90,270,180].filter(value=>value!==undefined && value!==0))];
-        for(const rotation of rotations) {
-          if(Date.now()>deadline-5_000) break;
-          const image=rotation===0 ? original : await sharp(original,{limitInputPixels:12_000_000}).rotate(rotation).png().toBuffer();
-          await recognize(image,rotation,PSM.SPARSE_TEXT);
-          if(best && !shouldRetryOrientations(best)) break;
-        }
-      }
-    }
-    if(bestImage && Date.now()<deadline-7_000 && needsRecognitionRetry(best)) {
-      const metadata=await sharp(bestImage).metadata();
-      const scale=Math.min(2,3000/Math.max(metadata.width,metadata.height),Math.sqrt(10_000_000/(metadata.width*metadata.height)));
-      if(scale>1.2) {
-        const enlarged=await sharp(bestImage).resize({width:Math.round(metadata.width*scale),height:Math.round(metadata.height*scale)}).grayscale().normalize().sharpen({sigma:0.5}).png().toBuffer();
-        await recognize(enlarged,best.rotation,PSM.SPARSE_TEXT);
-      }
-    }
-    if(best) parentPort.postMessage({ok:true,data:{...best,processing:{passes,partial:Date.now()>=deadline}}});
+    if(best) parentPort.postMessage({ok:true,data:{...best,manualRotationSuggested:shouldRetryOrientations(best),processing:{passes,partial:false}}});
     else parentPort.postMessage({ok:false});
   } catch {
     parentPort.postMessage(best ? {ok:true,data:{...best,processing:{passes,partial:true}}} : {ok:false});

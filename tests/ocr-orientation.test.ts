@@ -79,24 +79,24 @@ test('back-only fields contribute to candidate scoring without any front fields'
   assert.ok(scoreOCRPage(back)>scoreOCRPage(confidentNoise));
 });
 
-test('real upright incomplete card keeps its original direction',async()=>{
+test('real upright incomplete card uses one original-orientation pass',async()=>{
   const svg='<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="650"><rect width="100%" height="100%" fill="white"/><g fill="black" font-family="Arial" font-size="52"><text x="70" y="100">CAN CUOC CONG DAN</text><text x="70" y="220">So CCCD: 000000001234</text><text x="70" y="340">Ho va ten: NGUYEN VAN MAU</text><text x="70" y="460">Gioi tinh: Nam</text><text x="70" y="580">Quoc tich: Viet Nam</text></g></svg>';
   const image=await sharp(Buffer.from(svg)).png().toBuffer();
   const result=await recognizeImage({mimeType:'image/png',base64Data:image.toString('base64')});
   assert.equal(result.rotation,0);
-  assert.ok((result.processing?.passes || 0)<=3,'upright card only needs unchanged-image recognition passes');
+  assert.equal(result.processing?.passes,1);
+  assert.equal(result.manualRotationSuggested,false);
   const fields=parseOCRProfile([{id:'upright',pages:[result]}]);
   assert.equal(fields.soCCCD,'000000001234');assert.equal(fields.ngaySinh,'');
 });
 
-test('real sideways card remains readable without forcing an unnecessary quarter-turn',async()=>{
+test('real sideways card is kept as uploaded and reports whether manual rotation is needed',async()=>{
   const source=await readFile(new URL('./fixtures/ocr-identity.png',import.meta.url));
   const image=await sharp(source).rotate(90).png().toBuffer();
   const result=await recognizeImage({mimeType:'image/png',base64Data:image.toString('base64')});
-  // Tesseract can already read this clean sideways fixture through its layout
-  // analysis. Either no transform or the correcting quarter-turn is valid;
-  // readable fields, rather than an imposed angle, are the required outcome.
-  assert.ok([0,270].includes(result.rotation!));
-  const fields=parseOCRProfile([{id:'sideways',pages:[result]}]);
-  assert.equal(fields.soCCCD,'000000001234');assert.equal(fields.ngaySinh,'15/06/1995');
+  assert.equal(result.rotation,0);
+  assert.equal(result.processing?.passes,1);
+  // This clean fixture is still readable without rotating. A poor read is
+  // flagged for HR, while a readable sideways image continues without delay.
+  assert.equal(result.manualRotationSuggested,false);
 });

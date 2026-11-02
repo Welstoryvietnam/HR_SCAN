@@ -242,7 +242,7 @@ export interface IntakeDraftSummary {
 
 export interface OptimizedImageFile {
   ocrVersion?: string;
-  ocrPages?: {page:number;text:string;confidence:number;lines:{text:string;x:number;y:number;width:number;height:number}[];engine?:'tesseract'|'gemini';assistance?:{status:'used'|'disabled'|'not-needed'|'unavailable'|'conflict';message?:string};assistanceRevision?:string}[];
+  ocrPages?: {page:number;text:string;confidence:number;lines:{text:string;x:number;y:number;width:number;height:number}[];manualRotationSuggested?:boolean;engine?:'tesseract'|'gemini';assistance?:{status:'used'|'disabled'|'not-needed'|'unavailable'|'conflict';message?:string};assistanceRevision?:string}[];
   extractedText?: string;
   id: string;
   fileName: string;

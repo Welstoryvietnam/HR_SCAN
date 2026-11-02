@@ -288,6 +288,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
                     <Trash2 className="h-3 w-3" />
                   </button>
                 </div>
+                {document.ocrPages?.some(page=>page.manualRotationSuggested) && <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-amber-800">Ảnh có thể xoay ngang hoặc chữ chưa rõ. Xoay thủ công rồi quét lại nếu còn thiếu thông tin.</p>}
                 {document.mimeType.startsWith('image/') && (
                   <button
                     type="button"
