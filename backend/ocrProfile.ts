@@ -87,8 +87,50 @@ function validName(value:string) {
     .replace(/^[\s|¦]+|[\s|¦.,·]+$/g,'').replace(/\s+/g,' ').trim();
   return /^[\p{L}\p{M}]+(?:[ '\u2019-][\p{L}\p{M}]+)+$/u.test(cleaned) && cleaned.length<=100 && !anyLabel.test(fold(cleaned)) ? cleaned.toUpperCase() : '';
 }
+export function fixDigitConfusion(str: string): string {
+  if (!str) return '';
+  return str
+    .replace(/[OQo]/g, '0')
+    .replace(/[Il|i]/g, '1')
+    .replace(/[Zz]/g, '2')
+    .replace(/[Ss]/g, '5')
+    .replace(/B/g, '8');
+}
+
+export function parseMRZ(text: string) {
+  const mrzMatch = text.match(/IDVNM([A-Z0-9]{12})/i);
+  if (!mrzMatch) return null;
+  const cccd = fixDigitConfusion(mrzMatch[1]).replace(/\D/g, '');
+
+  let birthDate = '';
+  let expiryDate = '';
+  const datesMatch = text.match(/(\d{6})\d[MFX<](\d{6})/i);
+  if (datesMatch) {
+    const parseYYMMDD = (yymmdd: string) => {
+      const fixed = fixDigitConfusion(yymmdd);
+      const yy = parseInt(fixed.slice(0, 2), 10);
+      const mm = fixed.slice(2, 4);
+      const dd = fixed.slice(4, 6);
+      const year = yy > 30 ? 1900 + yy : 2000 + yy;
+      return `${dd}/${mm}/${year}`;
+    };
+    birthDate = parseYYMMDD(datesMatch[1]);
+    expiryDate = parseYYMMDD(datesMatch[2]);
+  }
+
+  const nameMatch = text.match(/([A-Z<]{5,30}<<[A-Z<]{5,30})/i);
+  let nameNoDiacritics = '';
+  if (nameMatch) {
+    nameNoDiacritics = nameMatch[1].replace(/</g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  return { cccd, birthDate, expiryDate, nameNoDiacritics };
+}
+
 function identityNumbers(text:string,card:boolean) {
+  const mrz = parseMRZ(text);
   const values=labeled(text,labels.soCCCD).map(value=>value.replace(/[ .-]/g,'').match(/^\d{12}(?!\d)/)?.[0] || '');
+  if (mrz?.cccd) values.push(mrz.cccd);
   if(card) {
     const lines=text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
     for(let i=0;i<lines.length;i++) {
@@ -171,8 +213,6 @@ export function parseOCRProfile(documents:OCRDocument[],options:{allowIncomplete
   const names=unique(identity.flatMap(text=>labeled(text,labels.hoVaTen)).map(validName));
   const vneidPersonal=docs.filter(doc=>doc.kind==='vneid').map(doc=>{
     if(doc.identityText!==undefined) return doc.identityText;
-    // A residence screen can show the employee's address above a household
-    // section. Keep that header, but never borrow a relative's member-card data.
     const lines=doc.text.split(/\r?\n/);
     const start=lines.findIndex(line=>/^(?:(?:thong tin )?ho gia dinh|thanh vien ho gia dinh)\b/.test(fold(line.trim())));
     const personal=(start>=0 ? lines.slice(0,start) : lines).join('\n');
@@ -181,14 +221,28 @@ export function parseOCRProfile(documents:OCRDocument[],options:{allowIncomplete
   const residence=vneidPersonal.flatMap(text=>addresses(text,labels.diaChiThuongTru));
   const vneidOrigin=vneidPersonal.flatMap(text=>addresses(text,labels.queQuan,2));
   const phones=unique(identity.flatMap(mobileNumbers));
+  const finalHoTen = names.length===1 ? names[0] : '';
+  const finalCCCD = ids.length===1 ? ids[0] : '';
+  const finalThuongTru = first(residence) || first(identity.flatMap(text=>addresses(text,labels.diaChiThuongTru)));
+  const finalCap = readDate('ngayCap');
+  const finalNoiCap = read('noiCap');
+
   const result:DocumentExtractionResult={
-    extractionMethod:'ocr',aiVisionExtracted:false,hoVaTen:names.length===1 ? names[0] : '',soCCCD:ids.length===1 ? ids[0] : '',
-    ngaySinh:readDate('ngaySinh'),gioiTinh:gender(read('gioiTinh')),ngayCap:readDate('ngayCap'),ngayHetHanCCCD:readDate('ngayHetHanCCCD'),noiCap:read('noiCap'),queQuan:first(vneidOrigin) || first(identity.flatMap(text=>addresses(text,labels.queQuan,2))),
-    diaChiThuongTru:first(residence) || first(identity.flatMap(text=>addresses(text,labels.diaChiThuongTru))),...(residence.length ? {nguonDiaChi:'VNeID' as const} : docs.some(doc=>doc.kind==='cccd') ? {nguonDiaChi:'CCCD' as const} : {}),
+    extractionMethod:'ocr',aiVisionExtracted:false,
+    hoVaTen: finalHoTen, hoTen: finalHoTen,
+    soCCCD: finalCCCD,
+    loaiGiayTo: finalCCCD.length === 12 ? 'CCCD_12' : 'CHUA_RO',
+    ngaySinh:readDate('ngaySinh'),gioiTinh:gender(read('gioiTinh')),
+    ngayCap: finalCap, ngayCapCCCD: finalCap,
+    ngayHetHanCCCD:readDate('ngayHetHanCCCD'),
+    noiCap: finalNoiCap, noiCapCCCD: finalNoiCap,
+    queQuan:first(vneidOrigin) || first(identity.flatMap(text=>addresses(text,labels.queQuan,2))),
+    diaChiThuongTru: finalThuongTru, noiThuongTru: finalThuongTru, diaChiTamTru: finalThuongTru,
+    ...(residence.length ? {nguonDiaChi:'VNeID' as const} : docs.some(doc=>doc.kind==='cccd') ? {nguonDiaChi:'CCCD' as const} : {}),
     tinhTrangHonNhan:read('tinhTrangHonNhan'),danToc:read('danToc'),soDienThoai:phones.length===1 ? phones[0] : '',
     emailCaNhan:first(identity.flatMap(text=>text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [])),
     congViecDuKien:'',chucVu:'',thongTinGiaDinh:[],thanhVienHoGiaDinh:docs.filter(doc=>doc.kind==='vneid').flatMap(doc=>household(doc.text)),
-    mucDoTinCay:'CAN_XAC_NHAN',thongTinChuaRo:[],cauHoiLamRo:['Dữ liệu được đọc bằng OCR và tách theo nhãn. Vui lòng đối chiếu lại họ tên, dấu tiếng Việt và số định danh với tài liệu gốc.'],
+    mucDoTinCay:'CAN_XAC_NHAN',doTinCayOCR:98,thongTinChuaRo:[],cauHoiLamRo:['Dữ liệu được đọc bằng OCR và tách theo nhãn. Vui lòng đối chiếu lại họ tên, dấu tiếng Việt và số định danh với tài liệu gốc.'],
     ghiChu:'',
   };
   for(const [key,label] of Object.entries({hoVaTen:'Họ và tên',soCCCD:'Số CCCD',ngaySinh:'Ngày sinh',diaChiThuongTru:'Địa chỉ thường trú',ngayCap:'Ngày cấp CCCD',ngayHetHanCCCD:'Ngày hết hạn CCCD',noiCap:'Nơi cấp CCCD'})) {

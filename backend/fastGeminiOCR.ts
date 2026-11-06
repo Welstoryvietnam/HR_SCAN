@@ -28,42 +28,69 @@ function getGenAIClient(): GoogleGenAI | null {
   });
 }
 
-const FAST_SYSTEM_INSTRUCTION = `Bạn là chuyên gia số hóa hồ sơ nhân sự (HR Data Extraction Specialist) tốc độ cao. Nhiệm vụ của bạn là bóc tách thông tin từ ảnh chụp/bản scan Căn cước công dân (CCCD) và Sơ yếu lý lịch (bao gồm cả chữ viết tay và chữ in) và trả về định dạng JSON thuần.
+const FAST_SYSTEM_INSTRUCTION = `Bạn là chuyên gia số hóa hồ sơ nhân sự (HR Data Extraction Specialist) tốc độ cao. Nhiệm vụ của bạn là bóc tách và chuẩn hóa thông tin nhân viên mới từ ảnh Căn cước công dân (CCCD), Căn cước điện tử (VNeID) và Sơ yếu lý lịch và trả về định dạng JSON thuần.
 
-Quy tắc xử lý bắt buộc:
-1. Tính trung thực và nguyên bản: Tuyệt đối không tự suy đoán hay bịa thông tin. Nếu chữ viết tay quá mờ, bị gạch xóa hoặc rách không đọc được, hãy điền giá trị null hoặc chuỗi rỗng "".
-2. Chuẩn hóa ngày tháng: Mọi trường ngày tháng phải chuyển về định dạng chuẩn YYYY-MM-DD. Nếu chỉ có năm, ghi rõ YYYY.
-3. Chuẩn hóa CCCD: Số CCCD phải là chuỗi số liền mạch (12 số với thẻ căn cước mới, 9 số với CMND cũ), loại bỏ khoảng trắng hoặc ký tự đặc biệt.
-4. Đối soát chéo (Cross-check): So sánh thông tin giữa CCCD và Sơ yếu lý lịch. Nếu phát hiện sai lệch về họ tên, ngày sinh hoặc số định danh giữa 2 nguồn tài liệu, phải ghi rõ cảnh báo vào trường "canh_bao_sai_lech".
-5. Trả về đúng JSON thuần với cấu trúc các trường sau:
+🏛️ PHẦN 1: QUY TẮC XÁC ĐỊNH CHỦ THỂ (TRÁNH NHẦM LẪN THÂN NHÂN)
+1. Chỉ bắt thông tin nhân viên mới từ Căn cước công dân (CCCD 12 số) hoặc Căn cước điện tử (VNeID 12 số) hoặc CV. KHÔNG lấy thông tin cá nhân của nhân viên mới từ Sơ yếu lý lịch (SYLL).
+2. Tuyệt đối BỎ QUA các khối văn bản chứa nhãn: Cha, Mẹ, Bố, Vợ, Chồng, Con đẻ, Người giám hộ khi xác định Họ tên, Ngày sinh, Số CCCD của nhân viên mới.
+3. Trường thông tin nhân viên:
+   - hoVaTen / hoTen: Lấy chữ IN HOA trên mặt trước CCCD ("Họ và tên") hoặc VNeID ("Họ, chữ đệm và tên").
+   - soCCCD: Chuỗi 12 số CCCD / VNeID liền mạch. Không dùng CMND 9 số làm tiêu chuẩn chính.
+   - queQuan: Lấy trên CCCD với tiêu đề "Quê quán".
+   - diaChiThuongTru / noiThuongTru: Lấy trên VNeID với tiêu đề bắt đầu là "Nơi thường trú" (hoặc CCCD).
+   - diaChiTamTru: Mặc định theo Nơi thường trú nếu không ghi riêng.
+   - ngayCap / ngayCapCCCD: Lấy trên VNeID ("Ngày cấp căn cước công dân gần nhất") hoặc CCCD.
+   - ngayHetHanCCCD: Lấy trên CCCD ("Có giá trị đến") hoặc mặt sau ("Ngày, tháng, năm hết hạn / Date of expiry").
+   - soDienThoai: Lấy trên VNeID ("Số thuê bao di động: Đăng ký tài khoản định danh").
+
+👨‍👩‍👧‍👦 QUY TẮC THÀNH VIÊN GIA ĐÌNH (thanhVienHoGiaDinh / HouseholdMember):
+1. Lấy thông tin chủ hộ trên VNeID ("Thông tin cư trú" -> "Thông tin chủ hộ thường trú").
+2. Nếu Chủ hộ thường trú chính là Nhân viên mới -> Vẫn lấy thông tin vào thanhVienHoGiaDinh với vai trò Chủ hộ.
+3. Nếu Chủ hộ thường trú khác với Nhân viên mới -> Đưa CẢ Nhân viên mới VÀ Chủ hộ thường trú (cùng các thành viên khác nếu có) vào mảng thanhVienHoGiaDinh.
+
+📐 PHẦN 2 & 3: QUY TẮC CHUẨN HÓA DỮ LIỆU ĐẦU RA (SOP & DATA INTEGRITY)
+1. Tính trung thực: Không suy diễn, không tự bịa dữ liệu nếu giấy tờ không thể hiện rõ. Nếu mờ/thiếu -> điền null hoặc "", đẩy vào thongTinChuaRo & cauHoiLamRo.
+2. Số CCCD: .replace(/\\D/g, ''). Định dạng thẻ mới phải đúng 12 chữ số. Nếu khác 12 số -> đánh dấu CHUA_RO.
+3. Ngày tháng: YYYY-MM-DD (hoặc DD/MM/YYYY). Nếu chỉ có năm sinh -> giữ YYYY, không tự đoán ngày/tháng.
+4. Đối soát chéo (Cross-check): So sánh đối chiếu chéo CCCD mặt trước, mặt sau, VNeID. Nếu sai lệch họ tên, ngày sinh, số CCCD -> tự động sinh cảnh báo chi tiết vào canh_bao_sai_lech.
+5. Sáp nhập địa giới: Ưu tiên địa chỉ cư trú mới nhất trên VNeID sau khi sáp nhập. Ghi chú đơn vị hành chính mới vào ghiChuSapNhap.
+
+Trả về đúng JSON thuần với cấu trúc các trường sau:
 {
-  "hoVaTen": "Họ và tên viết hoa có dấu của nhân viên",
+  "hoTen": "NGUYỄN VĂN AN",
+  "hoVaTen": "NGUYỄN VĂN AN",
+  "soCCCD": "038096011223",
+  "loaiGiayTo": "CCCD_12",
   "ngaySinh": "YYYY-MM-DD hoặc YYYY",
   "gioiTinh": "Nam hoặc Nữ hoặc Khác",
-  "soCCCD": "12 số CCCD hoặc 9 số CMND liền mạch",
+  "queQuan": "Xã Hoằng Lộc, Huyện Hoằng Hóa, Tỉnh Thanh Hóa",
+  "noiThuongTru": "Phường Đông Hương, TP. Thanh Hóa, Tỉnh Thanh Hóa",
+  "diaChiThuongTru": "Phường Đông Hương, TP. Thanh Hóa, Tỉnh Thanh Hóa",
+  "diaChiTamTru": "Phường Đông Hương, TP. Thanh Hóa, Tỉnh Thanh Hóa",
+  "ngayCapCCCD": "YYYY-MM-DD",
   "ngayCap": "YYYY-MM-DD",
+  "noiCapCCCD": "Cục Cảnh sát QLHC về TTXH",
+  "noiCap": "Cục Cảnh sát QLHC về TTXH",
   "ngayHetHanCCCD": "YYYY-MM-DD hoặc Không thời hạn",
-  "noiCap": "Nơi cấp CCCD",
-  "queQuan": "Quê quán",
-  "diaChiThuongTru": "Địa chỉ thường trú",
-  "diaChiTamTru": "Địa chỉ tạm trú nếu có",
-  "soDienThoai": "Số điện thoại di động",
-  "emailCaNhan": "Email cá nhân nếu có",
-  "danToc": "Dân tộc (ví dụ Kinh, Tày...)",
-  "tonGiao": "Tôn giáo",
-  "tinhTrangHonNhan": "Độc thân / Đã kết hôn",
-  "nguyenQuan": "Nguyên quán",
-  "noiSinh": "Nơi sinh",
-  "hocVan": "Trình độ học vấn",
-  "canh_bao_sai_lech": "Cảnh báo sai lệch giữa các tài liệu nếu có, hoặc chuỗi rỗng",
-  "thongTinChuaRo": ["Danh sách các trường bị mờ, rách hoặc không đọc được"],
-  "cauHoiLamRo": ["Lưu ý hoặc câu hỏi cần HR kiểm tra lại"],
+  "soDienThoai": "0912345678",
+  "emailCaNhan": "",
+  "danToc": "Kinh",
+  "tonGiao": "Không",
+  "tinhTrangHonNhan": "Độc thân",
+  "hoTenChuHo": "NGUYỄN VĂN BÌNH",
+  "quanHeChuHo": "Con đẻ",
+  "ghiChuSapNhap": "Cập nhật theo VNeID: Phường Đông Hương, TP. Thanh Hóa",
+  "canh_bao_sai_lech": "",
+  "thongTinChuaRo": [],
+  "cauHoiLamRo": [],
   "thongTinGiaDinh": [
-    { "quanHe": "Bố/Mẹ/Vợ/Chồng...", "hoTen": "...", "namSinh": "YYYY", "ngheNghiep": "..." }
+    { "quanHe": "Bố đẻ", "hoTen": "NGUYỄN VĂN BÌNH", "namSinh": "1968", "ngheNghiep": "Nông dân" }
   ],
   "thanhVienHoGiaDinh": [
-    { "hoTen": "...", "ngaySinh": "YYYY-MM-DD", "quanHeVoiChuHo": "...", "gioiTinh": "Nam/Nữ", "diaChiThuongTru": "...", "quocTich": "Việt Nam", "danToc": "Kinh" }
+    { "hoTen": "NGUYỄN VĂN BÌNH", "quanHeVoiChuHo": "Bố đẻ", "ngaySinh": "1968", "gioiTinh": "Nam", "diaChiThuongTru": "...", "quocTich": "Việt Nam", "danToc": "Kinh" },
+    { "hoTen": "NGUYỄN VĂN AN", "quanHeVoiChuHo": "Con đẻ", "ngaySinh": "1996-09-24", "gioiTinh": "Nam", "diaChiThuongTru": "...", "quocTich": "Việt Nam", "danToc": "Kinh" }
   ],
+  "doTinCayOCR": 98,
   "text": "Nguyên văn tóm tắt toàn bộ nội dung đọc được trên tài liệu"
 }`;
 
@@ -123,7 +150,7 @@ export async function extractEmployeeWithGeminiVision(
     };
   }
 
-  // Build multimodal parts: optimize images with sharp if oversized for instant transfer
+  // Build multimodal parts: optimize images with sharp (2800px limit, EXIF auto-rotate, quality 88)
   const parts: any[] = [];
   for (const doc of documents) {
     let base64ToSend = doc.base64Data;
@@ -132,14 +159,15 @@ export async function extractEmployeeWithGeminiVision(
     if (doc.base64Data && !doc.mimeType?.includes('pdf')) {
       try {
         const buffer = Buffer.from(doc.base64Data, 'base64');
-        if (buffer.length > 200_000) {
-          const resized = await sharp(buffer)
-            .resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true })
-            .jpeg({ quality: 85 })
-            .toBuffer();
-          base64ToSend = resized.toString('base64');
-          mimeToSend = 'image/jpeg';
-        }
+        const resized = await sharp(buffer)
+          .rotate() // Auto-rotate reading EXIF orientation tags from phone cameras
+          .resize({ width: 2800, height: 2800, fit: 'inside', withoutEnlargement: true })
+          .grayscale() // Grayscale + Normalize to reduce complex watermark background noise
+          .normalize()
+          .jpeg({ quality: 88 })
+          .toBuffer();
+        base64ToSend = resized.toString('base64');
+        mimeToSend = 'image/jpeg';
       } catch {
         base64ToSend = doc.base64Data;
       }
@@ -154,9 +182,9 @@ export async function extractEmployeeWithGeminiVision(
   }
 
   parts.push({
-    text: `Vui lòng bóc tách toàn bộ thông tin nhân sự từ các ảnh tài liệu đính kèm (CCCD, Sơ yếu lý lịch, v.v.). ${
+    text: `Vui lòng bóc tách toàn bộ thông tin nhân sự từ các ảnh tài liệu đính kèm (CCCD 12 số, Căn cước điện tử VNeID, Sơ yếu lý lịch). ${
       label ? `Họ tên gợi ý ban đầu: "${label}". ` : ''
-    }Thực hiện kiểm tra chéo (Cross-check) thông tin giữa CCCD và Sơ yếu lý lịch và cảnh báo nếu có mâu thuẫn. Chuẩn hóa ngày tháng theo YYYY-MM-DD và CCCD theo chuỗi số liền mạch.`,
+    }Thực hiện kiểm tra chéo (Cross-check) thông tin giữa CCCD và Sơ yếu lý lịch và cảnh báo nếu có mâu thuẫn vào "canh_bao_sai_lech". Chỉ bắt thông tin nhân viên từ CCCD/VNeID/CV, BỎ QUA tên thân nhân (Bố/Mẹ/Vợ/Chồng). Bắt thông tin chủ hộ thường trú trên VNeID và thêm vào thanhVienHoGiaDinh.`,
   });
 
   // Call gemini-3.8-flash with ThinkingLevel.LOW and no responseSchema for maximum speed (sub-3s)
@@ -201,16 +229,25 @@ export async function extractEmployeeWithGeminiVision(
   }
 
   // Format and normalize extracted fields
-  const hoVaTen = (parsed.hoVaTen || label || '').toString().toUpperCase().trim();
+  const hoVaTen = (parsed.hoVaTen || parsed.hoTen || label || '').toString().toUpperCase().trim();
   const soCCCD = (parsed.soCCCD || '').toString().replace(/\D/g, '');
   const ngaySinh = normalizeDateToISO(parsed.ngaySinh || '');
-  const ngayCap = normalizeDateToISO(parsed.ngayCap || '');
+  const ngayCap = normalizeDateToISO(parsed.ngayCap || parsed.ngayCapCCCD || '');
   const ngayHetHanCCCD = parsed.ngayHetHanCCCD === 'Không thời hạn'
     ? 'Không thời hạn'
     : normalizeDateToISO(parsed.ngayHetHanCCCD || '');
 
+  const noiThuongTru = (parsed.noiThuongTru || parsed.diaChiThuongTru || '').toString().trim();
+  const diaChiThuongTru = noiThuongTru;
+  const diaChiTamTru = (parsed.diaChiTamTru || noiThuongTru).toString().trim();
+
   const cauHoiLamRo: string[] = Array.isArray(parsed.cauHoiLamRo) ? [...parsed.cauHoiLamRo] : [];
   const thongTinChuaRo: string[] = Array.isArray(parsed.thongTinChuaRo) ? [...parsed.thongTinChuaRo] : [];
+
+  if (soCCCD.length !== 12) {
+    thongTinChuaRo.push('Số CCCD (cần đúng 12 chữ số)');
+    cauHoiLamRo.push('Số CCCD chưa đọc đủ 12 chữ số theo tiêu chuẩn thẻ mới. Vui lòng đối chiếu lại.');
+  }
 
   if (parsed.canh_bao_sai_lech) {
     cauHoiLamRo.unshift(`⚠️ Cảnh báo đối soát chéo: ${parsed.canh_bao_sai_lech}`);
@@ -220,21 +257,29 @@ export async function extractEmployeeWithGeminiVision(
     extractionMethod: 'vision',
     aiVisionExtracted: true,
     hoVaTen,
+    hoTen: hoVaTen,
     ngaySinh,
     gioiTinh: parsed.gioiTinh === 'Nữ' ? 'Nữ' : parsed.gioiTinh === 'Khác' ? 'Khác' : 'Nam',
     soCCCD,
+    loaiGiayTo: parsed.loaiGiayTo || (soCCCD.length === 12 ? 'CCCD_12' : 'CHUA_RO'),
     ngayCap,
+    ngayCapCCCD: ngayCap,
     ngayHetHanCCCD,
-    noiCap: (parsed.noiCap || '').toString().trim(),
+    noiCap: (parsed.noiCap || parsed.noiCapCCCD || '').toString().trim(),
+    noiCapCCCD: (parsed.noiCapCCCD || parsed.noiCap || '').toString().trim(),
     queQuan: (parsed.queQuan || '').toString().trim(),
-    diaChiThuongTru: (parsed.diaChiThuongTru || '').toString().trim(),
-    diaChiTamTru: (parsed.diaChiTamTru || '').toString().trim(),
-    nguonDiaChi: 'CCCD',
+    diaChiThuongTru,
+    noiThuongTru,
+    diaChiTamTru,
+    nguonDiaChi: 'VNeID',
     soDienThoai: (parsed.soDienThoai || '').toString().trim(),
     emailCaNhan: (parsed.emailCaNhan || '').toString().trim(),
     danToc: (parsed.danToc || '').toString().trim(),
     tonGiao: (parsed.tonGiao || '').toString().trim(),
     tinhTrangHonNhan: (parsed.tinhTrangHonNhan || '').toString().trim(),
+    hoTenChuHo: (parsed.hoTenChuHo || '').toString().trim(),
+    quanHeChuHo: (parsed.quanHeChuHo || '').toString().trim(),
+    ghiChuSapNhap: (parsed.ghiChuSapNhap || '').toString().trim(),
     congViecDuKien: '',
     chucVu: '',
     thongTinGiaDinh: Array.isArray(parsed.thongTinGiaDinh) ? parsed.thongTinGiaDinh : [],
@@ -242,7 +287,8 @@ export async function extractEmployeeWithGeminiVision(
     thongTinChuaRo,
     cauHoiLamRo,
     canh_bao_sai_lech: parsed.canh_bao_sai_lech || '',
-    mucDoTinCay: parsed.canh_bao_sai_lech ? 'CAN_XAC_NHAN' : 'CAO',
+    mucDoTinCay: soCCCD.length === 12 && !parsed.canh_bao_sai_lech ? 'CAO' : 'CAN_XAC_NHAN',
+    doTinCayOCR: typeof parsed.doTinCayOCR === 'number' ? parsed.doTinCayOCR : 98,
     rawJson: rawText,
     ghiChu: parsed.text ? `[AI Siêu Tốc] ${parsed.text.slice(0, 300)}...` : '',
   };

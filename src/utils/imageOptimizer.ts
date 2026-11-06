@@ -9,8 +9,8 @@ import { OptimizedImageFile } from '../types';
 export async function optimizeImageFile(
   file: File,
   docType: OptimizedImageFile['docType'] = 'khac',
-  maxWidth: number = 1800,
-  quality: number = 0.85
+  maxWidth: number = 2800,
+  quality: number = 0.88
 ): Promise<OptimizedImageFile> {
   return new Promise((resolve, reject) => {
     try {

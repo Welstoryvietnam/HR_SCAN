@@ -261,13 +261,20 @@ export interface DocumentExtractionResult extends EmployeeIdentityInfo, Employee
   diaChiTamTru?: string;
   tonGiao?: string;
   hoVaTen: string;
+  hoTen?: string;
   ngaySinh: string;
   gioiTinh: string;
   soCCCD: string;
+  loaiGiayTo?: string;
   ngayCap: string;
+  ngayCapCCCD?: string;
   noiCap: string;
+  noiCapCCCD?: string;
   queQuan: string;
   diaChiThuongTru: string;
+  noiThuongTru?: string;
+  hoTenChuHo?: string;
+  quanHeChuHo?: string;
   nguonDiaChi?: 'VNeID' | 'CCCD'; // AI tự động ghi nhận nguồn trích xuất
   ghiChuSapNhap?: string; // Nhắc nhở đơn vị hành chính mới sau sáp nhập
   soDienThoai: string;
@@ -283,6 +290,7 @@ export interface DocumentExtractionResult extends EmployeeIdentityInfo, Employee
   thongTinChuaRo?: string[]; // Danh sách các trường không nhìn rõ / thiếu trên ảnh
   cauHoiLamRo?: string[]; // Câu hỏi AI gửi lại người dùng yêu cầu làm rõ
   mucDoTinCay?: 'CAO' | 'CAN_XAC_NHAN' | 'CHUA_RO';
+  doTinCayOCR?: number;
 }
 
 export interface PhongNode {
