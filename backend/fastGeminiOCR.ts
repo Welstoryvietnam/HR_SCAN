@@ -34,7 +34,7 @@ const FAST_SYSTEM_INSTRUCTION = `Bạn là chuyên gia số hóa hồ sơ nhân 
 1. Chỉ bắt thông tin nhân viên mới từ Căn cước công dân (CCCD 12 số) hoặc Căn cước điện tử (VNeID 12 số) hoặc CV. KHÔNG lấy thông tin cá nhân của nhân viên mới từ Sơ yếu lý lịch (SYLL).
 2. Tuyệt đối BỎ QUA các khối văn bản chứa nhãn: Cha, Mẹ, Bố, Vợ, Chồng, Con đẻ, Người giám hộ khi xác định Họ tên, Ngày sinh, Số CCCD của nhân viên mới.
 3. Trường thông tin nhân viên:
-   - hoVaTen / hoTen: Lấy chữ IN HOA trên mặt trước CCCD ("Họ và tên") hoặc VNeID ("Họ, chữ đệm và tên").
+   - hoVaTen / hoTen: Lấy chữ IN HOA trên mặt trước CCCD ("Họ và tên" / "Full name") hoặc VNeID ("Họ, chữ đệm và tên"). Tên nhân viên thường in cỡ chữ RẤT LỚN và NỔI BẬT. Nếu tên ngắt thành 2 dòng (ví dụ "NGUYỄN VĂN" ở dòng 1 và "AN" ở dòng 2), hãy ghép lại đầy đủ thành "NGUYỄN VĂN AN". KHÔNG ĐƯỢC bỏ qua tên in chữ hoa nổi bật.
    - soCCCD: Chuỗi 12 số CCCD / VNeID liền mạch. Không dùng CMND 9 số làm tiêu chuẩn chính.
    - queQuan: Lấy trên CCCD với tiêu đề "Quê quán".
    - diaChiThuongTru / noiThuongTru: Lấy trên VNeID với tiêu đề bắt đầu là "Nơi thường trú" (hoặc CCCD).
@@ -229,7 +229,14 @@ export async function extractEmployeeWithGeminiVision(
   }
 
   // Format and normalize extracted fields
-  const hoVaTen = (parsed.hoVaTen || parsed.hoTen || label || '').toString().toUpperCase().trim();
+  const rawName = (parsed.hoVaTen || parsed.hoTen || label || '').toString();
+  const hoVaTen = rawName
+    .normalize('NFC')
+    .replace(/^[^\p{L}\p{M}]+|[^\p{L}\p{M}]+$/gu, '')
+    .replace(/\s*[:;/\\|¦_+=*~`"'()\[\]{}]+\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toUpperCase()
+    .trim();
   const soCCCD = (parsed.soCCCD || '').toString().replace(/\D/g, '');
   const ngaySinh = normalizeDateToISO(parsed.ngaySinh || '');
   const ngayCap = normalizeDateToISO(parsed.ngayCap || parsed.ngayCapCCCD || '');

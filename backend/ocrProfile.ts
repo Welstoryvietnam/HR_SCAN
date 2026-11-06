@@ -20,7 +20,7 @@ const labels={
 const otherLabels='cap nhat|ngay dang ky|noi o hien tai|dia chi tam tru|noi tam tru|nghe nghiep|ton giao|noi sinh|so thu tu|stt|vneid|thong tin|ho gia dinh|so yeu ly lich|can cuoc|identity card|cong hoa|doc lap|quan he gia dinh|hoan canh gia dinh|so cmnd(?: cu)?|so cmt(?: cu)?|ma tai lieu|ma ho so';
 const allLabels=`${Object.values(labels).join('|')}|${otherLabels}`;
 const anyLabel=new RegExp(`^(?:${allLabels})\\b`,'i');
-function labeled(text:string,pattern:string,maxLines=1,address=false) {
+function labeled(text:string,pattern:string,maxLines=1,address=false,isName=false) {
   // Keep separate fields on the same printed line from swallowing each other.
   const inlineLabel=new RegExp(`\\s{2,}(?=(?:${allLabels})\\b)`,'gi');
   const lines=text.normalize('NFC').split(/\r?\n/).flatMap(line=>{
@@ -42,11 +42,15 @@ function labeled(text:string,pattern:string,maxLines=1,address=false) {
     for(let next=index+1;next<lines.length && values.length<maxLines;next++) {
       const line=lines[next];
       // Skip bilingual label-only continuations printed on identity cards.
-      if(/^(?:\/?\s*)(full\s*name|ful\s*name|fl\s*name|date of birth|sex|nationality|place of origin|place of residence|date of expiry)\s*[:：]?$/i.test(line)) continue;
+      if(/^(?:\/?\s*|\(\s*)(full\s*name|ful\s*name|fl\s*name|date of birth|sex|nationality|place of origin|place of residence|date of expiry)[\s/:：.-]*\)?$/i.test(line)) continue;
       if(anyLabel.test(fold(line))) break;
+      if(isName && values.length>=1) {
+        const foldedLine=fold(line);
+        if(/\b(?:ngay|thang|nam|so|que|quan|noi|thuong|tru|gioi|tinh|cap|het|han|dan|toc|quoc|tich|vneid|vnm)\b/.test(foldedLine)) break;
+      }
       values.push(line);
     }
-    if(values.length) result.push(values.join(address ? ' ' : ', '));
+    if(values.length) result.push(values.join(address || isName ? ' ' : ', '));
   }
   return result;
 }
@@ -83,8 +87,13 @@ const gender=(value:string)=>/^(nu|female)\b/.test(fold(value)) ? 'Nữ' : /^(na
 function validName(value:string) {
   // A distant one-letter fragment is usually card background noise. Preserve
   // normally spaced short names; never remove every one-letter name token.
-  const cleaned=value.normalize('NFC').replace(/\s{3,}[\p{L}\p{M}]\s*[|¦]*$/u,'')
-    .replace(/^[\s|¦]+|[\s|¦.,·]+$/g,'').replace(/\s+/g,' ').trim();
+  const cleaned=value.normalize('NFC')
+    .replace(/\s{3,}[\p{L}\p{M}]\s*[|¦]*$/u,'')
+    .replace(/^[^\p{L}\p{M}]+|[^\p{L}\p{M}]+$/gu,'')
+    .replace(/\s*[:;/\\|¦_+=*~`"'()\[\]{}]+\s*/g,' ')
+    .replace(/\s+\d+$/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
   return /^[\p{L}\p{M}]+(?:[ '\u2019-][\p{L}\p{M}]+)+$/u.test(cleaned) && cleaned.length<=100 && !anyLabel.test(fold(cleaned)) ? cleaned.toUpperCase() : '';
 }
 export function fixDigitConfusion(str: string): string {
@@ -210,7 +219,7 @@ export function parseOCRProfile(documents:OCRDocument[],options:{allowIncomplete
   const readDate=(key:'ngaySinh'|'ngayCap'|'ngayHetHanCCCD')=>key==='ngaySinh'
     ? first(identity.flatMap((text,index)=>birthDates(text,identityDocs[index].kind==='cccd')))
     : first(identity.flatMap(text=>labeled(text,labels[key])).map(value=>key==='ngayHetHanCCCD' && /^khong thoi han[.\s]*$/.test(fold(value)) ? 'Không thời hạn' : date(value)));
-  const names=unique(identity.flatMap(text=>labeled(text,labels.hoVaTen)).map(validName));
+  const names=unique(identity.flatMap(text=>labeled(text,labels.hoVaTen,2,false,true)).map(validName));
   const vneidPersonal=docs.filter(doc=>doc.kind==='vneid').map(doc=>{
     if(doc.identityText!==undefined) return doc.identityText;
     const lines=doc.text.split(/\r?\n/);

@@ -214,3 +214,13 @@ test('real Vietnamese OCR reads a synthetic image locally and bounds concurrent 
   const profile=parseOCRProfile([{id:'sample',docType:'cccd_truoc',pages:[page]}]);
   assert.equal(profile.soCCCD,'000000001234');assert.equal(profile.ngaySinh,'15/06/1995');assert.equal(profile.ngayHetHanCCCD,'15/06/2035');assert.equal(profile.emailCaNhan,'mau@example.com');assert.equal(profile.aiVisionExtracted,false);
 });
+
+test('large font size name recognition handles trailing OCR symbols and multi-line wrapping under labels',()=>{
+  // Trailing symbol noise on large font line
+  const noisy=identity.replace('Họ và tên: NGUYỄN VĂN MẪU','Họ và tên / Full name:\nNGUYỄN VĂN MẪU :');
+  assert.equal(parseOCRProfile([document(noisy)]).hoVaTen,'NGUYỄN VĂN MẪU');
+
+  // Multi-line wrapped large font name
+  const wrapped=identity.replace('Họ và tên: NGUYỄN VĂN MẪU','Họ, chữ đệm và tên / Full name:\nNGUYỄN VĂN\nMẪU');
+  assert.equal(parseOCRProfile([document(wrapped)]).hoVaTen,'NGUYỄN VĂN MẪU');
+});
