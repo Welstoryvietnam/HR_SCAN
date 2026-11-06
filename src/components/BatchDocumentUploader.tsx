@@ -324,12 +324,38 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
 
           <p className="text-[11px] text-slate-400">{group.documents.length} tài liệu • 1 nhân viên</p>
 
-          <p className="text-xs font-semibold text-blue-700">
-            {({waiting:'Đang chờ',running:scanMode === 'ai' ? '⚡ Đang quét AI Siêu Tốc…' : 'Đang quét…',success:'Đã trích xuất',failed:'Cần thử lại / nhập tay'})[draftEmployee?.extractionStatus || 'waiting']}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
+            <p className="text-xs font-semibold text-blue-700">
+              {({waiting:'Đang chờ',running:scanMode === 'ai' ? '⚡ Đang quét AI Siêu Tốc…' : 'Đang quét…',success:'Đã trích xuất',failed:'Cần thử lại / nhập tay'})[draftEmployee?.extractionStatus || 'waiting']}
+            </p>
+            {(draftEmployee?.extractionStatus === 'failed' || !!draftEmployee?.extractionError) && (
+              <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void proceed(true)}
+                  className="rounded bg-blue-100 hover:bg-blue-200 px-2.5 py-1 text-[11px] font-bold text-blue-800 transition cursor-pointer"
+                  title="Thử quét lại AI / OCR cho danh sách tài liệu"
+                >
+                  🔄 Thử lại
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void proceed(false)}
+                  className="rounded bg-amber-100 hover:bg-amber-200 px-2.5 py-1 text-[11px] font-bold text-amber-900 transition cursor-pointer"
+                  title="Mở bảng đối chiếu để tự nhập / điền thông tin thủ công"
+                >
+                  ✏️ Nhập tay
+                </button>
+              </div>
+            )}
+          </div>
 
           {draftEmployee?.extractionError && (
-            <p className="text-xs text-rose-700">{draftEmployee.extractionError}</p>
+            <p className="text-xs text-rose-700 bg-rose-50 p-2 rounded border border-rose-200 font-medium">
+              ⚠️ {draftEmployee.extractionError}
+            </p>
           )}
 
           {/* HỘP CẢNH BÁO TRÙNG LẶP CCCD CHI TIẾT */}

@@ -27,13 +27,18 @@ import { Dashboard } from './components/Dashboard';
 import { UserManagement } from './components/UserManagement';
 import { SopProgressHeader } from './components/SopProgressHeader';
 import { safeFetchJson } from './utils/apiHelper';
+import { saveOfflineBackup, loadOfflineBackup, clearOfflineBackup, type OfflineBackupData } from './utils/offlineStorage';
 import {
   Sparkles,
   CheckCircle2,
   AlertTriangle,
   ArrowRight,
   ShieldCheck,
-  UserCheck
+  UserCheck,
+  RefreshCw,
+  Edit3,
+  Save,
+  HardDrive
 } from 'lucide-react';
 
 export default function App() {
@@ -79,6 +84,8 @@ export default function App() {
   const [uploaderBusy,setUploaderBusy] = useState(false);
   const [formGeneration,setFormGeneration] = useState(0);
   const [draftFormState,setDraftFormState] = useState<IntakeFormDraft|undefined>();
+  const [saveNetworkError, setSaveNetworkError] = useState<{ message: string; actionType: 'single' | 'batch'; lastData?: any } | null>(null);
+  const [offlineBackup, setOfflineBackup] = useState<OfflineBackupData | null>(() => loadOfflineBackup());
   const draftReader = useRef<{read: () => IntakeFormDraft}>(null);
   const changeSopStep = (step:number) => {
     if (step === 1 && draftReader.current) setDraftFormState(draftReader.current.read());
@@ -326,8 +333,13 @@ export default function App() {
 
   // Lưu hồ sơ vào Sheet "DanhSachNhanSu" và kích hoạt gửi email
   const handleSaveToSheet = async (formData: any): Promise<boolean> => {
+    return handleSavePersonnel(formData);
+  };
+
+  const handleSavePersonnel = async (formData: EmployeeIntakeInfo): Promise<boolean> => {
     if (!currentUser) return false;
     setIsSaving(true);
+    setSaveNetworkError(null);
     try {
       const payload = {
         ...formData,
@@ -353,10 +365,12 @@ export default function App() {
       }
 
       markDraftCompleted(res.data.draftCleanupPending);
+      clearOfflineBackup();
+      setOfflineBackup(null);
 
       showNotification(
         'success',
-        `Đã lưu hồ sơ của ${formData.hoVaTen} lên hệ thống.`
+        `Đã lưu hồ sơ của ${formData.hoVaTen || formData.hoTen || 'nhân viên'} lên hệ thống.`
       );
 
       // Cập nhật lại danh sách và email logs
@@ -365,7 +379,11 @@ export default function App() {
 
       return true;
     } catch (err) {
-      showNotification('error', (err as Error).message);
+      const msg = (err as Error).message;
+      saveOfflineBackup({ step: currentSopStep, employees: batchEmployees, groups: employeeGroups, formState: draftReader.current?.read() || draftFormState });
+      setOfflineBackup(loadOfflineBackup());
+      setSaveNetworkError({ message: msg, actionType: 'single', lastData: formData });
+      showNotification('error', msg);
       return false;
     } finally {
       setIsSaving(false);
@@ -376,6 +394,7 @@ export default function App() {
   const handleSaveBatchToSheet = async (batchList: BatchEmployeeDraft[]): Promise<boolean> => {
     if (!currentUser) return false;
     setIsSaving(true);
+    setSaveNetworkError(null);
     try {
       const res = await safeFetchJson<{ success: boolean; error?: string; draftCleanupPending?: boolean }>(
         '/api/sheets/danh-sach-nhan-su/batch',
@@ -398,6 +417,8 @@ export default function App() {
       }
 
       markDraftCompleted(res.data.draftCleanupPending);
+      clearOfflineBackup();
+      setOfflineBackup(null);
 
       showNotification(
         'success',
@@ -410,7 +431,11 @@ export default function App() {
 
       return true;
     } catch (err) {
-      showNotification('error', (err as Error).message);
+      const msg = (err as Error).message;
+      saveOfflineBackup({ step: currentSopStep, employees: batchList, groups: employeeGroups, formState: draftReader.current?.read() || draftFormState });
+      setOfflineBackup(loadOfflineBackup());
+      setSaveNetworkError({ message: msg, actionType: 'batch', lastData: batchList });
+      showNotification('error', msg);
       return false;
     } finally {
       setIsSaving(false);
@@ -559,6 +584,119 @@ export default function App() {
 
       {/* Main Content Area - Tràn viền tối ưu 100% diện tích thao tác */}
       <main className="flex-1 w-full max-w-[1720px] mx-auto p-3 sm:p-5 lg:p-6 space-y-5">
+        {/* BANNER NỔI BẬT: CẢNH BÁO MẤT KẾT NỐI MÁY CHỦ VÀ NÚT HÀNH ĐỘNG THỬ LẠI / NHẬP TAY */}
+        {saveNetworkError && (
+          <div className="rounded-xl border border-rose-300 bg-rose-50/95 p-4 shadow-md text-rose-950 space-y-3 animate-fade-in" role="alert">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-600 text-white shadow-xs">
+                <AlertTriangle className="h-5 w-5 text-white" />
+              </div>
+              <div className="space-y-1 flex-1">
+                <h4 className="font-bold text-sm text-rose-900">
+                  {saveNetworkError.message || 'Mất kết nối tới máy chủ. Hãy kiểm tra mạng rồi thử lưu lại. Giữ nguyên trang để tránh mất dữ liệu chưa lưu.'}
+                </h4>
+                <p className="text-xs text-rose-800">
+                  ⚠️ Dữ liệu của bạn đã được <strong>tự động lưu tạm an toàn vào máy (Offline Backup)</strong>. Bạn có thể nhấn nút <strong>Thử lưu lại</strong> khi mạng ổn định hoặc nhấn <strong>Nhập tay / Chỉnh sửa thủ công</strong> để tiếp tục làm việc trực tiếp.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 pt-2 border-t border-rose-200">
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={async () => {
+                  if (saveNetworkError.actionType === 'batch' && saveNetworkError.lastData) {
+                    await handleSaveBatchToSheet(saveNetworkError.lastData);
+                  } else if (saveNetworkError.actionType === 'single' && saveNetworkError.lastData) {
+                    await handleSavePersonnel(saveNetworkError.lastData);
+                  } else {
+                    saveDraft();
+                  }
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 px-4 py-2 text-xs font-bold text-white shadow-xs transition cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`h-4 w-4 ${isSaving ? 'animate-spin' : ''}`} />
+                {isSaving ? 'Đang thử lưu lại…' : '⚡ Thử lưu lại'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentSopStep === 1) changeSopStep(2);
+                  setSaveNetworkError(null);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3.5 py-2 text-xs font-bold text-amber-900 hover:bg-amber-50 transition cursor-pointer shadow-xs"
+              >
+                <Edit3 className="h-4 w-4 text-amber-600" />
+                ✏️ Nhập tay / Mở bảng đối chiếu
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  saveOfflineBackup({
+                    step: currentSopStep,
+                    employees: batchEmployees,
+                    groups: employeeGroups,
+                    formState: draftReader.current?.read() || draftFormState
+                  });
+                  showNotification('success', 'Đã xác nhận sao lưu Offline dữ liệu hiện tại vào trình duyệt.');
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer shadow-xs"
+              >
+                <HardDrive className="h-3.5 w-3.5 text-slate-600" />
+                💾 Sao lưu tạm vào máy
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSaveNetworkError(null)}
+                className="text-xs text-slate-500 hover:text-slate-800 px-2 py-1 ml-auto"
+              >
+                Ẩn thông báo
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* BANNER KHÔI PHỤC BẢN SAO LƯU OFFLINE NẾU CÓ */}
+        {offlineBackup && !saveNetworkError && (
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/80 p-3.5 text-xs text-indigo-950 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2">
+              <HardDrive className="h-4 w-4 text-indigo-600 shrink-0" />
+              <span>
+                Phát hiện bản sao lưu Offline trên thiết bị (Lưu lúc {new Date(offlineBackup.savedAt).toLocaleString('vi-VN')} với {offlineBackup.employees.length} nhân viên).
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (offlineBackup.employees?.length) setBatchEmployees(offlineBackup.employees);
+                  if (offlineBackup.groups?.length) setEmployeeGroups(offlineBackup.groups);
+                  if (offlineBackup.formState) setDraftFormState(offlineBackup.formState);
+                  if (offlineBackup.step) changeSopStep(offlineBackup.step);
+                  showNotification('success', 'Đã khôi phục dữ liệu từ bản sao lưu Offline trên thiết bị.');
+                }}
+                className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 font-bold transition cursor-pointer"
+              >
+                Khôi phục bản lưu máy
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearOfflineBackup();
+                  setOfflineBackup(null);
+                }}
+                className="rounded-lg border border-slate-300 bg-white text-slate-700 px-2.5 py-1.5 font-medium hover:bg-slate-100 cursor-pointer"
+              >
+                Bỏ qua
+              </button>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'upload' && (
           <div className="space-y-4 animate-fade-in">
             {/* Banner hiển thị vai trò */}
@@ -606,24 +744,7 @@ export default function App() {
             {/* BƯỚC 1: Màn hình Uploader khi currentSopStep === 1 */}
             {currentSopStep === 1 && (
               <div className="space-y-4 animate-fade-in">
-                {extractedData && (
-                  <div className="bg-blue-50 border border-blue-200 p-3.5 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
-                    <div className="flex items-center gap-2 text-blue-900">
-                      <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
-                      <span>
-                        Hồ sơ của <strong>{extractedData.hoVaTen || 'Ứng viên'}</strong> đã được trích xuất sẵn.
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setCurrentSopStep(2)}
-                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <span>Tiếp tục xử lý Bước 2 (OCR Trích Xuất Form)</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                )}
+
                 <DocumentUploader
                   onBusyChange={setUploaderBusy}
                   batchEmployees={batchEmployees}

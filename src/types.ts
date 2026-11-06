@@ -71,6 +71,8 @@ export interface EmployeeHouseholdInfo {
 }
 
 export interface EmployeeIntakeInfo {
+  hoVaTen?: string;
+  hoTen?: string;
   thamQuyen?: '' | 'Trưởng địa điểm' | 'Dinh dưỡng viên trưởng' | 'Giám sát trưởng';
   ngayVaoLam?: string;
   diaChiTamTru?: string;
