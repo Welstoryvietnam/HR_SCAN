@@ -56,7 +56,7 @@ export async function extractOCRGroup(
 ):Promise<ExtractReply> {
   const documents: {id:string;fileName:string;docType:string;pages:OCRPage[]}[]=[];
   try {
-    // Fast AI Vision Mode: directly extract using Gemini 3.8 Flash multimodal API (~2 seconds)
+    // Fast AI Vision Mode: directly extract using Gemini 3.5 Flash multimodal API (~2 seconds)
     if (scanMode === 'ai' && group.documents.length > 0) {
       onStatus(`⚡ Đang Quét AI Siêu Tốc (${group.documents.length} tài liệu)…`);
       let fastReply = await safeFetchJson<{

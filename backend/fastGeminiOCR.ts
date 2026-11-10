@@ -187,12 +187,13 @@ export async function extractEmployeeWithGeminiVision(
     }Thực hiện kiểm tra chéo (Cross-check) thông tin giữa CCCD và Sơ yếu lý lịch và cảnh báo nếu có mâu thuẫn vào "canh_bao_sai_lech". Chỉ bắt thông tin nhân viên từ CCCD/VNeID/CV, BỎ QUA tên thân nhân (Bố/Mẹ/Vợ/Chồng). Bắt thông tin chủ hộ thường trú trên VNeID và thêm vào thanhVienHoGiaDinh.`,
   });
 
-  // Call gemini-3.8-flash with ThinkingLevel.LOW and no responseSchema for maximum speed (sub-3s)
+  // Call gemini-3.5-flash with ThinkingLevel.LOW and no responseSchema for maximum speed (sub-3s)
   let response: any;
+  const geminiModel = process.env.GEMINI_OCR_MODEL || 'gemini-3.5-flash';
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
+        model: geminiModel,
         contents: {
           parts,
         },
