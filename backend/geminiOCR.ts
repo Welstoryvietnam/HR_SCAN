@@ -6,7 +6,7 @@ import {GEMINI_TRANSCRIPT_SEPARATOR} from './visionFormat.js';
 
 type Config={enabled:boolean;apiKey:string;model:string};
 export function geminiOCRConfig(env:NodeJS.ProcessEnv=process.env):Config {
-  return {enabled:env.GEMINI_OCR_ENABLED==='true',apiKey:env.GEMINI_API_KEY || '',model:env.GEMINI_OCR_MODEL || 'gemini-3.5-flash-lite'};
+  return {enabled:env.GEMINI_OCR_ENABLED==='true',apiKey:env.GEMINI_API_KEY || '',model:env.GEMINI_OCR_MODEL || 'gemini-3.1-flash-lite'};
 }
 export function geminiOCRCapabilities() {
   const config=geminiOCRConfig();

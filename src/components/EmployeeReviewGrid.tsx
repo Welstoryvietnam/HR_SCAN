@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { BatchEmployeeDraft, NhanSuRecord } from '../types';
-import { Search, Users, AlertTriangle, Plus, Trash2 } from 'lucide-react';
-import { HouseholdMembersEditor } from './HouseholdMembersEditor';
+import { Search, Users, AlertTriangle } from 'lucide-react';
 import { findSystemDuplicateCCCD, findBatchDuplicateCCCD, normalizeCCCD } from '../utils/duplicateCheck';
 
 interface Props {
@@ -54,9 +53,9 @@ export function EmployeeReviewGrid({ employees, existingRecords, onChange }: Pro
       </div>
       <p className="border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">Mỗi dòng là một nhân viên. Chỉnh sửa trực tiếp trong ô; cuộn ngang để xem đầy đủ các cột.</p>
       <div className="max-h-[65vh] overflow-auto">
-        <table className="w-full min-w-[1400px] border-separate border-spacing-0 text-left text-xs" aria-label="Thông tin nhân viên Bước 2">
+        <table className="w-full min-w-[1200px] border-separate border-spacing-0 text-left text-xs" aria-label="Thông tin nhân viên Bước 2">
           <thead className="sticky top-0 z-20 bg-blue-50 text-blue-950">
-            <tr>{['STT', 'Họ và tên', 'Thông tin cá nhân', 'Dân tộc', 'Giấy tờ CCCD', 'Liên hệ / Địa chỉ', 'Gia đình / Ghi chú'].map((title, index) => <th key={title} scope="col" className={`border-b border-blue-200 px-3 py-3 ${index === 1 ? 'sticky left-0 z-30 min-w-56 bg-blue-50' : ''}`}>{title}</th>)}</tr>
+            <tr>{['STT', 'Họ và tên', 'Thông tin cá nhân', 'Dân tộc', 'Giấy tờ CCCD', 'Liên hệ / Địa chỉ', 'Ghi chú'].map((title, index) => <th key={title} scope="col" className={`border-b border-blue-200 px-3 py-3 ${index === 1 ? 'sticky left-0 z-30 min-w-56 bg-blue-50' : ''}`}>{title}</th>)}</tr>
           </thead>
           <tbody>
             {visibleEmployees.map(employee => {
@@ -117,13 +116,6 @@ export function EmployeeReviewGrid({ employees, existingRecords, onChange }: Pro
                 <td className="min-w-64 space-y-2 border-b border-slate-200 p-3">{field('soDienThoai','Số điện thoại')}{field('queQuan','Quê quán')}{field('diaChiThuongTru','Địa chỉ thường trú')}</td>
                 <td className="min-w-64 space-y-2 border-b border-slate-200 p-3">
                   {field('ghiChu','Ghi chú hồ sơ')}
-                  <HouseholdMembersEditor members={employee.thanhVienHoGiaDinh || []} onChange={members => onChange(employee.id,{thanhVienHoGiaDinh:members})} employeeNumber={index+1} permanentAddress={employee.diaChiThuongTru} />
-                  <details><summary className="cursor-pointer font-semibold text-blue-700">Gia đình ({employee.thongTinGiaDinh?.length || 0})</summary>
-                    <div className="mt-2 space-y-2">{(employee.thongTinGiaDinh || []).map((member, memberIndex) => <div key={memberIndex} className="space-y-1 rounded-lg bg-slate-50 p-2">
-                      {(['quanHe','hoTen','namSinh','ngheNghiep'] as const).map((key, fieldIndex) => <input key={key} aria-label={`${['Quan hệ','Họ tên người thân','Năm sinh người thân','Nghề nghiệp'][fieldIndex]} ${memberIndex + 1} nhân viên ${index + 1}`} placeholder={['Quan hệ','Họ tên người thân','Năm sinh','Nghề nghiệp'][fieldIndex]} value={member[key] || ''} onChange={event => onChange(employee.id,{thongTinGiaDinh:(employee.thongTinGiaDinh || []).map((item,i) => i === memberIndex ? {...item,[key]:event.target.value} : item)})} className={inputClass} />)}
-                      <button type="button" aria-label={`Xóa người thân ${memberIndex + 1} nhân viên ${index + 1}`} onClick={() => onChange(employee.id,{thongTinGiaDinh:employee.thongTinGiaDinh?.filter((_,i) => i !== memberIndex)})} className="text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button>
-                    </div>)}<button type="button" onClick={() => onChange(employee.id,{thongTinGiaDinh:[...(employee.thongTinGiaDinh || []),{quanHe:'',hoTen:''}]})} className="inline-flex items-center gap-1 text-blue-700"><Plus className="h-3 w-3" />Thêm người thân</button></div>
-                  </details>
                 </td>
               </tr>;
             })}

@@ -1,9 +1,15 @@
 export type UserRole = 'admin' | 'employee';
+export type HrmSubRole =
+  | 'admin'
+  | 'quan_ly_nhan_su'
+  | 'nhan_vien_nhan_su'
+  | 'nhan_vien_tuyen_dung'
+  | 'nhan_vien_y_te';
 
 export interface UserProfile {
   employeeCode?:string;
   contactEmail?:string;
-  hrmRole?:'admin'|'quan_ly_nhan_su'|'nhan_vien_nhan_su';
+  hrmRole?:HrmSubRole;
   department?:string;
   sessionToken?: string;
   id?: string;
@@ -17,6 +23,7 @@ export interface UserProfile {
 
 export interface SystemUserAccount {
   contactEmail?:string;
+  hrmRole?:HrmSubRole;
   id: string;
   username: string;
   password?: string;

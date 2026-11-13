@@ -1,6 +1,6 @@
 import {randomBytes,scryptSync,timingSafeEqual} from 'node:crypto';
 import {FirestoreRecordStore,StorageError,firestoreConfigured} from './recordStore.js';
-import type {SystemUserAccount} from '../src/types.js';
+import type {HrmSubRole, SystemUserAccount} from '../src/types.js';
 import {Router} from 'express';
 import {randomUUID} from 'node:crypto';
 
@@ -12,7 +12,7 @@ export interface Account extends SystemUserAccount {
   notes?:string;
   phone?:string;
   avatarColor?:string;
-  hrmRole?:'admin'|'quan_ly_nhan_su'|'nhan_vien_nhan_su';
+  hrmRole?:HrmSubRole;
   authSource?:string;
 }
 export function hashPassword(password:string){
@@ -79,7 +79,10 @@ export function createAccountRouter(accounts:()=>Account[]){
     if(username.length<3||!String(req.body.fullName||'').trim()||typeof req.body.password!=='string'||req.body.password.length<6||req.body.password.length>1000)throw new StorageError('Mã đăng nhập, họ tên và mật khẩu tối thiểu 6 ký tự là bắt buộc.',400);
     if(accounts().some(a=>a.username===username||(contactEmail&&a.contactEmail===contactEmail)))throw new StorageError('Mã đăng nhập hoặc email đã được sử dụng.',409);
     const id='usr_'+randomUUID();
-    const user=await accountStore.save({id,username,email:`${id}@hrm-accounts.invalid`,contactEmail,fullName:String(req.body.fullName).trim(),role:req.body.role==='admin'?'admin':'employee',status:'active',password:req.body.password,createdAt:new Date().toISOString()},true);
+    const role=req.body.role==='admin'?'admin':'employee';
+    const validSubRoles: HrmSubRole[]=['admin','quan_ly_nhan_su','nhan_vien_nhan_su','nhan_vien_tuyen_dung','nhan_vien_y_te'];
+    const hrmRole: HrmSubRole=role==='admin'?'admin':(validSubRoles.includes(req.body.hrmRole)?req.body.hrmRole:'nhan_vien_tuyen_dung');
+    const user=await accountStore.save({id,username,email:`${id}@hrm-accounts.invalid`,contactEmail,fullName:String(req.body.fullName).trim(),role,hrmRole,status:'active',password:req.body.password,createdAt:new Date().toISOString()},true);
     return {user:publicAccount(user),message:'Đã tạo tài khoản.'};
   }));
   router.put('/:id',route(async(req)=>{
@@ -92,7 +95,9 @@ export function createAccountRouter(accounts:()=>Account[]){
       user.contactEmail=email;
     }
     if(input.password){if(typeof input.password!=='string'||input.password.length<6||input.password.length>1000)throw new StorageError('Mật khẩu phải từ 6 đến 1000 ký tự.',400);user.password=input.password;}
-    if(['admin','employee'].includes(input.role)&&input.role!==user.role){user.role=input.role;user.hrmRole=input.role==='admin'?'admin':'nhan_vien_nhan_su';}
+    const validSubRoles: HrmSubRole[]=['admin','quan_ly_nhan_su','nhan_vien_nhan_su','nhan_vien_tuyen_dung','nhan_vien_y_te'];
+    if(['admin','employee'].includes(input.role)&&input.role!==user.role){user.role=input.role;user.hrmRole=input.role==='admin'?'admin':'nhan_vien_tuyen_dung';}
+    if(validSubRoles.includes(input.hrmRole)){user.hrmRole=input.hrmRole;if(input.hrmRole==='admin')user.role='admin';else if(user.role!=='admin'||input.role==='employee')user.role='employee';}
     if(['active','locked'].includes(input.status))user.status=input.status;
     if(previous.role==='admin'&&(user.role!=='admin'||user.status!=='active')&&!accounts().some(a=>a.id!==user.id&&a.role==='admin'&&a.status==='active'))throw new StorageError('Phải giữ ít nhất một quản trị viên hoạt động.',400);
     const saved=await accountStore.save(user);return {user:publicAccount(saved),message:'Đã cập nhật tài khoản.'};

@@ -162,9 +162,7 @@ export async function extractEmployeeWithGeminiVision(
         const resized = await sharp(buffer)
           .rotate() // Auto-rotate reading EXIF orientation tags from phone cameras
           .resize({ width: 2800, height: 2800, fit: 'inside', withoutEnlargement: true })
-          .grayscale() // Grayscale + Normalize to reduce complex watermark background noise
-          .normalize()
-          .jpeg({ quality: 88 })
+          .jpeg({ quality: 90 })
           .toBuffer();
         base64ToSend = resized.toString('base64');
         mimeToSend = 'image/jpeg';
@@ -187,9 +185,9 @@ export async function extractEmployeeWithGeminiVision(
     }Thực hiện kiểm tra chéo (Cross-check) thông tin giữa CCCD và Sơ yếu lý lịch và cảnh báo nếu có mâu thuẫn vào "canh_bao_sai_lech". Chỉ bắt thông tin nhân viên từ CCCD/VNeID/CV, BỎ QUA tên thân nhân (Bố/Mẹ/Vợ/Chồng). Bắt thông tin chủ hộ thường trú trên VNeID và thêm vào thanhVienHoGiaDinh.`,
   });
 
-  // Call gemini-3.5-flash with ThinkingLevel.LOW and no responseSchema for maximum speed (sub-3s)
+  // Call gemini-4-hydrogen with ThinkingLevel.LOW for fast, accurate multimodal extraction
   let response: any;
-  const geminiModel = process.env.GEMINI_OCR_MODEL || 'gemini-3.5-flash';
+  const geminiModel = process.env.GEMINI_OCR_MODEL || 'gemini-4-hydrogen';
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       response = await ai.models.generateContent({
@@ -200,7 +198,6 @@ export async function extractEmployeeWithGeminiVision(
         config: {
           systemInstruction: FAST_SYSTEM_INSTRUCTION,
           thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          temperature: 0.1,
           maxOutputTokens: 4096,
           responseMimeType: 'application/json',
         },

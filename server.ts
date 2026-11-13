@@ -14,6 +14,13 @@ import { draftStore } from './backend/draftStore.js';
 import { normalizeHouseholdMembers } from './src/utils/household.js';
 import { createSession, readSession } from "./backend/session.js";
 import { DEFAULT_ORGANIZATION_HIERARCHY } from "./src/data/organizationHierarchy.js";
+import {
+  DEFAULT_HEALTH_CHECK_STANDARDS,
+  HEALTH_CHECK_ITEMS,
+  createHealthItemsMap,
+  type HealthCheckStandardItem,
+  type HealthCheckItemKey,
+} from "./src/data/healthCheckStandards.js";
 
 dotenv.config();
 if (!process.env.HR_ALLOW_LEGACY_TEST_ACCOUNTS && process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
@@ -184,6 +191,160 @@ const jobPositionsHierarchy = [
 
 // Cơ cấu tổ chức Team (Khối) / Group (Ban) / Part (Bộ phận)
 let organizationHierarchy = JSON.parse(JSON.stringify(DEFAULT_ORGANIZATION_HIERARCHY));
+
+// Sheet: "Tiêu chuẩn" - Hệ thống quản lý tiêu chuẩn khám sức khỏe định kỳ (Hàng 3 Header, Cột B -> AE)
+let initialHealthStandards = DEFAULT_HEALTH_CHECK_STANDARDS;
+try {
+  const masterFilePath = path.join(process.cwd(), 'public/assets/aistudio/Qu_n_l__kh_m_s_c_kh_e_a94c5be0');
+  if (fs.existsSync(masterFilePath)) {
+    const content = fs.readFileSync(masterFilePath, 'utf-8');
+    const lines = content.split(/\r?\n/);
+    const parsedRecords: HealthCheckStandardItem[] = [];
+    let sttCounter = 1;
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const cols: string[] = [];
+      let inQuote = false;
+      let currentVal = '';
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          inQuote = !inQuote;
+        } else if (char === ',' && !inQuote) {
+          cols.push(currentVal.trim());
+          currentVal = '';
+        } else {
+          currentVal += char;
+        }
+      }
+      cols.push(currentVal.trim());
+
+      const sttNum = Number(cols[1]);
+      const roomName = cols[2];
+      if (roomName && roomName !== 'Phòng' && (!isNaN(sttNum) || roomName.length > 0)) {
+        const thoiHan = cols[3] || '6 tháng';
+        const phanLoai = cols[4] || 'Bếp ngoài';
+        const mucDichKham = cols[5] || 'ĐK';
+
+        const items: Record<HealthCheckItemKey, boolean> = {
+          khamLamSangTongQuat: cols[6]?.toUpperCase() === 'X',
+          xetNghiemMau: cols[7]?.toUpperCase() === 'X',
+          xetNghiemNuocTieu: cols[8]?.toUpperCase() === 'X',
+          chuanDoanHinhAnh: cols[9]?.toUpperCase() === 'X',
+          viemGanA: cols[10]?.toUpperCase() === 'X',
+          viemGanE: cols[11]?.toUpperCase() === 'X',
+          soiPhan: cols[12]?.toUpperCase() === 'X',
+          xetNghiemPhan: cols[13]?.toUpperCase() === 'X',
+          khamPhuKhoa: cols[14]?.toUpperCase() === 'X',
+          tamSoatTuyenVu: cols[15]?.toUpperCase() === 'X',
+          tamSoatUngThuCoTuCung: cols[16]?.toUpperCase() === 'X',
+          viemGanB: cols[17]?.toUpperCase() === 'X',
+          viemGanC: cols[18]?.toUpperCase() === 'X',
+          hpDaDay: cols[19]?.toUpperCase() === 'X',
+          hiv: cols[20]?.toUpperCase() === 'X',
+          maTuy4Chan: cols[21]?.toUpperCase() === 'X',
+          nongDoConHoiTho: cols[22]?.toUpperCase() === 'X',
+          chatGayNghien5Trong1: cols[23]?.toUpperCase() === 'X',
+          sieuAmOBung: cols[24]?.toUpperCase() === 'X',
+          nhomMauRh: cols[25]?.toUpperCase() === 'X',
+          nhomMauABO: cols[26]?.toUpperCase() === 'X',
+        };
+
+        const nhaCungCap = cols[28] || '';
+        const ghiChu = cols[29] || '';
+        const khuVuc = cols[30] || 'Bắc Ninh';
+
+        parsedRecords.push({
+          id: `KSK_MASTER_${sttCounter}`,
+          stt: sttCounter++,
+          phong: roomName,
+          thoiHan,
+          phanLoai,
+          mucDichKham,
+          nhaCungCap,
+          ghiChu,
+          khuVuc,
+          items,
+          capNhatLuc: new Date().toISOString(),
+        });
+      }
+    }
+
+    if (parsedRecords.length > 20) {
+      initialHealthStandards = parsedRecords;
+      console.log(`Successfully loaded ${parsedRecords.length} health check standards from attached master file.`);
+    }
+  }
+} catch (e) {
+  console.warn('Could not load attached health check master file:', e);
+}
+
+export interface HealthCheckParticipant {
+  id: string;
+  stt: number;
+  hoVaTen: string;
+  donViCongTac: string;
+  soDienThoai: string;
+  thamGiaKhamSucKhoe: boolean;
+  thamGiaHienMau: boolean;
+}
+
+let healthCheckParticipants: HealthCheckParticipant[] = [];
+try {
+  const pPath = path.join(process.cwd(), 'public/assets/aistudio/B_ng_t_ng_h_p_danh_s_ch_tham_gia_ho_t___ng_ng_y_21_c9871e1c.11_-_khu_y_n_phong_');
+  if (fs.existsSync(pPath)) {
+    const content = fs.readFileSync(pPath, 'utf-8');
+    const lines = content.split(/\r?\n/);
+    let idx = 1;
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const cols: string[] = [];
+      let inQuote = false;
+      let curr = '';
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') inQuote = !inQuote;
+        else if (c === ',' && !inQuote) {
+          cols.push(curr.trim());
+          curr = '';
+        } else {
+          curr += c;
+        }
+      }
+      cols.push(curr.trim());
+      const name = cols[1];
+      const unit = cols[2];
+      const phone = cols[3];
+      const ksk = cols[4];
+      const blood = cols[5];
+
+      if (name && name !== 'Họ và tên' && name !== 'DANH SÁCH' && !name.includes('Đoàn viên')) {
+        healthCheckParticipants.push({
+          id: `PART_${idx}`,
+          stt: idx++,
+          hoVaTen: name,
+          donViCongTac: unit || '',
+          soDienThoai: phone || '',
+          thamGiaKhamSucKhoe: ksk === '1' || ksk?.toLowerCase() === 'x' || Boolean(ksk),
+          thamGiaHienMau: blood === '1' || blood?.toLowerCase() === 'x' || Boolean(blood),
+        });
+      }
+    }
+    console.log(`Loaded ${healthCheckParticipants.length} health check participants from Yen Phong.`);
+  }
+} catch (e) {
+  console.warn('Could not load participants file:', e);
+}
+
+app.get("/api/sheets/tham-gia-ksk", (_req, res) => {
+  res.json({
+    success: true,
+    data: healthCheckParticipants,
+  });
+});
+
+let tieuChuanKhamSucKhoe: HealthCheckStandardItem[] = initialHealthStandards;
 
 // Sheet: TieuChuanLuong - Danh mục tiêu chuẩn theo đúng dữ liệu người dùng cung cấp
 let tieuChuanLuong = [
@@ -943,6 +1104,7 @@ app.get("/api/auth/me", requirePersonnelSession, async (req, res) => {
   );
 
   const isAdmin = matchedUser ? matchedUser.role === "admin" : adminEmails.has(clientEmail);
+  const resolvedHrmRole = matchedUser?.hrmRole || (isAdmin ? "admin" : "nhan_vien_tuyen_dung");
 
   res.json({
     id: matchedUser?.id || "usr_default",
@@ -950,7 +1112,12 @@ app.get("/api/auth/me", requirePersonnelSession, async (req, res) => {
     email: matchedUser?.email || clientEmail,
     name: matchedUser?.fullName || clientEmail.split("@")[0].toUpperCase(),
     role: isAdmin ? "admin" : "employee",
-    displayName: isAdmin ? "Quản trị viên (Toàn quyền)" : "Nhân viên tuyển dụng",
+    hrmRole: resolvedHrmRole,
+    displayName: isAdmin
+      ? "Quản trị viên (Toàn quyền)"
+      : resolvedHrmRole === "nhan_vien_y_te"
+      ? "Nhân viên y tế"
+      : "Nhân viên tuyển dụng",
     isAdmin,
   });
 });
@@ -997,6 +1164,7 @@ app.post("/api/auth/login", async (req, res) => {
     // Đăng nhập thành công -> Cập nhật thời điểm đăng nhập gần nhất
     account.lastLogin = new Date().toISOString();
     const isAdmin = account.role === "admin" || adminEmails.has(account.email.toLowerCase());
+    const resolvedHrmRole = account.hrmRole || (isAdmin ? "admin" : "nhan_vien_tuyen_dung");
 
     const user = {
       id: account.id,
@@ -1004,10 +1172,14 @@ app.post("/api/auth/login", async (req, res) => {
       email: account.email,
       name: account.fullName,
       role: account.role,
-      displayName: isAdmin ? "Quản trị viên (Toàn quyền)" : "Nhân viên tuyển dụng",
+      displayName: isAdmin
+        ? "Quản trị viên (Toàn quyền)"
+        : resolvedHrmRole === "nhan_vien_y_te"
+        ? "Nhân viên y tế"
+        : "Nhân viên tuyển dụng",
       employeeCode:account.employeeCode,
       department:account.department,
-      hrmRole:account.hrmRole,
+      hrmRole:resolvedHrmRole,
       contactEmail:account.contactEmail,
       sessionToken: createSession({id:account.id,email:account.email,role:account.role}),
     };
@@ -1147,7 +1319,6 @@ app.get("/api/admin/users", (req, res) => {
       return res.status(403).json({ error: "Từ chối truy cập: Chỉ Quản trị viên mới có quyền xem danh sách tài khoản." });
     }
 
-    // Trả về danh sách tài khoản với mật khẩu hiển thị tiện cho Admin quản trị
     const safeAccounts = userAccounts.map((u) => ({
       id: u.id,
       username: u.username,
@@ -1155,6 +1326,7 @@ app.get("/api/admin/users", (req, res) => {
       email: u.email,
       fullName: u.fullName,
       role: u.role,
+      hrmRole: u.hrmRole,
       status: u.status,
       createdAt: u.createdAt,
       lastLogin: u.lastLogin,
@@ -1174,7 +1346,7 @@ app.post("/api/admin/users", (req, res) => {
       return res.status(403).json({ error: "Từ chối truy cập: Chỉ Quản trị viên mới có quyền tạo tài khoản cho nhân viên." });
     }
 
-    const { username, password, email, fullName, role = "employee" } = req.body;
+    const { username, password, email, fullName, role = "employee", hrmRole } = req.body;
 
     if (!username || !password || !email || !fullName) {
       return res.status(400).json({ error: "Vui lòng điền đầy đủ: Tên đăng nhập, Mật khẩu, Email và Họ tên nhân viên." });
@@ -1205,13 +1377,23 @@ app.post("/api/admin/users", (req, res) => {
       return res.status(400).json({ error: `Email "${cleanEmail}" đã được liên kết với một tài khoản khác.` });
     }
 
+    const resolvedRole = role === "admin" ? "admin" : "employee";
+    const validSubRoles = ["admin", "quan_ly_nhan_su", "nhan_vien_nhan_su", "nhan_vien_tuyen_dung", "nhan_vien_y_te"] as const;
+    const resolvedHrmRole =
+      resolvedRole === "admin"
+        ? "admin"
+        : validSubRoles.includes(hrmRole)
+        ? hrmRole
+        : "nhan_vien_tuyen_dung";
+
     const newAccount: SystemAccount = {
       id: `usr_${Date.now()}`,
       username: cleanUsername,
       password: String(password),
       email: cleanEmail,
       fullName: String(fullName).trim(),
-      role: role === "admin" ? "admin" : "employee",
+      role: resolvedRole,
+      hrmRole: resolvedHrmRole,
       status: "active",
       createdAt: new Date().toISOString(),
     };
@@ -1273,7 +1455,7 @@ app.put("/api/admin/users/:id", (req, res) => {
       return res.status(404).json({ error: `Không tìm thấy tài khoản với mã: ${id}` });
     }
 
-    const { fullName, email, password, role, status } = req.body;
+    const { fullName, email, password, role, hrmRole, status } = req.body;
 
     if (fullName) account.fullName = String(fullName).trim();
     if (email) {
@@ -1293,12 +1475,16 @@ app.put("/api/admin/users/:id", (req, res) => {
       account.role = role;
       if (role === "admin") {
         adminEmails.add(account.email.toLowerCase());
+        account.hrmRole = "admin";
       } else {
         // Chỉ xóa khỏi adminEmails nếu không phải email cố định
         if (account.email.toLowerCase() !== "happyendpu@gmail.com") {
           adminEmails.delete(account.email.toLowerCase());
         }
+        account.hrmRole = hrmRole || account.hrmRole || "nhan_vien_tuyen_dung";
       }
+    } else if (hrmRole) {
+      account.hrmRole = hrmRole;
     }
 
     if (status === "active" || status === "locked") {
@@ -1947,6 +2133,58 @@ app.delete("/api/sheets/tieu-chuan-luong/:id", (req, res) => {
 });
 
 // CƠ CẤU TỔ CHỨC: TEAM (KHỐI) / GROUP (BAN) / PART (BỘ PHẬN)
+function syncTieuChuanKskWithOrgHierarchy() {
+  const orgRooms = new Set<string>();
+  for (const khoi of organizationHierarchy) {
+    if (Array.isArray(khoi.bans)) {
+      for (const ban of khoi.bans) {
+        if (Array.isArray(ban.phongs)) {
+          for (const phong of ban.phongs) {
+            if (phong && phong.name) {
+              orgRooms.add(phong.name.trim());
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const existingMap = new Map<string, HealthCheckStandardItem>();
+  for (const item of tieuChuanKhamSucKhoe) {
+    existingMap.set(item.phong.toLowerCase(), item);
+  }
+
+  const newList: HealthCheckStandardItem[] = [];
+  let nextStt = 1;
+
+  for (const roomName of orgRooms) {
+    const existing = existingMap.get(roomName.toLowerCase());
+    if (existing) {
+      newList.push({
+        ...existing,
+        stt: nextStt++,
+        phong: roomName,
+      });
+    } else {
+      newList.push({
+        id: `KSK_${randomUUID()}`,
+        stt: nextStt++,
+        phong: roomName,
+        thoiHan: '6 tháng',
+        phanLoai: roomName.includes('OFFICE') || roomName.includes('FPT') ? 'OFFICE' : 'Bếp ngoài',
+        mucDichKham: 'ĐK',
+        nhaCungCap: 'Hữu Phúc',
+        ghiChu: 'Tự động đồng bộ từ Cơ Cấu Tổ Chức',
+        khuVuc: roomName.includes('HANOI') || roomName.includes('HCM') ? 'Hà Nội' : 'Bắc Ninh',
+        items: createHealthItemsMap(['khamLamSangTongQuat', 'xetNghiemMau', 'xetNghiemNuocTieu', 'chuanDoanHinhAnh']),
+        capNhatLuc: new Date().toISOString(),
+      });
+    }
+  }
+
+  tieuChuanKhamSucKhoe = newList;
+}
+
 app.get("/api/organization-hierarchy", (req, res) => {
   res.json({ success: true, data: organizationHierarchy });
 });
@@ -1963,8 +2201,132 @@ app.post("/api/organization-hierarchy", (req, res) => {
   }
 
   organizationHierarchy = hierarchy;
-  res.json({ success: true, data: organizationHierarchy });
+  syncTieuChuanKskWithOrgHierarchy();
+  res.json({ success: true, data: organizationHierarchy, tieuChuanKksList: tieuChuanKhamSucKhoe });
 });
+
+// SHEET: "Tiêu chuẩn" - QUẢN LÝ TIÊU CHUẨN KHÁM SỨC KHỎE ĐỊNH KỲ
+app.get("/api/sheets/tieu-chuan-ksk", (_req, res) => {
+  res.json({
+    success: true,
+    sheetName: "Tiêu chuẩn",
+    headerRow: 3,
+    dataStartRow: 4,
+    totalCount: tieuChuanKhamSucKhoe.length,
+    data: tieuChuanKhamSucKhoe,
+  });
+});
+
+app.post("/api/sheets/tieu-chuan-ksk", (req, res) => {
+  try {
+    const body = req.body || {};
+    const phong = String(body.phong || "").trim();
+    if (!phong) {
+      return res.status(400).json({ error: "Tên Phòng / Địa điểm (Cột C) không được để trống." });
+    }
+
+    const existingIdx = tieuChuanKhamSucKhoe.findIndex((item) => item.id === body.id);
+
+    // Kiểm tra trùng tên phòng khi thêm mới hoặc đổi tên
+    const duplicate = tieuChuanKhamSucKhoe.find(
+      (item, idx) => idx !== existingIdx && item.phong.toLowerCase() === phong.toLowerCase()
+    );
+    if (duplicate) {
+      return res.status(400).json({
+        error: `Phòng / Địa điểm "${phong}" đã tồn tại trong Sheet "Tiêu chuẩn" (STT #${duplicate.stt}). Vui lòng chọn chỉnh sửa dòng hiện có hoặc đặt tên khác.`,
+      });
+    }
+
+    // Chuẩn hóa 21 danh mục khám lâm sàng & cận lâm sàng (Cột G -> AA)
+    const rawItems = body.items || {};
+    const selectedKeys: HealthCheckItemKey[] = [];
+    for (const colDef of HEALTH_CHECK_ITEMS) {
+      const val = rawItems[colDef.key];
+      if (val === true || String(val).toUpperCase().trim() === "X") {
+        selectedKeys.push(colDef.key);
+      }
+    }
+    const normalizedItems = createHealthItemsMap(selectedKeys);
+
+    if (existingIdx >= 0) {
+      const updated: HealthCheckStandardItem = {
+        ...tieuChuanKhamSucKhoe[existingIdx],
+        phong,
+        thoiHan: String(body.thoiHan || "6 tháng").trim(),
+        phanLoai: String(body.phanLoai || "Bếp ngoài").trim(),
+        mucDichKham: String(body.mucDichKham || "ĐK").trim(),
+        nhaCungCap: String(body.nhaCungCap || "").trim(),
+        ghiChu: String(body.ghiChu || "").trim(),
+        khuVuc: String(body.khuVuc || "Bắc Ninh").trim(),
+        items: normalizedItems,
+        capNhatLuc: new Date().toISOString(),
+      };
+      tieuChuanKhamSucKhoe[existingIdx] = updated;
+      return res.json({
+        success: true,
+        message: `Đã cập nhật tiêu chuẩn khám sức khỏe cho phòng "${phong}" (Hàng ${updated.stt + 3}).`,
+        data: updated,
+        list: tieuChuanKhamSucKhoe,
+      });
+    }
+
+    const nextStt =
+      tieuChuanKhamSucKhoe.reduce((max, item) => Math.max(max, item.stt || 0), 0) + 1;
+
+    const created: HealthCheckStandardItem = {
+      id: body.id || `KSK_${Date.now()}`,
+      stt: nextStt,
+      phong,
+      thoiHan: String(body.thoiHan || "6 tháng").trim(),
+      phanLoai: String(body.phanLoai || "Bếp ngoài").trim(),
+      mucDichKham: String(body.mucDichKham || "ĐK").trim(),
+      nhaCungCap: String(body.nhaCungCap || "").trim(),
+      ghiChu: String(body.ghiChu || "").trim(),
+      khuVuc: String(body.khuVuc || "Bắc Ninh").trim(),
+      items: normalizedItems,
+      capNhatLuc: new Date().toISOString(),
+    };
+
+    tieuChuanKhamSucKhoe.push(created);
+
+    res.json({
+      success: true,
+      message: `Đã thêm mới tiêu chuẩn khám sức khỏe cho phòng "${phong}" vào Sheet "Tiêu chuẩn" (STT #${nextStt}).`,
+      data: created,
+      list: tieuChuanKhamSucKhoe,
+    });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+app.delete("/api/sheets/tieu-chuan-ksk/:id", (req, res) => {
+  const { id } = req.params;
+  const target = tieuChuanKhamSucKhoe.find((item) => item.id === id);
+  if (!target) {
+    return res.status(404).json({ error: "Không tìm thấy phòng / địa điểm cần xóa." });
+  }
+
+  tieuChuanKhamSucKhoe = tieuChuanKhamSucKhoe
+    .filter((item) => item.id !== id)
+    .map((item, idx) => ({ ...item, stt: idx + 1 }));
+
+  res.json({
+    success: true,
+    message: `Đã xóa phòng "${target.phong}" khỏi Sheet "Tiêu chuẩn".`,
+    list: tieuChuanKhamSucKhoe,
+  });
+});
+
+app.post("/api/sheets/tieu-chuan-ksk/reset", (_req, res) => {
+  tieuChuanKhamSucKhoe = JSON.parse(JSON.stringify(DEFAULT_HEALTH_CHECK_STANDARDS));
+  res.json({
+    success: true,
+    message: "Đã khôi phục dữ liệu mặc định cho Sheet 'Tiêu chuẩn'.",
+    list: tieuChuanKhamSucKhoe,
+  });
+});
+
 
 let inMemoryPersonnelRecords: any[] = [];
 

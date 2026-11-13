@@ -73,7 +73,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
   // Danh sách các Khối duy nhất hiện có trong dữ liệu
   const uniqueKhois = Array.from(new Set(records.map((r) => r.khoi).filter(Boolean)));
 
-  // Xuất file Excel (.xlsx) Mẫu Biến Động Nhân Sự chuẩn 44 cột (theo quy định sáp nhập & VNeID)
+  // Xuất file Excel (.xlsx) Mẫu Biến Động Nhân Sự)
   const handleDownloadExcelBienDong = async () => {
     setIsExporting(true);
     try {
@@ -144,7 +144,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
             onClick={handleDownloadExcelBienDong}
             disabled={isExporting || records.length === 0}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs hover:shadow-md transition disabled:opacity-50 cursor-pointer"
-            title="Xuất file mẫu biến động nhân sự chuẩn 44 cột theo quy định sáp nhập & VNeID"
+            title="Xuất file mẫu biến động nhân sự"
           >
             <Download className="w-4 h-4 text-white" />
             <span>{isExporting ? 'Đang tạo File Excel...' : 'Xuất file Biến Động Nhân Sự (44 Cột)'}</span>
@@ -155,7 +155,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
             onClick={handleExportHousehold}
             disabled={isExportingHousehold || records.length === 0}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-indigo-50 text-indigo-800 border-2 border-indigo-300 rounded-xl text-xs sm:text-sm font-bold shadow-2xs hover:shadow-xs transition disabled:opacity-50 cursor-pointer"
-            title="Xuất phụ lục hộ gia đình theo chuẩn 8 cột từ dữ liệu VNeID"
+            title="Xuất phụ lục hộ gia đình"
           >
             <Users className="w-4 h-4 text-indigo-700" />
             <span>{isExportingHousehold ? 'Đang tạo phụ lục...' : 'Xuất phụ lục hộ gia đình'}</span>
@@ -440,7 +440,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
             <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200 text-xs">
               <div className="font-bold text-blue-900 mb-1.5 flex items-center gap-1.5">
                 <Briefcase className="w-4 h-4 text-blue-700" />
-                <span>VỊ TRÍ CÔNG TÁC & CHỨC VỤ ĐẢM NHẬN</span>
+                <span>VỊ TRÍ CÔNG TÁC & CHỨC VỤ</span>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="bg-white border border-blue-300 text-blue-800 font-medium px-2.5 py-1 rounded shadow-2xs">

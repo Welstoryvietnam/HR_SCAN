@@ -24,7 +24,8 @@ import {
   Network,
   FolderTree,
   CheckCircle2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  ArrowLeftRight
 } from 'lucide-react';
 import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from '../data/organizationHierarchy';
@@ -38,6 +39,7 @@ interface TieuChuanLuongManagerProps {
   organizationHierarchy?: KhoiNode[];
   onSaveOrganizationHierarchy?: (newHierarchy: KhoiNode[]) => Promise<void>;
   onStandardsUpdated?: (updatedList: TieuChuanLuongItem[]) => void;
+  initialTab?: 'standards' | 'organization';
 }
 
 export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
@@ -48,10 +50,11 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
   organizationHierarchy = DEFAULT_ORGANIZATION_HIERARCHY,
   onSaveOrganizationHierarchy,
   onStandardsUpdated,
+  initialTab,
 }) => {
   const [isGoogleSheetModalOpen, setIsGoogleSheetModalOpen] = useState(false);
   // Tab chính của Admin: 1. Tiêu chuẩn lương | 2. Cơ cấu tổ chức
-  const [adminSubTab, setAdminSubTab] = useState<'standards' | 'organization'>('standards');
+  const [adminSubTab, setAdminSubTab] = useState<'standards' | 'organization'>(initialTab || 'standards');
 
   // =========================================================================
   // PHẦN 1: QUẢN LÝ TIÊU CHUẨN LƯƠNG & PHỤ CẤP (SHEET "TieuChuanLuong")
@@ -1025,13 +1028,13 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
               <div>
                 <div className="flex items-center gap-2.5 text-xs text-emerald-200 uppercase font-bold tracking-wider mb-1">
                   <FolderTree className="w-4 h-4 text-emerald-400" />
-                  <span>Cơ Cấu Tổ Chức Đa Tầng (3 Cấp): Team &gt; Group &gt; Part</span>
+                  <span>Quản lý cơ cấu tổ chức</span>
                 </div>
                 <h1 className="text-xl sm:text-2xl font-bold">
-                  Quản Lý Cơ Cấu: Team (Khối) / Group (Ban) / Part (Bộ Phận)
+                  Quản lý cơ cấu tổ chức
                 </h1>
                 <p className="text-xs sm:text-sm text-emerald-100 mt-1 max-w-2xl leading-relaxed">
-                  Dành riêng cho Quản trị viên khi công ty có biến động hoặc tái cơ cấu. Mọi thay đổi thêm/sửa/xóa ở đây sẽ <strong>tự động đồng bộ sang Bước 3</strong> của quy trình tiếp nhận hồ sơ.
+                  Quản lý hệ thống cơ cấu tổ chức doanh nghiệp. Mọi thay đổi sẽ tự động đồng bộ sang Bước 3 của quy trình tiếp nhận hồ sơ nhân sự.
                 </p>
               </div>
 
@@ -1103,200 +1106,76 @@ export const TieuChuanLuongManager: React.FC<TieuChuanLuongManagerProps> = ({
               return (
                 <div
                   key={team.id}
-                  className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs transition hover:border-indigo-300"
+                  className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs hover:border-indigo-300 transition"
                 >
                   {/* TEAM (KHỐI) HEADER */}
-                  <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleTeam(team.id)}
-                        className="p-1 hover:bg-slate-200 rounded text-slate-500 cursor-pointer"
-                      >
-                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                      </button>
-
-                      <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                        {tIdx + 1}
-                      </div>
-
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded">
-                            TEAM (KHỐI)
-                          </span>
-                          <h3 className="font-bold text-sm sm:text-base text-slate-900">
-                            {team.name}
-                          </h3>
-                        </div>
-                        <span className="text-[11px] text-slate-500">
-                          {teamGroupCount} Group (Ban) &bull; {teamPartCount} Part (Bộ phận)
-                        </span>
-                      </div>
-                    </div>
+                  <div className="p-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleTeam(team.id)}
+                      className="flex items-center gap-2 text-slate-800 font-bold text-sm cursor-pointer flex-1"
+                    >
+                      {isExpanded ? <ChevronDown className="w-4 h-4 text-indigo-600" /> : <ChevronRight className="w-4 h-4 text-indigo-600" />}
+                      {team.name} <span className="text-[10px] text-slate-400 font-normal">({teamGroupCount} Ban • {teamPartCount} Phòng)</span>
+                    </button>
 
                     {isAdmin && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openAddGroup(team.id)}
-                          className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-xs font-bold transition flex items-center gap-1 cursor-pointer"
-                          title="Thêm Group (Ban) vào Team này"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>+ Thêm Group (Ban)</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => openEditTeam(team)}
-                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg border border-slate-200 transition cursor-pointer"
-                          title="Đổi tên Team (Khối) này"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteTeam(team.id, team.name)}
-                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-white rounded-lg border border-slate-200 transition cursor-pointer"
-                          title="Xóa Team (Khối) này"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => openAddGroup(team.id)} className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg" title="Thêm Ban"><Plus className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => openEditTeam(team)} className="p-1.5 text-slate-500 hover:text-indigo-600 rounded-lg" title="Đổi tên Khối"><Edit2 className="w-3.5 h-3.5" /></button>
+                        <button type="button" onClick={() => { if(confirm('Bạn chắc chắn muốn xóa Khối này?')) handleDeleteTeam(team.id, team.name); }} className="p-1.5 text-slate-500 hover:text-rose-600 rounded-lg" title="Xóa Khối"><Trash2 className="w-3.5 h-3.5" /></button>
                       </div>
                     )}
                   </div>
 
                   {/* GROUPS (BAN) INSIDE TEAM */}
                   {isExpanded && (
-                    <div className="p-4 bg-white space-y-3">
-                      {team.bans.length === 0 ? (
-                        <div className="p-4 text-center text-slate-400 text-xs italic bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                          Chưa có Group (Ban) nào trong Team này. Hãy bấm "+ Thêm Group (Ban)" ở trên để bổ sung.
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 gap-3 pl-4 sm:pl-8 border-l-2 border-indigo-200">
-                          {team.bans.map((group) => {
-                            const isGroupExpanded = expandedGroups[group.id] !== false;
-
-                            return (
-                              <div
-                                key={group.id}
-                                className="bg-slate-50/60 rounded-xl border border-slate-200 overflow-hidden"
+                    <div className="p-2 space-y-1">
+                      {team.bans.map((group) => {
+                        const isGroupExpanded = expandedGroups[group.id] !== false;
+                        return (
+                          <div key={group.id} className="border border-slate-100 rounded-lg overflow-hidden">
+                            <div className="p-2 flex items-center justify-between gap-2 bg-white">
+                              <button
+                                type="button"
+                                onClick={() => toggleGroup(group.id)}
+                                className="flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer"
                               >
-                                {/* GROUP (BAN) ROW */}
-                                <div className="p-3 flex items-center justify-between gap-3 bg-slate-100/70 border-b border-slate-200">
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleGroup(group.id)}
-                                      className="p-1 hover:bg-slate-200 rounded text-slate-500 cursor-pointer"
-                                    >
-                                      {isGroupExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                                    </button>
-
-                                    <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded">
-                                      GROUP (BAN)
-                                    </span>
-                                    <span className="font-bold text-xs sm:text-sm text-slate-800">
-                                      {group.name}
-                                    </span>
-                                    <span className="text-[11px] text-slate-500">
-                                      ({group.phongs.length} Part)
-                                    </span>
-                                  </div>
-
-                                  {isAdmin && (
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => openAddPart(team.id, group.id)}
-                                        className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-md text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
-                                        title="Thêm Part (Bộ phận) vào Group này"
-                                      >
-                                        <Plus className="w-3 h-3" />
-                                        <span>+ Thêm Part</span>
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => openEditGroup(team.id, group)}
-                                        className="p-1 text-slate-400 hover:text-purple-600 rounded transition cursor-pointer"
-                                        title="Đổi tên Group (Ban)"
-                                      >
-                                        <Edit2 className="w-3 h-3" />
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteGroup(team.id, group.id, group.name)}
-                                        className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
-                                        title="Xóa Group (Ban)"
-                                      >
-                                        <Trash2 className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                  )}
+                                {isGroupExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                                {group.name}
+                              </button>
+                              {isAdmin && (
+                                <div className="flex items-center gap-0.5">
+                                  <button type="button" onClick={() => openAddPart(team.id, group.id)} className="p-1 text-indigo-600 hover:bg-indigo-50 rounded" title="Thêm Phòng"><Plus className="w-3 h-3" /></button>
+                                  <button type="button" onClick={() => openEditGroup(team.id, group)} className="p-1 text-slate-500 hover:text-indigo-600 rounded" title="Đổi tên Ban"><Edit2 className="w-3 h-3" /></button>
+                                  <button type="button" onClick={() => { if(confirm('Bạn chắc chắn muốn xóa Ban này?')) handleDeleteGroup(team.id, group.id, group.name); }} className="p-1 text-slate-500 hover:text-rose-600 rounded" title="Xóa Ban"><Trash2 className="w-3 h-3" /></button>
                                 </div>
-
-                                {/* PARTS (BỘ PHẬN / PHÒNG) INSIDE GROUP */}
-                                {isGroupExpanded && (
-                                  <div className="p-3 pl-6 sm:pl-10 space-y-1.5 border-l-2 border-purple-200 m-2">
-                                    {group.phongs.length === 0 ? (
-                                      <span className="text-[11px] text-slate-400 italic">
-                                        Chưa có Part nào. Bấm "+ Thêm Part" để thêm.
-                                      </span>
-                                    ) : (
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                        {group.phongs.map((part) => (
-                                          <div
-                                            key={part.id}
-                                            className="p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-xs hover:border-emerald-300 transition"
-                                          >
-                                            <div className="flex items-center gap-1.5 truncate">
-                                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                              <span className="font-semibold text-slate-800 truncate" title={part.name}>
-                                                {part.name}
-                                              </span>
-                                            </div>
-
-                                            {isAdmin && (
-                                              <div className="flex items-center gap-1 shrink-0 ml-1">
-                                                <button
-                                                  type="button"
-                                                  onClick={() => openEditPart(team.id, group.id, part)}
-                                                  className="p-0.5 text-slate-400 hover:text-indigo-600 rounded cursor-pointer"
-                                                  title="Đổi tên Part"
-                                                >
-                                                  <Edit2 className="w-3 h-3" />
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => handleDeletePart(team.id, group.id, part.id, part.name)}
-                                                  className="p-0.5 text-slate-400 hover:text-rose-600 rounded cursor-pointer"
-                                                  title="Xóa Part"
-                                                >
-                                                  <Trash2 className="w-3 h-3" />
-                                                </button>
-                                              </div>
-                                            )}
-                                          </div>
-                                        ))}
+                              )}
+                            </div>
+                            {isGroupExpanded && (
+                              <div className="p-2 bg-slate-50 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5">
+                                {group.phongs.map((part) => (
+                                  <div key={part.id} className="p-1.5 bg-white rounded border border-slate-200 flex items-center justify-between text-[11px]">
+                                    <span className="truncate">{part.name}</span>
+                                    {isAdmin && (
+                                      <div className="flex items-center shrink-0">
+                                        <button type="button" onClick={() => openEditPart(team.id, group.id, part)} className="p-0.5 text-slate-400 hover:text-indigo-600" title="Sửa"><Edit2 className="w-3 h-3" /></button>
+                                        <button type="button" onClick={() => { if(confirm('Bạn chắc chắn muốn xóa Phòng này?')) handleDeletePart(team.id, group.id, part.id, part.name); }} className="p-0.5 text-slate-400 hover:text-rose-600" title="Xóa"><Trash2 className="w-3 h-3" /></button>
                                       </div>
                                     )}
                                   </div>
-                                )}
+                                ))}
                               </div>
-                            );
-                          })}
-                        </div>
-                      )}
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
               );
             })}
+
           </div>
 
           {/* Modal Thêm / Sửa Team, Group, Part */}

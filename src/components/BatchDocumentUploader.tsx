@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, Trash2, Sparkles, ArrowRight, FileText, Camera, Zap, Clock, Loader2, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Plus, Trash2, Sparkles, ArrowRight, FileText, Camera, Zap, Clock, Loader2, AlertTriangle } from 'lucide-react';
 import { BatchEmployeeDraft, EmployeeDocumentGroup, NhanSuRecord, OptimizedImageFile } from '../types';
 import { optimizeImageFile } from '../utils/imageOptimizer';
 import { extractOCRGroup } from '../utils/ocrClient';
@@ -23,7 +23,6 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState('');
-  const [scanMode, setScanMode] = useState<'ai' | 'local'>('ai');
   const [editing,setEditing]=useState<{groupId:string;document:OptimizedImageFile}>();
   const [progressInfo, setProgressInfo] = useState<{
     completed: number;
@@ -92,8 +91,8 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
 
     const groupsWithDocs = groups.filter(g => g.documents.length > 0);
     const totalCount = groupsWithDocs.length;
-    const concurrency = scanMode === 'ai' ? 2 : 1;
-    const perBatchSeconds = scanMode === 'ai' ? 2 : 16;
+    const concurrency = 2; // Always AI fast mode now
+    const perBatchSeconds = 2;
     const initialSeconds = Math.max(2, Math.ceil(totalCount / concurrency) * perBatchSeconds);
 
     setProgressInfo({
@@ -114,7 +113,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
         extract:group=>extractOCRGroup(currentGroups.current.find(item=>item.id===group.id) || group,document=>{
           currentGroups.current=currentGroups.current.map(item=>item.id===group.id ? {...item,documents:item.documents.map(previous=>previous.id===document.id ? document : previous)} : item);
           onChange(currentGroups.current);
-        },message=>{if(mounted.current) setStatus(message);},scanMode),
+        },message=>{if(mounted.current) setStatus(message);}, 'ai'),
         progress:async (list,message)=>{
           if(!mounted.current) return;
           onDraftsChange?.(list);setStatus(message);
@@ -147,57 +146,6 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
   return <section className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/30 p-4" aria-label="Nhập tài liệu nhiều nhân viên">
     {editing && <DocumentImageEditor document={editing.document} onClose={()=>setEditing(undefined)} onSave={document=>{onChange(groups.map(group=>group.id===editing.groupId ? {...group,documents:group.documents.map(previous=>previous.id===editing.document.id ? document : previous)} : group));setEditing(undefined);}} />}
     
-    {/* Bảng chọn Chế độ Quét: Quét AI Siêu Tốc vs Quét Cục Bộ */}
-    <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-3 rounded-xl border border-blue-200 shadow-xs">
-      <div className="space-y-0.5">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-          <Zap className="h-4 w-4 text-amber-500 fill-amber-500" />
-          <span>Phương án Quét:</span>
-          {scanMode === 'ai' ? (
-            <span className="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">
-              ⚡ Quét AI Siêu Tốc (Gemini Vision)
-            </span>
-          ) : (
-            <span className="rounded bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-              🖥️ Quét Cục Bộ (Tesseract)
-            </span>
-          )}
-        </div>
-        <p className="text-[11px] text-slate-500">
-          {scanMode === 'ai'
-            ? 'Tốc độ ~1.5s/ảnh • Đọc chuẩn chữ viết tay Sơ yếu lý lịch & chữ in CCCD • Tự động đối soát chéo YYYY-MM-DD'
-            : 'Quét offline cục bộ bằng CPU máy chủ (mất 20–40s/ảnh, phù hợp khi mất mạng)'}
-        </p>
-      </div>
-      <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => setScanMode('ai')}
-          className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 font-bold transition cursor-pointer ${
-            scanMode === 'ai'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Zap className="h-3.5 w-3.5 text-amber-300 fill-amber-300" />
-          Quét AI Siêu Tốc
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => setScanMode('local')}
-          className={`rounded-md px-3 py-1.5 font-medium transition cursor-pointer ${
-            scanMode === 'local'
-              ? 'bg-white text-slate-900 font-bold shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          Quét Cục Bộ (Tesseract)
-        </button>
-      </div>
-    </div>
-
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><h3 className="font-bold text-slate-900">Tài liệu theo từng nhân viên</h3></div>
       <button type="button" disabled={busy} onClick={addGroup} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-xs font-semibold text-blue-700 border border-blue-200 disabled:opacity-50"><Plus className="h-4 w-4" />Thêm nhân viên</button>
@@ -326,7 +274,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
 
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
             <p className="text-xs font-semibold text-blue-700">
-              {({waiting:'Đang chờ',running:scanMode === 'ai' ? '⚡ Đang quét AI Siêu Tốc…' : 'Đang quét…',success:'Đã trích xuất',failed:'Cần thử lại / nhập tay'})[draftEmployee?.extractionStatus || 'waiting']}
+              {({waiting:'Đang chờ',running:'⚡ Đang quét AI Siêu Tốc…',success:'Đã trích xuất',failed:'Cần thử lại / nhập tay'})[draftEmployee?.extractionStatus || 'waiting']}
             </p>
             {(draftEmployee?.extractionStatus === 'failed' || !!draftEmployee?.extractionError) && (
               <div className="flex flex-wrap gap-1">
@@ -450,7 +398,7 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-900">
-                  {scanMode === 'ai' ? '⚡ AI Đang Bóc Tách Hồ Sơ Siêu Tốc' : '🖥️ Đang Quét OCR Cục Bộ'}
+                  ⚡ AI Đang Bóc Tách Hồ Sơ Siêu Tốc
                 </span>
                 <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
                   {progressInfo.completed} / {progressInfo.total} hồ sơ
@@ -554,23 +502,16 @@ export function BatchDocumentUploader({ groups, onChange, onProceed, onBusyChang
           type="button"
           disabled={busy || !groups.some(group => group.documents.length)}
           onClick={() => void proceed(true)}
-          className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold text-white shadow-xs transition disabled:opacity-50 cursor-pointer ${
-            scanMode === 'ai'
-              ? 'bg-blue-600 hover:bg-blue-700'
-              : 'bg-slate-700 hover:bg-slate-800'
-          }`}
+          className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold text-white shadow-xs transition disabled:opacity-50 cursor-pointer bg-blue-600 hover:bg-blue-700"
         >
-          {scanMode === 'ai' ? <Zap className="h-4 w-4 text-amber-300 fill-amber-300" /> : <Sparkles className="h-4 w-4" />}
+          <Zap className="h-4 w-4 text-amber-300 fill-amber-300" />
           {busy
             ? `Đang xử lý (${progressInfo.percent}% • Còn ~${progressInfo.estimatedSecondsLeft}s)…`
             : previousEmployees.some(employee => employee.extractionStatus === 'success' || employee.extractionStatus === 'failed')
             ? 'Tiếp tục / thử lại hồ sơ chưa xong'
-            : scanMode === 'ai'
-            ? `⚡ Quét AI Siêu Tốc & Mở Bảng (${groups.length} người)`
-            : `Trích xuất OCR & Mở Bảng (${groups.length} người)`}
+            : `⚡ Quét AI Siêu Tốc & Mở Bảng (${groups.length} người)`}
         </button>
       </div>
     </div>
   </section>;
 }
-

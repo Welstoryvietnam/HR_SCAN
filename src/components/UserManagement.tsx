@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile, SystemUserAccount } from '../types';
+import { UserProfile, SystemUserAccount, HrmSubRole } from '../types';
 import { safeFetchJson } from '../utils/apiHelper';
 import {
   Users,
@@ -39,6 +39,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   const [newEmail, setNewEmail] = useState('');
   const [newFullName, setNewFullName] = useState('');
   const [newRole, setNewRole] = useState<'admin' | 'employee'>('employee');
+  const [newHrmRole, setNewHrmRole] = useState<HrmSubRole>('nhan_vien_tuyen_dung');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -48,6 +49,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   const [editEmail, setEditEmail] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editRole, setEditRole] = useState<'admin' | 'employee'>('employee');
+  const [editHrmRole, setEditHrmRole] = useState<HrmSubRole>('nhan_vien_tuyen_dung');
   const [editStatus, setEditStatus] = useState<'active' | 'locked'>('active');
 
   const showNotify = (type: 'success' | 'error', message: string) => {
@@ -126,7 +128,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
             password: newPassword.trim(),
             email: cleanEmail,
             fullName: newFullName.trim(),
-            role: newRole,
+            role: newHrmRole === 'admin' ? 'admin' : newRole,
+            hrmRole: newHrmRole,
           }),
         }
       );
@@ -141,6 +144,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       setNewEmail('');
       setNewFullName('');
       setNewRole('employee');
+      setNewHrmRole('nhan_vien_tuyen_dung');
     } catch (err) {
       showNotify('error', (err as Error).message);
     } finally {
@@ -155,6 +159,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     setEditEmail(user.contactEmail ?? user.email);
     setEditPassword('');
     setEditRole(user.role);
+    setEditHrmRole(user.hrmRole || (user.role === 'admin' ? 'admin' : 'nhan_vien_tuyen_dung'));
     setEditStatus(user.status);
   };
 
@@ -168,7 +173,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       const payload: any = {
         fullName: editFullName.trim(),
         email: editEmail.trim(),
-        role: editRole,
+        role: editHrmRole === 'admin' ? 'admin' : editRole,
+        hrmRole: editHrmRole,
         status: editStatus,
       };
       if (editPassword.trim()) {
@@ -236,7 +242,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       u.username.toLowerCase().includes(term) ||
       u.fullName.toLowerCase().includes(term) ||
       u.email.toLowerCase().includes(term) ||
-      (u.role === 'admin' ? 'quản trị viên admin' : 'nhân viên tuyển dụng').includes(term)
+      (u.role === 'admin'
+        ? 'quản trị viên admin'
+        : u.hrmRole === 'nhan_vien_y_te'
+        ? 'nhân viên y tế'
+        : 'nhân viên tuyển dụng').includes(term)
     );
   });
 
@@ -323,6 +333,134 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         </div>
       </div>
 
+      {/* Bảng Phân Quyền Truy Cập Module & Nội Dung Hệ Thống */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs space-y-3 p-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-purple-600" />
+            <h3 className="text-sm font-bold text-slate-900">Bảng Phân Quyền Truy Cập Module & Nội Dung Hệ Thống</h3>
+          </div>
+          <span className="text-[11px] text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg font-medium">
+            Ma trận phân quyền theo vai trò (Role-Based Access Control)
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px]">
+                <th className="p-2.5">STT</th>
+                <th className="p-2.5">Module / Nội dung hệ thống</th>
+                <th className="p-2.5 text-center">Nhân viên tuyển dụng</th>
+                <th className="p-2.5 text-center">Nhân viên y tế</th>
+                <th className="p-2.5 text-center">Quản trị viên (Admin)</th>
+                <th className="p-2.5">Mô tả quyền hạn chi tiết</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-slate-700">
+              <tr>
+                <td className="p-2.5 font-mono text-center font-bold text-slate-500">1</td>
+                <td className="p-2.5 font-bold text-slate-900">Đăng ký nhân viên mới (SOP 4 bước & AI OCR)</td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">Đọc / Ghi</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-bold text-[10px]">Không có quyền</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">Toàn quyền</span>
+                </td>
+                <td className="p-2.5 text-slate-500 text-[11px]">Quét CCCD bằng AI OCR, trích xuất dữ liệu & tạo hồ sơ nhân sự mới.</td>
+              </tr>
+              <tr>
+                <td className="p-2.5 font-mono text-center font-bold text-slate-500">2</td>
+                <td className="p-2.5 font-bold text-slate-900">1. Đăng ký KSK tuyển dụng</td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[10px]">Xem &amp; Sử dụng</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-bold text-[10px]">Không có quyền</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">Toàn quyền</span>
+                </td>
+                <td className="p-2.5 text-slate-500 text-[11px]">Tải ảnh CCCD nhiều ứng viên, quét AI OCR và chỉnh sửa trực tiếp bảng đăng ký KSK.</td>
+              </tr>
+              <tr>
+                <td className="p-2.5 font-mono text-center font-bold text-slate-500">3</td>
+                <td className="p-2.5 font-bold text-slate-900">2. Theo dõi KSK tuyển dụng</td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-bold text-[10px]">Không có quyền</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-teal-100 text-teal-800 font-bold text-[10px]">Xem &amp; Cập nhật</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">Toàn quyền</span>
+                </td>
+                <td className="p-2.5 text-slate-500 text-[11px]">Theo dõi lịch hẹn khám, lọc thời gian và cập nhật trạng thái kết quả KSK ứng viên.</td>
+              </tr>
+              <tr>
+                <td className="p-2.5 font-mono text-center font-bold text-slate-500">4</td>
+                <td className="p-2.5 font-bold text-slate-900">3. Tiêu chuẩn KSK tuyển dụng</td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">Chỉ xem</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[10px]">Chỉ xem</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">Toàn quyền</span>
+                </td>
+                <td className="p-2.5 text-slate-500 text-[11px]">Tra cứu bảng ma trận 15 hạng mục tiêu chuẩn KSK tuyển dụng (không chỉnh sửa).</td>
+              </tr>
+              <tr>
+                <td className="p-2.5 font-mono text-center font-bold text-slate-500">5</td>
+                <td className="p-2.5 font-bold text-slate-900">6. Dashboard khám sức khỏe tuyển dụng</td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-bold text-[10px]">Không có quyền</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-teal-100 text-teal-800 font-bold text-[10px]">Xem &amp; Thống kê</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">Toàn quyền</span>
+                </td>
+                <td className="p-2.5 text-slate-500 text-[11px]">Biểu đồ thống kê số lượng ứng viên theo trạng thái khám và phân loại Phòng/Ban.</td>
+              </tr>
+              <tr>
+                <td className="p-2.5 font-mono text-center font-bold text-slate-500">6</td>
+                <td className="p-2.5 font-bold text-slate-900">Bảng hồ sơ nhân sự (Sheet DanhSachNhanSu)</td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-bold text-[10px]">Xem cá nhân</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-bold text-[10px]">Không có quyền</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">Toàn quyền (Xem/Sửa/Xóa)</span>
+                </td>
+                <td className="p-2.5 text-slate-500 text-[11px]">Quản lý danh sách hồ sơ nhân sự đã tiếp nhận toàn công ty.</td>
+              </tr>
+              <tr>
+                <td className="p-2.5 font-mono text-center font-bold text-slate-500">7</td>
+                <td className="p-2.5 font-bold text-slate-900">Tiêu chuẩn lương, Cơ cấu tổ chức &amp; Tài khoản</td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-bold text-[10px]">Không có quyền</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-500 font-bold text-[10px]">Không có quyền</span>
+                </td>
+                <td className="p-2.5 text-center">
+                  <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">Toàn quyền</span>
+                </td>
+                <td className="p-2.5 text-slate-500 text-[11px]">Quản trị bảng lương, cơ cấu tổ chức, hộp thư MailApp và cấp phát tài khoản.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Search Bar */}
       <div className="flex items-center justify-between gap-3">
         <div className="relative w-full sm:w-80">
@@ -396,6 +534,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                         {isUserAdmin ? (
                           <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
                             <ShieldCheck className="w-3 h-3" /> Admin (Toàn quyền)
+                          </span>
+                        ) : user.hrmRole === 'nhan_vien_y_te' ? (
+                          <span className="inline-flex items-center gap-1 bg-teal-100 text-teal-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
+                            <UserCheck className="w-3 h-3" /> Nhân viên y tế
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 bg-sky-100 text-sky-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
@@ -554,15 +696,22 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                   Phân quyền vai trò *
                 </label>
                 <select
-                  value={newRole}
-                  onChange={(e) => setNewRole(e.target.value as 'admin' | 'employee')}
+                  value={newHrmRole}
+                  onChange={(e) => {
+                    const val = e.target.value as HrmSubRole;
+                    setNewHrmRole(val);
+                    setNewRole(val === 'admin' ? 'admin' : 'employee');
+                  }}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-blue-600 bg-white font-medium"
                 >
-                  <option value="employee">
-                    Nhân viên tuyển dụng (Chỉ thực hiện nhập & điền hồ sơ)
+                  <option value="nhan_vien_tuyen_dung">
+                    Nhân viên tuyển dụng (Đăng ký NV mới, Đăng ký KSK &amp; Xem tiêu chuẩn KSK)
+                  </option>
+                  <option value="nhan_vien_y_te">
+                    Nhân viên y tế (Theo dõi &amp; Cập nhật KSK tuyển dụng)
                   </option>
                   <option value="admin">
-                    Quản trị viên (Toàn quyền xem & sửa toàn bộ thông tin)
+                    Quản trị viên (Toàn quyền xem &amp; sửa toàn bộ thông tin)
                   </option>
                 </select>
               </div>
@@ -660,11 +809,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                     Vai trò phân quyền
                   </label>
                   <select
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value as 'admin' | 'employee')}
+                    value={editHrmRole}
+                    onChange={(e) => {
+                      const val = e.target.value as HrmSubRole;
+                      setEditHrmRole(val);
+                      setEditRole(val === 'admin' ? 'admin' : 'employee');
+                    }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-blue-600 bg-white"
                   >
-                    <option value="employee">Nhân viên tuyển dụng</option>
+                    <option value="nhan_vien_tuyen_dung">Nhân viên tuyển dụng</option>
+                    <option value="nhan_vien_y_te">Nhân viên y tế</option>
                     <option value="admin">Quản trị viên (Admin)</option>
                   </select>
                 </div>

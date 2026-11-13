@@ -22,8 +22,9 @@ import { draftRequest, saveIntakeDraft, openIntakeDraft, type ActiveDraft } from
 import { ExtractedForm } from './components/ExtractedForm';
 import { NhanSuTable } from './components/NhanSuTable';
 import { TieuChuanLuongManager } from './components/TieuChuanLuongManager';
+import { HealthCheckStandardsManager } from './components/HealthCheckStandardsManager';
 import { EmailViewer } from './components/EmailViewerModal';
-import { Dashboard } from './components/Dashboard';
+
 import { UserManagement } from './components/UserManagement';
 import { SopProgressHeader } from './components/SopProgressHeader';
 import { safeFetchJson } from './utils/apiHelper';
@@ -86,6 +87,58 @@ export default function App() {
   const [draftFormState,setDraftFormState] = useState<IntakeFormDraft|undefined>();
   const [saveNetworkError, setSaveNetworkError] = useState<{ message: string; actionType: 'single' | 'batch'; lastData?: any } | null>(null);
   const [offlineBackup, setOfflineBackup] = useState<OfflineBackupData | null>(() => loadOfflineBackup());
+
+  const [transferredCandidate, setTransferredCandidate] = useState<any | null>(() => {
+    try {
+      const saved = localStorage.getItem('hr_transfer_recruitment_candidate');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
+
+  useEffect(() => {
+    try {
+      if (transferredCandidate) {
+        localStorage.setItem('hr_transfer_recruitment_candidate', JSON.stringify(transferredCandidate));
+      } else {
+        localStorage.removeItem('hr_transfer_recruitment_candidate');
+      }
+    } catch {}
+  }, [transferredCandidate]);
+
+  const handleTransferCandidate = (reg: any) => {
+    setTransferredCandidate(reg);
+    const draft: BatchEmployeeDraft = {
+      id: crypto.randomUUID(),
+      hoVaTen: reg.hoVaTen,
+      soCCCD: reg.soCCCD,
+      ngaySinh: reg.ngaySinh || '2000-01-01',
+      gioiTinh: reg.gioiTinh || 'Nam',
+      soDienThoai: reg.soDienThoai || '',
+      khoi: reg.phongBanKhoi || '',
+      chucVu: reg.chucVu || 'Nhân viên',
+      congViecDuKien: reg.viTriViecLam || 'Nhân sự',
+      queQuan: '',
+      diaChiThuongTru: '',
+      ngayCap: '',
+      noiCap: '',
+      thongTinGiaDinh: [],
+      thanhVienHoGiaDinh: [],
+      thongTinChuaRo: [],
+      cauHoiLamRo: [],
+      luongCoBan: 5000000,
+      phuCapCoDinh: 1000000,
+      phuCapPhatSinh: 0,
+      tongThuNhapDuKien: 6000000,
+      soTaiLieuDinhKem: 0,
+    };
+    setSingleIntakeInfo(draft);
+    setBatchEmployees([draft]);
+    setActiveTab('upload');
+    setCurrentSopStep(1);
+    showNotification('success', `Đã chuyển thông tin ứng viên ${reg.hoVaTen} sang Đăng ký nhân viên mới!`);
+  };
+
   const draftReader = useRef<{read: () => IntakeFormDraft}>(null);
   const changeSopStep = (step:number) => {
     if (step === 1 && draftReader.current) setDraftFormState(draftReader.current.read());
@@ -203,7 +256,7 @@ export default function App() {
   const handleSaveOrganizationHierarchy = async (newHierarchy: KhoiNode[]) => {
     if (!currentUser) return;
     try {
-      const res = await safeFetchJson<{ success: boolean; data: KhoiNode[] }>(
+      const res = await safeFetchJson<{ success: boolean; data: KhoiNode[]; tieuChuanKksList?: any }>(
         '/api/organization-hierarchy',
         {
           method: 'POST',
@@ -219,7 +272,10 @@ export default function App() {
       }
       setOrganizationHierarchy(newHierarchy);
       localStorage.setItem('hr_org_hierarchy', JSON.stringify(newHierarchy));
-      showNotification('success', 'Đã lưu và cập nhật cơ cấu tổ chức thành công!');
+      if (res.data.tieuChuanKksList) {
+        localStorage.setItem('hr_health_check_standards', JSON.stringify(res.data.tieuChuanKksList));
+      }
+      showNotification('success', 'Đã lưu cơ cấu tổ chức và tự động đồng bộ danh sách phòng khám KSK định kỳ thành công!');
     } catch (err) {
       showNotification('error', (err as Error).message);
       setOrganizationHierarchy(newHierarchy);
@@ -300,8 +356,14 @@ export default function App() {
     setCurrentUser(user);
     setIsAuthenticated(true);
     localStorage.setItem('hr_current_user', JSON.stringify(user));
-    setActiveTab('upload');
-    showNotification('success', `Đăng nhập thành công: ${user.name} (${user.role === 'admin' ? 'Quản trị viên' : 'Nhân viên tuyển dụng'})`);
+    const isMedical = user.role !== 'admin' && user.hrmRole === 'nhan_vien_y_te';
+    setActiveTab(isMedical ? 'health' : 'upload');
+    showNotification(
+      'success',
+      `Đăng nhập thành công: ${user.name} (${
+        user.role === 'admin' ? 'Quản trị viên' : isMedical ? 'Nhân viên y tế' : 'Nhân viên tuyển dụng'
+      })`
+    );
   };
 
   // Xử lý khi đăng xuất
@@ -322,10 +384,15 @@ export default function App() {
     showNotification('success', 'Đã đăng xuất khỏi hệ thống thành công.');
   };
 
-  // Bảo vệ tab theo phân quyền: Nếu không phải Admin thì chỉ được ở tab upload hoặc records
+  // Bảo vệ tab theo phân quyền: Nhân viên tuyển dụng được truy cập upload/records/health; Nhân viên y tế được truy cập health
   useEffect(() => {
     if (currentUser && currentUser.role !== 'admin') {
-      if (activeTab === 'dashboard' || activeTab === 'salary' || activeTab === 'emails' || activeTab === 'users') {
+      const isMedical = currentUser.hrmRole === 'nhan_vien_y_te';
+      if (isMedical) {
+        if (activeTab !== 'health') {
+          setActiveTab('health');
+        }
+      } else if (activeTab === 'emails' || activeTab === 'users' || activeTab === 'organization' || activeTab === 'salary') {
         setActiveTab('upload');
       }
     }
@@ -716,7 +783,7 @@ export default function App() {
                 <span>
                   {isAdmin ? (
                     <>
-                      <strong>Quản trị viên (Admin):</strong> Bạn có toàn quyền xem, sửa, xóa tất cả hồ sơ, cập nhật bảng lương tiêu chuẩn và xem Dashboard.
+                      <strong>Quản trị viên (Admin):</strong> Bạn có toàn quyền xem, sửa, xóa tất cả hồ sơ, cập nhật bảng lương tiêu chuẩn.
                     </>
                   ) : (
                     <>
@@ -753,6 +820,8 @@ export default function App() {
                   employeeGroups={employeeGroups}
                   onEmployeeGroupsChange={setEmployeeGroups}
                   existingRecords={records}
+                  transferredCandidate={transferredCandidate}
+                  onClearTransferredCandidate={() => setTransferredCandidate(null)}
                   onProceedToStep2WithBatch={(list) => {
                     setDraftFormState(undefined);
                     setImages(employeeGroups.flatMap(group => group.documents));
@@ -850,6 +919,25 @@ export default function App() {
           </div>
         )}
 
+        {/* Tab Cơ cấu tổ chức (Chỉ Admin) */}
+        {isAdmin && activeTab === 'organization' && (
+          <div className="animate-fade-in">
+            <TieuChuanLuongManager
+              standards={tieuChuanLuong}
+              currentUser={currentUser}
+              onSaveStandard={handleSaveStandard}
+              onDeleteStandard={handleDeleteStandard}
+              organizationHierarchy={organizationHierarchy}
+              onSaveOrganizationHierarchy={handleSaveOrganizationHierarchy}
+              onStandardsUpdated={(updated) => {
+                setTieuChuanLuong(updated);
+                showNotification('success', `Đã đồng bộ ${updated.length} tiêu chuẩn lương từ Google Sheets vào hệ thống!`);
+              }}
+              initialTab="organization"
+            />
+          </div>
+        )}
+
         {/* Tab Bảng hồ sơ nhân sự (Sheet DanhSachNhanSu) */}
         {activeTab === 'records' && (
           <div className="animate-fade-in">
@@ -864,12 +952,10 @@ export default function App() {
           </div>
         )}
 
-        {/* CÁC TAB CHỈ QUẢN TRỊ VIÊN MỚI TRUY CẬP ĐƯỢC */}
-        {isAdmin && activeTab === 'dashboard' && (
+        {/* Tab Hệ thống Quản lý Tiêu chuẩn Khám sức khỏe Định kỳ (Sheet "Tiêu chuẩn") */}
+        {activeTab === 'health' && (
           <div className="animate-fade-in">
-            <Dashboard
-              records={records}
-            />
+            <HealthCheckStandardsManager currentUser={currentUser} onTransferToNewEmployee={handleTransferCandidate} />
           </div>
         )}
 
@@ -886,6 +972,7 @@ export default function App() {
                 setTieuChuanLuong(updated);
                 showNotification('success', `Đã đồng bộ ${updated.length} tiêu chuẩn lương từ Google Sheets vào hệ thống!`);
               }}
+              initialTab="standards"
             />
           </div>
         )}
@@ -915,8 +1002,20 @@ export default function App() {
           </span>
           <span className="font-mono text-[11px] text-slate-400">
             Tài khoản: {currentUser.employeeCode || currentUser.email} &bull; Vai trò:{' '}
-            <strong className={isAdmin ? 'text-purple-700' : 'text-sky-700'}>
-              {isAdmin ? 'QUẢN TRỊ VIÊN' : 'NHÂN VIÊN TUYỂN DỤNG'}
+            <strong
+              className={
+                isAdmin
+                  ? 'text-purple-700'
+                  : currentUser.hrmRole === 'nhan_vien_y_te'
+                  ? 'text-teal-700'
+                  : 'text-sky-700'
+              }
+            >
+              {isAdmin
+                ? 'QUẢN TRỊ VIÊN'
+                : currentUser.hrmRole === 'nhan_vien_y_te'
+                ? 'NHÂN VIÊN Y TẾ'
+                : 'NHÂN VIÊN TUYỂN DỤNG'}
             </strong>
           </span>
         </div>
