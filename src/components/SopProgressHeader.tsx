@@ -1,18 +1,13 @@
 import React from 'react';
 import {
   UploadCloud,
-  Sparkles,
-  UserCheck,
   Building2,
   FileSpreadsheet,
   CheckCircle2,
-  AlertCircle,
-  HelpCircle,
-  ArrowRight
 } from 'lucide-react';
 
 interface SopProgressHeaderProps {
-  currentStep: number; // 1, 2, 3, 4
+  currentStep: number; // 1, 2, 3 (or 4 when completed)
   onSelectStep?: (step: number) => void;
   hasImages: boolean;
   hasExtractedData: boolean;
@@ -32,79 +27,73 @@ export const SopProgressHeader: React.FC<SopProgressHeaderProps> = ({
     {
       id: 1,
       name: 'Bước 1',
-      title: 'Scan & Đính Kèm Tài Liệu',
-      desc: 'Scan, chụp ảnh hoặc tải lên CCCD, Sơ yếu lý lịch',
+      title: 'Quét',
       icon: UploadCloud,
-      status: hasImages ? 'completed' : currentStep === 1 ? 'current' : 'pending',
+      status:
+        currentStep === 1
+          ? 'current'
+          : currentStep > 1 || step2Verified
+          ? 'completed'
+          : hasImages || hasExtractedData
+          ? 'ready'
+          : 'pending',
     },
     {
       id: 2,
       name: 'Bước 2',
-      title: 'OCR Trích Xuất Form',
-      desc: 'Không tự suy đoán, hỏi lại nếu thông tin chưa rõ',
-      icon: Sparkles,
-      status:
-        step2Verified
-          ? 'completed'
-          : hasExtractedData
-          ? currentStep === 2
-            ? 'current'
-            : 'ready'
-          : 'pending',
-    },
-    {
-      id: 3,
-      name: 'Bước 3',
-      title: 'Con Người Chọn Đơn Vị & Chức Vụ',
-      desc: 'Thao tác chọn Khối, Ban, Phòng, Công việc & Chức vụ',
+      title: 'Đơn vị & Chức vụ',
       icon: Building2,
       status:
-        step3Verified
-          ? 'completed'
-          : currentStep === 3
+        currentStep === 2
           ? 'current'
+          : currentStep > 2 || step3Verified
+          ? 'completed'
           : hasExtractedData
           ? 'ready'
           : 'pending',
     },
     {
-      id: 4,
-      name: 'Bước 4',
-      title: 'Bảng Danh Sách Tiêu Chuẩn',
-      desc: 'Khớp bảng lương tiêu chuẩn, tạo danh sách đầy đủ',
+      id: 3,
+      name: 'Bước 3',
+      title: 'Hoàn thiện thông tin lương',
       icon: FileSpreadsheet,
-      status: currentStep === 4 ? 'current' : 'pending',
+      status:
+        currentStep > 3 || step3Verified
+          ? 'completed'
+          : currentStep === 3
+          ? 'current'
+          : 'pending',
     },
   ];
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-2.5 sm:p-3 shadow-xs mb-4">
-      {/* 4 Steps Grid - Chỉ giữ tên bước, bỏ phần mô tả */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         {steps.map((s) => {
           const Icon = s.icon;
-          const isCurrent = currentStep === s.id;
+          const isCurrent = s.status === 'current';
           const isCompleted = s.status === 'completed';
 
           return (
-            <div
+            <button
+              type="button"
               key={s.id}
               onClick={() => onSelectStep && onSelectStep(s.id)}
-              className={`p-2.5 rounded-xl border transition relative cursor-pointer text-left flex items-center justify-between gap-2 ${
+              className={`p-2.5 rounded-xl border transition text-left flex items-center justify-between gap-2 cursor-pointer ${
                 isCurrent
-                  ? 'bg-blue-50/90 border-blue-400 ring-2 ring-blue-200 shadow-2xs'
+                  ? 'bg-blue-50/90 border-blue-400 ring-2 ring-blue-100'
                   : isCompleted
                   ? 'bg-emerald-50/50 border-emerald-300 hover:bg-emerald-50'
-                  : 'bg-slate-50/50 border-slate-200 hover:bg-slate-100/60 opacity-80'
+                  : 'bg-slate-50/60 border-slate-200 hover:bg-slate-100/70'
               }`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <div
                   className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
                     isCurrent
-                      ? 'bg-blue-600 text-white shadow-2xs'
+                      ? 'bg-blue-600 text-white'
                       : isCompleted
-                      ? 'bg-emerald-600 text-white shadow-2xs'
+                      ? 'bg-emerald-600 text-white'
                       : 'bg-slate-200 text-slate-600'
                   }`}
                 >
@@ -138,10 +127,11 @@ export const SopProgressHeader: React.FC<SopProgressHeaderProps> = ({
                     : 'text-slate-400'
                 }`}
               />
-            </div>
+            </button>
           );
         })}
       </div>
     </div>
   );
 };
+

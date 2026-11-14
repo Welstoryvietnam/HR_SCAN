@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   ResponsiveContainer,
   BarChart,
@@ -21,6 +21,9 @@ import {
   UserCheck,
   UserX,
   RotateCcw,
+  GripVertical,
+  AlertTriangle,
+  Calendar,
 } from 'lucide-react';
 import type { RecruitmentHealthRegItem } from './HealthCheckStandardsManager';
 
@@ -117,6 +120,53 @@ export const RecruitmentHealthDashboard: React.FC<RecruitmentHealthDashboardProp
   const [endDate, setEndDate] = useState('');
   const [deptFilter, setDeptFilter] = useState('ALL');
 
+  // Widget Order State (Persisted in localStorage)
+  const DEFAULT_WIDGET_ORDER = ['kpi_cards', 'alerts_widget', 'status_chart', 'dept_chart'];
+  const [widgetOrder, setWidgetOrder] = useState<string[]>(() => {
+    try {
+      const cached = localStorage.getItem('hr_ksk_dashboard_widget_order');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length === 4) return parsed;
+      }
+    } catch {}
+    return DEFAULT_WIDGET_ORDER;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('hr_ksk_dashboard_widget_order', JSON.stringify(widgetOrder));
+    } catch {}
+  }, [widgetOrder]);
+
+  const [draggedWidgetId, setDraggedWidgetId] = useState<string | null>(null);
+
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDraggedWidgetId(id);
+    e.dataTransfer.setData('text/plain', id);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    if (!draggedWidgetId || draggedWidgetId === targetId) return;
+
+    setWidgetOrder((prev) => {
+      const next = [...prev];
+      const fromIdx = next.indexOf(draggedWidgetId);
+      const toIdx = next.indexOf(targetId);
+      if (fromIdx !== -1 && toIdx !== -1) {
+        next.splice(fromIdx, 1);
+        next.splice(toIdx, 0, draggedWidgetId);
+      }
+      return next;
+    });
+    setDraggedWidgetId(null);
+  };
+
   const deptOptions = useMemo(() => {
     const set = new Set<string>();
     for (const r of records) {
@@ -152,9 +202,9 @@ export const RecruitmentHealthDashboard: React.FC<RecruitmentHealthDashboardProp
 
     for (const reg of filteredRecords) {
       const st = reg.trangThai || 'Chờ khám';
-      if (st === 'Đã khám - Đạt') {
+      if (st === 'Đã khám - Đạt' || st === 'Đã khám (Đạt)') {
         dat += 1;
-      } else if (st === 'Đã khám - Không đạt') {
+      } else if (st === 'Đã khám - Không đạt' || st === 'Đã khám (không đạt)') {
         khongDat += 1;
       } else if (st === 'Hoãn') {
         hoan += 1;
@@ -174,7 +224,6 @@ export const RecruitmentHealthDashboard: React.FC<RecruitmentHealthDashboardProp
     const total = filteredRecords.length;
     const completionRate = total > 0 ? Math.round((daKham / total) * 100) : 0;
     const passRate = daKham > 0 ? Math.round((dat / daKham) * 100) : 0;
-    const chuaXuLyNhanViec = Math.max(0, total - nhanViec - khongNhanViec);
 
     return {
       total,
@@ -188,8 +237,18 @@ export const RecruitmentHealthDashboard: React.FC<RecruitmentHealthDashboardProp
       passRate,
       nhanViec,
       khongNhanViec,
-      chuaXuLyNhanViec,
     };
+  }, [filteredRecords]);
+
+  // Alert candidates (pending or upcoming exam dates)
+  const alertCandidates = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return filteredRecords.filter((r) => {
+      const st = r.trangThai || 'Chờ khám';
+      const isPending = st === 'Chờ khám' || st === 'Hoãn';
+      const isSoon = r.ngayHenKham && r.ngayHenKham <= todayStr;
+      return isPending && isSoon;
+    });
   }, [filteredRecords]);
 
   const statusBarData: StatusDatum[] = useMemo(
@@ -229,10 +288,10 @@ export const RecruitmentHealthDashboard: React.FC<RecruitmentHealthDashboardProp
       };
 
       const st = reg.trangThai || 'Chờ khám';
-      if (st === 'Đã khám - Đạt') {
+      if (st === 'Đã khám - Đạt' || st === 'Đã khám (Đạt)') {
         existing.dat += 1;
         existing.daKham += 1;
-      } else if (st === 'Đã khám - Không đạt') {
+      } else if (st === 'Đã khám - Không đạt' || st === 'Đã khám (không đạt)') {
         existing.khongDat += 1;
         existing.daKham += 1;
       } else {
@@ -290,6 +349,365 @@ export const RecruitmentHealthDashboard: React.FC<RecruitmentHealthDashboardProp
 
   const hasFilters = monthFilter !== 'ALL' || Boolean(startDate) || Boolean(endDate) || deptFilter !== 'ALL';
 
+  // Render individual widget by ID
+  const renderWidget = (id: string) => {
+    switch (id) {
+      case 'kpi_cards':
+        return (
+          <div
+            key="kpi_cards"
+            draggable
+            onDragStart={(e) => handleDragStart(e, 'kpi_cards')}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'kpi_cards')}
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs relative group cursor-grab active:cursor-grabbing transition-all"
+          >
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <span className="flex items-center gap-1.5">
+                <GripVertical className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
+                Thẻ chỉ số tổng quan (KPIs)
+              </span>
+              <span className="text-[10px] text-slate-400 font-normal lowercase">kéo để di chuyển</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+              {kpiCards.map((card) => {
+                const Icon = card.icon;
+                const isClickable = Boolean(card.filterValue && onNavigateToTrackingWithFilter);
+                return (
+                  <button
+                    key={card.id}
+                    type="button"
+                    disabled={!isClickable}
+                    onClick={() => {
+                      if (card.filterValue && onNavigateToTrackingWithFilter) {
+                        onNavigateToTrackingWithFilter(card.filterValue);
+                      }
+                    }}
+                    title={isClickable ? `Xem danh sách ${card.label} ở Bước 2` : undefined}
+                    className={`text-left rounded-xl border border-slate-200 bg-white p-4 transition-colors ${
+                      isClickable ? 'hover:border-[#1a73e8] cursor-pointer' : 'cursor-default'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-slate-600">{card.label}</div>
+                        <div className={`mt-1.5 text-2xl font-bold font-mono tabular-nums ${card.accentClass}`}>
+                          {card.value.toLocaleString('vi-VN')}
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-500 truncate">{card.sub}</div>
+                      </div>
+                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${card.iconBg}`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+
+      case 'alerts_widget':
+        return (
+          <div
+            key="alerts_widget"
+            draggable
+            onDragStart={(e) => handleDragStart(e, 'alerts_widget')}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'alerts_widget')}
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs relative group cursor-grab active:cursor-grabbing transition-all"
+          >
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <span className="flex items-center gap-1.5">
+                <GripVertical className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
+                Thẻ cảnh báo &amp; Lịch hẹn KSK cần lưu ý
+              </span>
+              <span className="text-[10px] text-slate-400 font-normal lowercase">kéo để di chuyển</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-amber-900">Ứng viên chưa khám (Đến hạn / Quá hạn)</div>
+                  <div className="text-xl font-bold font-mono text-amber-800 mt-0.5">{alertCandidates.length}</div>
+                  <div className="text-[11px] text-amber-700 mt-0.5 truncate">
+                    {alertCandidates.length > 0 ? `Cần đôn đốc lịch khám cho ${alertCandidates[0].hoVaTen}...` : 'Không có ứng viên quá hạn.'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-3.5 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                  <Calendar className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-blue-950">Tổng lịch hẹn trong kỳ</div>
+                  <div className="text-xl font-bold font-mono text-blue-900 mt-0.5">{summary.total}</div>
+                  <div className="text-[11px] text-blue-700 mt-0.5">Ứng viên đang theo dõi tiến độ KSK</div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-teal-200 bg-teal-50/70 p-3.5 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-teal-100 text-teal-700 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-teal-950">Tỷ lệ hoàn thành khám</div>
+                  <div className="text-xl font-bold font-mono text-teal-900 mt-0.5">{summary.completionRate}%</div>
+                  <div className="text-[11px] text-teal-700 mt-0.5">{summary.daKham} / {summary.total} đã hoàn thành</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'status_chart':
+        return (
+          <div
+            key="status_chart"
+            draggable
+            onDragStart={(e) => handleDragStart(e, 'status_chart')}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'status_chart')}
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs relative group cursor-grab active:cursor-grabbing transition-all flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <span className="flex items-center gap-1.5">
+                  <GripVertical className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
+                  Biểu đồ số lượng ứng viên theo trạng thái
+                </span>
+                <span className="text-[10px] text-slate-400 font-normal lowercase">kéo để di chuyển</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
+                <div>
+                  <h5 className="text-xs font-bold text-slate-900">Phân bố trạng thái KSK</h5>
+                  <p className="text-[11px] text-slate-500">Đã khám, Chưa khám, Đạt và Không đạt</p>
+                </div>
+                <div className="inline-flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => setStatusChartType('bar')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      statusChartType === 'bar'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Biểu đồ cột
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStatusChartType('pie')}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      statusChartType === 'pie'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Biểu đồ tròn
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-[270px] w-full pt-2">
+              {summary.total === 0 ? (
+                <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                  Chưa có dữ liệu ứng viên để hiển thị biểu đồ trạng thái.
+                </div>
+              ) : statusChartType === 'bar' ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={statusBarData} margin={{ top: 12, right: 12, left: -12, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fontSize: 11, fill: '#64748b' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip content={<StatusTooltip />} cursor={{ fill: '#f8fafc' }} />
+                    <Bar
+                      dataKey="value"
+                      name="Số ứng viên"
+                      radius={[6, 6, 0, 0]}
+                      maxBarSize={48}
+                      onClick={(entry) => {
+                        const key = (entry as unknown as StatusDatum)?.filterKey;
+                        if (key && onNavigateToTrackingWithFilter) {
+                          onNavigateToTrackingWithFilter(key);
+                        }
+                      }}
+                      className={onNavigateToTrackingWithFilter ? 'cursor-pointer' : undefined}
+                    >
+                      {statusBarData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={statusPieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="48%"
+                      innerRadius={54}
+                      outerRadius={84}
+                      paddingAngle={3}
+                      onClick={(entry) => {
+                        const key = (entry as unknown as StatusDatum)?.filterKey;
+                        if (key && onNavigateToTrackingWithFilter) {
+                          onNavigateToTrackingWithFilter(key);
+                        }
+                      }}
+                      className={onNavigateToTrackingWithFilter ? 'cursor-pointer' : undefined}
+                    >
+                      {statusPieData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip content={<StatusTooltip />} />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={30}
+                      wrapperStyle={{ fontSize: '11px', color: '#334155' }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'dept_chart':
+        return (
+          <div
+            key="dept_chart"
+            draggable
+            onDragStart={(e) => handleDragStart(e, 'dept_chart')}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'dept_chart')}
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs relative group cursor-grab active:cursor-grabbing transition-all flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <span className="flex items-center gap-1.5">
+                  <GripVertical className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-700" />
+                  Biểu đồ phân loại theo Phòng / Ban
+                </span>
+                <span className="text-[10px] text-slate-400 font-normal lowercase">kéo để di chuyển</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
+                <div>
+                  <h5 className="text-xs font-bold text-slate-900">
+                    Phân bổ theo {groupBy === 'phong' ? 'Phòng' : 'Ban'}
+                  </h5>
+                  <p className="text-[11px] text-slate-500">So sánh Đạt, Không đạt và Chưa khám</p>
+                </div>
+                <div className="inline-flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGroupBy('phong');
+                      setDeptFilter('ALL');
+                    }}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      groupBy === 'phong'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Theo Phòng
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGroupBy('ban');
+                      setDeptFilter('ALL');
+                    }}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                      groupBy === 'ban'
+                        ? 'bg-white text-slate-900 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Theo Ban
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-[270px] w-full pt-2">
+              {deptData.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-xs text-slate-400">
+                  Chưa có dữ liệu Phòng/Ban để hiển thị biểu đồ.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={deptData} margin={{ top: 12, right: 16, left: -12, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                      interval={0}
+                      tickFormatter={(val: string) => (val.length > 16 ? `${val.slice(0, 15)}…` : val)}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fontSize: 11, fill: '#64748b' }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip content={<DeptTooltip />} cursor={{ fill: '#f8fafc' }} />
+                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '4px' }} />
+                    <Bar
+                      dataKey="dat"
+                      name="Đã khám - Đạt"
+                      stackId="dept"
+                      fill="#16a34a"
+                      maxBarSize={40}
+                    />
+                    <Bar
+                      dataKey="khongDat"
+                      name="Đã khám - Không đạt"
+                      stackId="dept"
+                      fill="#dc2626"
+                      maxBarSize={40}
+                    />
+                    <Bar
+                      dataKey="chuaKham"
+                      name="Chưa khám"
+                      stackId="dept"
+                      fill="#2563eb"
+                      radius={[5, 5, 0, 0]}
+                      maxBarSize={40}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
   return (
     <section
       aria-label="Dashboard khám sức khỏe tuyển dụng"
@@ -305,24 +723,30 @@ export const RecruitmentHealthDashboard: React.FC<RecruitmentHealthDashboardProp
             </h3>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Thống kê trực quan số lượng ứng viên theo trạng thái khám (Đã khám, Chưa khám, Đạt, Không đạt) và phân loại Phòng/Ban.
+            Thống kê trực quan số lượng ứng viên theo trạng thái khám và phân loại Phòng/Ban. Kéo thả các widget bên dưới để tùy chỉnh không gian làm việc.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600 tabular-nums">
-          <span className="inline-flex items-center gap-1.5 font-medium text-teal-800">
-            <UserCheck className="w-3.5 h-3.5" />
-            Đã nhận việc: <strong className="font-mono">{summary.nhanViec}</strong>
-          </span>
-          <span aria-hidden="true" className="text-slate-300">|</span>
-          <span className="inline-flex items-center gap-1.5 font-medium text-rose-700">
-            <UserX className="w-3.5 h-3.5" />
-            Không nhận việc: <strong className="font-mono">{summary.khongNhanViec}</strong>
-          </span>
-          <span aria-hidden="true" className="text-slate-300">|</span>
-          <span className="text-slate-500">
-            Hiển thị <strong className="font-mono text-slate-900">{summary.total}</strong> / {records.length} hồ sơ
-          </span>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 tabular-nums">
+            <span className="inline-flex items-center gap-1.5 font-medium text-teal-800">
+              <UserCheck className="w-3.5 h-3.5" />
+              Đã nhận việc: <strong className="font-mono">{summary.nhanViec}</strong>
+            </span>
+            <span aria-hidden="true" className="text-slate-300">|</span>
+            <span className="inline-flex items-center gap-1.5 font-medium text-rose-700">
+              <UserX className="w-3.5 h-3.5" />
+              Không nhận việc: <strong className="font-mono">{summary.khongNhanViec}</strong>
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setWidgetOrder(DEFAULT_WIDGET_ORDER)}
+            className="px-2.5 py-1 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-[11px] cursor-pointer transition whitespace-nowrap"
+            title="Khôi phục bố cục widget mặc định"
+          >
+            ĐẶT LẠI BỐ CỤC
+          </button>
         </div>
       </div>
 
@@ -400,250 +824,9 @@ export const RecruitmentHealthDashboard: React.FC<RecruitmentHealthDashboardProp
         </div>
       </div>
 
-      {/* 4 KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {kpiCards.map((card) => {
-          const Icon = card.icon;
-          const isClickable = Boolean(card.filterValue && onNavigateToTrackingWithFilter);
-          return (
-            <button
-              key={card.id}
-              type="button"
-              disabled={!isClickable}
-              onClick={() => {
-                if (card.filterValue && onNavigateToTrackingWithFilter) {
-                  onNavigateToTrackingWithFilter(card.filterValue);
-                }
-              }}
-              title={isClickable ? `Xem danh sách ${card.label} ở Bước 2` : undefined}
-              className={`text-left rounded-xl border border-slate-200 bg-white p-4 transition-colors ${
-                isClickable ? 'hover:border-[#1a73e8] cursor-pointer' : 'cursor-default'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold text-slate-600">{card.label}</div>
-                  <div className={`mt-1.5 text-2xl font-bold font-mono tabular-nums ${card.accentClass}`}>
-                    {card.value.toLocaleString('vi-VN')}
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-500 truncate">{card.sub}</div>
-                </div>
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${card.iconBg}`}>
-                  <Icon className="w-4 h-4" />
-                </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Recharts Panels */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        {/* Panel 1: Status breakdown */}
-        <div className="lg:col-span-5 rounded-xl border border-slate-200 bg-white p-4 flex flex-col justify-between">
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
-            <div>
-              <h5 className="text-xs font-bold text-slate-900">Số lượng ứng viên theo trạng thái</h5>
-              <p className="text-[11px] text-slate-500">Đã khám, Chưa khám, Đạt và Không đạt</p>
-            </div>
-            <div className="inline-flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg">
-              <button
-                type="button"
-                onClick={() => setStatusChartType('bar')}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  statusChartType === 'bar'
-                    ? 'bg-white text-slate-900 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Biểu đồ cột
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusChartType('pie')}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  statusChartType === 'pie'
-                    ? 'bg-white text-slate-900 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Biểu đồ tròn
-              </button>
-            </div>
-          </div>
-
-          <div className="h-[290px] w-full pt-3">
-            {summary.total === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                Chưa có dữ liệu ứng viên để hiển thị biểu đồ trạng thái.
-              </div>
-            ) : statusChartType === 'bar' ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={statusBarData} margin={{ top: 12, right: 12, left: -12, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }}
-                    axisLine={{ stroke: '#cbd5e1' }}
-                    tickLine={false}
-                  />
-                  <YAxis
-                    allowDecimals={false}
-                    tick={{ fontSize: 11, fill: '#64748b' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip content={<StatusTooltip />} cursor={{ fill: '#f8fafc' }} />
-                  <Bar
-                    dataKey="value"
-                    name="Số ứng viên"
-                    radius={[6, 6, 0, 0]}
-                    maxBarSize={48}
-                    onClick={(entry) => {
-                      const key = (entry as unknown as StatusDatum)?.filterKey;
-                      if (key && onNavigateToTrackingWithFilter) {
-                        onNavigateToTrackingWithFilter(key);
-                      }
-                    }}
-                    className={onNavigateToTrackingWithFilter ? 'cursor-pointer' : undefined}
-                  >
-                    {statusBarData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={statusPieData}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="48%"
-                    innerRadius={58}
-                    outerRadius={90}
-                    paddingAngle={3}
-                    onClick={(entry) => {
-                      const key = (entry as unknown as StatusDatum)?.filterKey;
-                      if (key && onNavigateToTrackingWithFilter) {
-                        onNavigateToTrackingWithFilter(key);
-                      }
-                    }}
-                    className={onNavigateToTrackingWithFilter ? 'cursor-pointer' : undefined}
-                  >
-                    {statusPieData.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<StatusTooltip />} />
-                  <Legend
-                    verticalAlign="bottom"
-                    height={36}
-                    wrapperStyle={{ fontSize: '11px', color: '#334155' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        {/* Panel 2: Department (Phòng / Ban) breakdown */}
-        <div className="lg:col-span-7 rounded-xl border border-slate-200 bg-white p-4 flex flex-col justify-between">
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
-            <div>
-              <h5 className="text-xs font-bold text-slate-900">
-                Thống kê ứng viên theo phân loại {groupBy === 'phong' ? 'Phòng' : 'Ban'}
-              </h5>
-              <p className="text-[11px] text-slate-500">
-                So sánh số lượng Đạt, Không đạt và Chưa khám theo từng {groupBy === 'phong' ? 'Phòng' : 'Ban'}
-              </p>
-            </div>
-            <div className="inline-flex items-center gap-1 p-0.5 bg-slate-100 rounded-lg">
-              <button
-                type="button"
-                onClick={() => {
-                  setGroupBy('phong');
-                  setDeptFilter('ALL');
-                }}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  groupBy === 'phong'
-                    ? 'bg-white text-slate-900 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Theo Phòng
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setGroupBy('ban');
-                  setDeptFilter('ALL');
-                }}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  groupBy === 'ban'
-                    ? 'bg-white text-slate-900 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Theo Ban
-              </button>
-            </div>
-          </div>
-
-          <div className="h-[290px] w-full pt-3">
-            {deptData.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-xs text-slate-400">
-                Chưa có dữ liệu Phòng/Ban để hiển thị biểu đồ.
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={deptData} margin={{ top: 12, right: 16, left: -12, bottom: 4 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis
-                    dataKey="name"
-                    tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }}
-                    axisLine={{ stroke: '#cbd5e1' }}
-                    tickLine={false}
-                    interval={0}
-                    tickFormatter={(val: string) => (val.length > 16 ? `${val.slice(0, 15)}…` : val)}
-                  />
-                  <YAxis
-                    allowDecimals={false}
-                    tick={{ fontSize: 11, fill: '#64748b' }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
-                  <Tooltip content={<DeptTooltip />} cursor={{ fill: '#f8fafc' }} />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '6px' }} />
-                  <Bar
-                    dataKey="dat"
-                    name="Đã khám - Đạt"
-                    stackId="dept"
-                    fill="#16a34a"
-                    maxBarSize={44}
-                  />
-                  <Bar
-                    dataKey="khongDat"
-                    name="Đã khám - Không đạt"
-                    stackId="dept"
-                    fill="#dc2626"
-                    maxBarSize={44}
-                  />
-                  <Bar
-                    dataKey="chuaKham"
-                    name="Chưa khám"
-                    stackId="dept"
-                    fill="#2563eb"
-                    radius={[5, 5, 0, 0]}
-                    maxBarSize={44}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
+      {/* Draggable Widgets Stack */}
+      <div className="space-y-4">
+        {widgetOrder.map((id) => renderWidget(id))}
       </div>
     </section>
   );

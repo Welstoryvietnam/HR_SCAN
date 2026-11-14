@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useRef, useImperativeHandle } from 'react';
 import { DocumentExtractionResult, TieuChuanLuongItem, ThanhVienGiaDinh, ThanhVienHoGiaDinh, NhanSuRecord, BatchEmployeeDraft, KhoiNode, EmployeeIntakeInfo, IntakeFormDraft } from '../types';
-import { EmployeeReviewGrid } from './EmployeeReviewGrid';
-import { EmployeeIntakeFields } from './EmployeeIntakeFields';
 import { EmployeeSalaryGrid } from './EmployeeSalaryGrid';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from '../data/organizationHierarchy';
 import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
 import { findTieuChuanLuong, DEFAULT_TIEU_CHUAN_LUONG } from '../data/tieuChuanLuongData';
-import { generateExcel43Columns, exportBienDongNhanSuExcel, exportBienDongNhanSuCSV, HR_43_COLUMNS, BIEN_DONG_NHAN_SU_COLUMNS } from '../utils/excelExport';
+import { exportBienDongNhanSuExcel, exportBienDongNhanSuCSV } from '../utils/excelExport';
 import { exportHouseholdAppendix } from '../utils/householdExport';
 import { normalizeHouseholdMembers } from '../utils/household';
 import {
@@ -106,12 +104,31 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   // Cơ cấu tổ chức động do Admin cấu hình (hoặc mặc định)
   const orgHierarchy = organizationHierarchy && organizationHierarchy.length > 0 ? organizationHierarchy : DEFAULT_ORGANIZATION_HIERARCHY;
 
-  // Quản lý bước hiển thị trong SOP: 2 (Form), 3 (Chức vụ), 4 (Lương & Lưu), 5 (Bước sau Bước 4: Đã lưu & Tiếp nhận mới)
-  const [activeTabStep, setActiveTabStep] = useState<2 | 3 | 4 | 5>(
-    currentStep && currentStep >= 2 && currentStep <= 4 ? (currentStep as 2 | 3 | 4) : 2
+  const lookupStandard = (congViec?: string, chucVuVal?: string): TieuChuanLuongItem | undefined => {
+    const cv = (congViec || '').trim().toLowerCase();
+    const title = (chucVuVal || '').trim().toLowerCase();
+    if (tieuChuanLuongList && tieuChuanLuongList.length > 0 && title) {
+      const exactMatch = tieuChuanLuongList.find(
+        (item) =>
+          (item.chucVu || '').trim().toLowerCase() === title &&
+          (!cv || (item.congViec || '').trim().toLowerCase() === cv)
+      );
+      if (exactMatch) return exactMatch;
+
+      const titleMatch = tieuChuanLuongList.find(
+        (item) => (item.chucVu || '').trim().toLowerCase() === title
+      );
+      if (titleMatch) return titleMatch;
+    }
+    return findTieuChuanLuong(congViec, chucVuVal);
+  };
+
+  // Quản lý bước hiển thị trong SOP (3 bước): 2 (Đơn vị & Chức vụ), 3 (Lương & Lưu), 4 (Hoàn tất sau Bước 3)
+  const [activeTabStep, setActiveTabStep] = useState<2 | 3 | 4>(
+    currentStep && (currentStep === 2 || currentStep === 3) ? (currentStep as 2 | 3) : 2
   );
 
-  // Trạng thái đã lưu thành công vào Firestore & dữ liệu tóm tắt vừa lưu để phục vụ "+ Tiếp nhận hồ sơ mới"
+  // Trạng thái đã lưu thành công & dữ liệu tóm tắt vừa lưu để phục vụ "+ Tiếp nhận hồ sơ mới"
   const [isSavedSuccess, setIsSavedSuccess] = useState(false);
   const [savedSummary, setSavedSummary] = useState<{
     hoVaTen: string;
@@ -122,17 +139,17 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   } | null>(null);
 
   // Xử lý chuyển tab bước SOP
-  const handleSelectStep = (step: 2 | 3 | 4 | 5) => {
+  const handleSelectStep = (step: 2 | 3 | 4) => {
     setActiveTabStep(step);
-    if (onStepChange && step <= 4) {
+    if (onStepChange && step <= 3) {
       onStepChange(step);
     }
   };
 
   // Đồng bộ bước hiển thị khi prop currentStep thay đổi từ bên ngoài (ví dụ header SOP)
   useEffect(() => {
-    if (currentStep && (currentStep === 2 || currentStep === 3 || currentStep === 4)) {
-      setActiveTabStep(currentStep as 2 | 3 | 4);
+    if (currentStep && (currentStep === 2 || currentStep === 3)) {
+      setActiveTabStep(currentStep as 2 | 3);
     }
   }, [currentStep]);
 
@@ -271,14 +288,16 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     if (updates.khoi !== undefined) setKhoi(updates.khoi);
     if (updates.ban !== undefined) setBan(updates.ban);
     if (updates.phong !== undefined) setPhong(updates.phong);
+    if (updates.diemLamViec !== undefined) setDiemLamViec(updates.diemLamViec);
+    if (updates.loaiHopDong !== undefined) setLoaiHopDong(updates.loaiHopDong);
     if (updates.congViecDuKien !== undefined) setCongViecDuKien(updates.congViecDuKien);
     if (updates.chucVu !== undefined) {
       setChucVu(updates.chucVu);
-      const std = findTieuChuanLuong(updates.congViecDuKien || congViecDuKien, updates.chucVu);
+      const std = lookupStandard(updates.congViecDuKien || congViecDuKien, updates.chucVu);
       if (std) {
         setLuongCoBan(std.luongCoBan);
         setPhuCapChucVu(std.phuCapChucVu);
-        setPhuCapDienThoai(std.phuCapDienThoai);
+        setPhuCapDienThoai(std.phuCapDienThoai || 0);
         setTroCapTayNghe(std.troCapTayNghe);
         setTroCapGiaDinh(std.troCapGiaDinh);
         setThuongChuyenCan(std.thuongChuyenCan);
@@ -329,10 +348,10 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     }
   }, [initialData]);
 
-  // Tự động gợi ý các định mức lương chuẩn khi chức vụ ở Bước 3 thay đổi (HR vẫn có thể tự do sửa tay)
+  // Tự động gợi ý các định mức lương chuẩn khi chức vụ ở Bước 2 thay đổi (HR vẫn có thể tự do sửa tay)
   useEffect(() => {
     if (restoringDraft.current) return;
-    const std = findTieuChuanLuong(congViecDuKien, chucVu);
+    const std = lookupStandard(congViecDuKien, chucVu);
     if (std) {
       setLuongCoBan(std.luongCoBan || 0);
       setPhuCapChucVu(std.phuCapChucVu || 0);
@@ -353,7 +372,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   },[congViecDuKien,chucVu]);
 
   // Tra cứu bảng tiêu chuẩn lương
-  const matchedStandard = findTieuChuanLuong(congViecDuKien, chucVu);
+  const matchedStandard = lookupStandard(congViecDuKien, chucVu);
 
   // Tính toán tổng các khoản phụ cấp (12+ khoản)
   const phuCapCoDinh =
@@ -407,6 +426,10 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     chucVu: chucVu || 'Nhân viên',
     diemLamViec,
     loaiHopDong,
+    hocVan: initialData?.hocVan ?? '',
+    tenTruong: initialData?.tenTruong ?? '',
+    nganhHoc: initialData?.nganhHoc ?? '',
+    namHoc: initialData?.namHoc ?? '',
     ...intakeInfo,
     emailCaNhan: intakeInfo.emailCaNhan ?? initialData?.emailCaNhan ?? '',
     luongCoBan: Number(luongCoBan) || 0,
@@ -448,7 +471,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
   const getBatchRecordObjects = (): NhanSuRecord[] => {
     if (batchList.length === 0) return [currentRecordObject];
     return batchList.map((emp, idx) => {
-      const std = findTieuChuanLuong(emp.congViecDuKien, emp.chucVu);
+      const std = lookupStandard(emp.congViecDuKien, emp.chucVu);
       const lcb = Number(emp.luongCoBan ?? std?.luongCoBan ?? 0);
       const pcCV = Number(emp.phuCapChucVu ?? std?.phuCapChucVu ?? 0);
       const pcDT = Number(emp.phuCapDienThoai ?? std?.phuCapDienThoai ?? 0);
@@ -504,6 +527,10 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         emailCaNhan: emp.emailCaNhan || '',
         tinhTrangHoSo: emp.tinhTrangHoSo || '',
         thamQuyen: emp.thamQuyen || '',
+        hocVan: emp.hocVan || '',
+        tenTruong: emp.tenTruong || '',
+        nganhHoc: emp.nganhHoc || '',
+        namHoc: emp.namHoc || '',
         luongCoBan: lcb,
         phuCapChucVu: pcCV,
         phuCapDienThoai: pcDT,
@@ -549,7 +576,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       await exportBienDongNhanSuExcel(recordsToExport, fileName);
     } catch (err) {
       console.error('Lỗi xuất file Biến động nhân sự:', err);
-      alert('Không thể xuất file Biến động nhân sự: ' + (err as Error).message);
+      setValidationError('Không thể xuất file Biến động nhân sự: ' + (err as Error).message);
     } finally {
       setIsExportingExcel(false);
     }
@@ -567,7 +594,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       exportBienDongNhanSuCSV(recordsToExport, fileName);
     } catch (err) {
       console.error('Lỗi xuất file CSV:', err);
-      alert('Không thể xuất file CSV: ' + (err as Error).message);
+      setValidationError('Không thể xuất file CSV: ' + (err as Error).message);
     }
   };
 
@@ -584,7 +611,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       await exportBienDongNhanSuExcel(recordsToExport, fileName);
     } catch (err) {
       console.error('Lỗi xuất file Excel:', err);
-      alert('Không thể xuất file Excel: ' + (err as Error).message);
+      setValidationError('Không thể xuất file Excel: ' + (err as Error).message);
     } finally {
       setIsExportingExcel(false);
     }
@@ -626,7 +653,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     }
   };
 
-  // Áp dụng công việc, chức vụ, phòng ban cho nhiều người cùng lúc (YÊU CẦU CỦA NGƯỜI DÙNG Ở BƯỚC 3)
+  // Áp dụng công việc, chức vụ, phòng ban cho nhiều người cùng lúc (Bước 2)
   const handleApplyBulkPositionToSelected = () => {
     const targetIds = selectedBatchIds.length > 0
       ? selectedBatchIds
@@ -634,13 +661,15 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         ? batchList.map((e) => e.id)
         : ['single-review'];
 
-    const std = findTieuChuanLuong(bulkCongViec, bulkChucVu);
+    const std = lookupStandard(bulkCongViec, bulkChucVu);
     const bulkUpdates: Partial<BatchEmployeeDraft> = {
       khoi: bulkKhoi,
       ban: bulkBan,
       phong: bulkPhong,
       congViecDuKien: bulkCongViec,
       chucVu: bulkChucVu,
+      diemLamViec: bulkDiemLamViec,
+      loaiHopDong: bulkLoaiHopDong,
       luongCoBan: std?.luongCoBan ?? 7683000,
       phuCapChucVu: std?.phuCapChucVu ?? 0,
       phuCapDienThoai: std?.phuCapDienThoai ?? 0,
@@ -673,16 +702,21 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     setTimeout(() => setBulkSuccessMsg(null), 5000);
   };
 
-  // Cập nhật từng dòng riêng biệt trong bảng ma trận Bước 3
+  // Cập nhật từng dòng riêng biệt trong Bước 2
   const handleUpdateBatchEmployeeRow = (id: string, updates: Partial<BatchEmployeeDraft>) => {
     const updated = batchList.map((emp) => {
       if (emp.id !== id) return emp;
       const merged = { ...emp, ...updates };
       if (updates.congViecDuKien || updates.chucVu) {
-        const std = findTieuChuanLuong(merged.congViecDuKien, merged.chucVu);
+        const std = lookupStandard(merged.congViecDuKien, merged.chucVu);
         if (std) {
           merged.luongCoBan = std.luongCoBan;
           merged.phuCapChucVu = std.phuCapChucVu;
+          merged.phuCapDienThoai = std.phuCapDienThoai || 0;
+          merged.troCapTayNghe = std.troCapTayNghe || 0;
+          merged.troCapGiaDinh = std.troCapGiaDinh || 0;
+          merged.thuongChuyenCan = std.thuongChuyenCan || 0;
+          merged.thuongSangKien = std.thuongSangKien || 0;
           merged.luongDongBHXH = (std.luongCoBan || 0) + (std.phuCapChucVu || 0);
         }
       }
@@ -793,22 +827,21 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     setThongTinGiaDinh(thongTinGiaDinh.filter((_, i) => i !== index));
   };
 
-  // Nộp form lưu vào Firestore (Chuẩn 43 cột - Hỗ trợ cả 1 hoặc nhiều người)
+  // Nộp form lưu vào hệ thống (Hỗ trợ cả 1 hoặc nhiều người)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
     const missingEmployee = batchList.find(employee => !employee.hoVaTen.trim() || !employee.soCCCD.trim());
     if (missingEmployee) {
-      setValidationError(`Vui lòng bổ sung họ tên và số CCCD cho ${missingEmployee.hoVaTen || 'nhân viên chưa có tên'} tại Bước 2 trước khi lưu danh sách.`);
-      handleSelectStep(2);
+      setValidationError(`Vui lòng bổ sung họ tên và số CCCD cho ${missingEmployee.hoVaTen || 'nhân viên chưa có tên'} tại Bước 1 trước khi lưu danh sách.`);
       return;
     }
     const invalidEmail = (batchList.length ? batchList : [currentRecordObject]).find(employee =>
       employee.emailCaNhan?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(employee.emailCaNhan.trim())
     );
     if (invalidEmail) {
-      setValidationError(`Email cá nhân của ${invalidEmail.hoVaTen || 'nhân viên'} chưa đúng định dạng. Vui lòng kiểm tra tại Bước 3.`);
-      handleSelectStep(3);
+      setValidationError(`Email cá nhân của ${invalidEmail.hoVaTen || 'nhân viên'} chưa đúng định dạng. Vui lòng kiểm tra tại Bước 2.`);
+      handleSelectStep(2);
       return;
     }
 
@@ -828,14 +861,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
       return;
     }
 
-    if (!hoVaTen.trim()) {
-      setValidationError('Vui lòng nhập Họ và tên (VIẾT HOA).');
-      setActiveTabStep(2);
-      return;
-    }
-    if (!soCCCD.trim()) {
-      setValidationError('Vui lòng nhập Số Căn cước công dân (12 số).');
-      setActiveTabStep(2);
+    if (!hoVaTen.trim() || !soCCCD.trim()) {
+      setValidationError('Vui lòng quay lại Bước 1 để nhập đầy đủ Họ và tên và Số CCCD (12 số).');
       return;
     }
 
@@ -854,7 +881,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         phongBan: phong || ban || khoi || 'Chưa chọn',
         count: 1,
       });
-      setActiveTabStep(5);
+      setActiveTabStep(4);
     }
   };
 
@@ -906,126 +933,10 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
     phuCapChucVu: phuCapChucVu,
   };
 
-  const step3Employees: BatchEmployeeDraft[] = batchList.length > 0 ? batchList : [currentSingleEmployeeDraft];
+  const step2Employees: BatchEmployeeDraft[] = batchList.length > 0 ? batchList : [currentSingleEmployeeDraft];
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-6">
-      {/* Form Header with SOP Steps Navigation */}
-      <div className="border-b border-slate-200 pb-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className={`text-white text-xs font-bold px-2 py-0.5 rounded ${
-                activeTabStep === 2 ? 'bg-blue-600' : activeTabStep === 3 ? 'bg-emerald-600' : activeTabStep === 4 ? 'bg-indigo-600' : 'bg-emerald-600'
-              }`}>
-                {activeTabStep === 5 ? 'HOÀN TẤT' : `BƯỚC ${activeTabStep} / 4`}
-              </span>
-              <h2 className="text-lg font-bold text-slate-900">
-                {activeTabStep === 2 && 'Bước 2: OCR Trích Xuất Form'}
-                {activeTabStep === 3 && 'Bước 3: Con Người Chọn Đơn Vị & Chức Vụ'}
-                {activeTabStep === 4 && 'Bước 4: Bảng Tiêu Chuẩn Tiền Lương & Lưu Hồ Sơ'}
-                {activeTabStep === 5 && 'Bước Sau Bước 4: Đã Lưu Hồ Sơ Thành Công'}
-              </h2>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
-            <div className="text-xs px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
-              Tài khoản: <strong className="text-blue-700">{userEmail}</strong>
-            </div>
-            {onBackToStep1 && (
-              <button
-                type="button"
-                onClick={onBackToStep1}
-                className="text-xs font-semibold px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-300 transition cursor-pointer"
-              >
-                ← Quay lại Bước 1 (Tải/Chụp ảnh)
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Tab Stepper Bar for Step 2, 3, 4 and Post-Step 4 */}
-        {![2, 4].includes(activeTabStep) && <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-          <button
-            type="button"
-            onClick={() => handleSelectStep(2)}
-            className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-              activeTabStep === 2
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
-              activeTabStep === 2 ? 'bg-white text-blue-700 font-black' : 'bg-slate-300 text-slate-700'
-            }`}>
-              2
-            </span>
-            <span>Bước 2: OCR Trích Xuất Form</span>
-            {duplicateCCCDRecord && (
-              <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black animate-pulse">
-                Trùng CCCD
-              </span>
-            )}
-            {cauHoiLamRo.length > 0 && (
-              <span className="bg-amber-400 text-amber-950 text-[10px] px-1.5 py-0.2 rounded-full font-black">
-                {cauHoiLamRo.length} câu hỏi
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleSelectStep(3)}
-            className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-              activeTabStep === 3
-                ? 'bg-emerald-600 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
-              activeTabStep === 3 ? 'bg-white text-emerald-700 font-black' : 'bg-slate-300 text-slate-700'
-            }`}>
-              3
-            </span>
-            <span>Bước 3: Con Người Chọn Đơn Vị &amp; Chức Vụ</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleSelectStep(4)}
-            className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-              activeTabStep === 4
-                ? 'bg-indigo-600 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-            }`}
-          >
-            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
-              activeTabStep === 4 ? 'bg-white text-indigo-700 font-black' : 'bg-slate-300 text-slate-700'
-            }`}>
-              4
-            </span>
-            <span>Bước 4: Bảng Tiêu Chuẩn &amp; Lưu Sheet</span>
-          </button>
-
-          {/* Bước sau Bước 4: Hiển thị sau khi đã lưu thành công */}
-          {isSavedSuccess && (
-            <button
-              type="button"
-              onClick={() => handleSelectStep(5)}
-              className={`px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-2 ${
-                activeTabStep === 5
-                  ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-300'
-                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-              }`}
-            >
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>✓ Đã Lưu &amp; Tiếp Nhận Mới</span>
-            </button>
-          )}
-        </div>}
-      </div>
-
+    <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-5">
       {validationError && (
         <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl text-xs flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -1035,155 +946,52 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* ========================================================================= */}
-        {/* BƯỚC 2: AI TRẢ RA THÔNG TIN THEO FORM TIÊU CHUẨN (HỎI LẠI NẾU KHÔNG RÕ) */}
+        {/* BƯỚC 2: CON NGƯỜI CHỌN ĐƠN VỊ, BỘ PHẬN, CÔNG VIỆC, CHỨC VỤ & BỔ SUNG     */}
         {/* ========================================================================= */}
         {activeTabStep === 2 && (
-          <div className="space-y-4 rounded-xl border border-blue-200 bg-blue-50/20 p-4 sm:p-5 animate-fade-in">
-            {/* Header Bước 2 */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-100 pb-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="bg-blue-600 text-white text-xs font-black px-2 py-0.5 rounded">
-                    BƯỚC 2 (SOP)
-                  </span>
-                  <h3 className="text-base font-bold text-slate-900">
-                    OCR Trả Ra Thông Tin Nhân Viên Theo Form Tiêu Chuẩn
-                  </h3>
-                </div>
-              </div>
-
-              <div className="text-right">
-                <span className="text-[11px] text-blue-700 bg-blue-100 font-semibold px-2 py-1 rounded">
-                  Form tiêu chuẩn Bước 2 (Sẵn sàng nhận form từ bạn)
-                </span>
-              </div>
-            </div>
-
-            {/* CẢNH BÁO TRÙNG LẶP CCCD VỚI HỆ THỐNG */}
-            {(() => {
-              const duplicateRecordsInForm = (batchList.length ? batchList : [currentRecordObject])
-                .map((emp, idx) => {
-                  const clean = (emp.soCCCD || '').replace(/\D/g, '');
-                  if (clean.length < 9) return null;
-                  const matched = existingRecords?.find(r => r.soCCCD && r.soCCCD.replace(/\D/g, '') === clean);
-                  return matched ? { employee: emp, matched, index: idx + 1 } : null;
-                })
-                .filter((item): item is { employee: BatchEmployeeDraft | NhanSuRecord; matched: NhanSuRecord; index: number } => item !== null);
-
-              if (!duplicateRecordsInForm.length) return null;
-
-              return (
-                <div className="rounded-xl border border-rose-300 bg-rose-50/95 p-3.5 text-xs text-rose-950 shadow-xs space-y-2 animate-fade-in" role="alert">
-                  <div className="flex items-center gap-2 font-bold text-rose-900 text-sm">
-                    <AlertTriangle className="h-4 w-4 text-rose-600 shrink-0" />
-                    <span>Cảnh báo: Phát hiện {duplicateRecordsInForm.length} nhân viên có số CCCD đã tồn tại trong hệ thống!</span>
-                  </div>
-                  <ul className="space-y-1.5 pl-4 list-disc text-[11px] text-slate-800">
-                    {duplicateRecordsInForm.map((item, i) => (
-                      <li key={i}>
-                        <strong>NV {item.index} ({item.employee.hoVaTen || 'Chưa rõ họ tên'}) - CCCD {item.employee.soCCCD}:</strong> Trùng với hồ sơ đã lưu <strong className="text-rose-950">{item.matched.hoVaTen}</strong> (Chức vụ: {item.matched.chucVu || 'Chưa rõ'}{[item.matched.khoi, item.matched.phong].filter(Boolean).length ? ` - ${[item.matched.khoi, item.matched.phong].filter(Boolean).join(' > ')}` : ''}{item.matched.id ? ` - Mã: ${item.matched.id}` : ''}).
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-[10px] text-rose-700 italic">
-                    * Lưu ý: Vui lòng kiểm tra kỹ để tránh trùng lặp dữ liệu trước khi hoàn tất lưu vào danh sách nhân sự chính thức.
-                  </p>
-                </div>
-              );
-            })()}
-
-            <EmployeeReviewGrid
-              employees={batchList.length ? batchList : [{...currentRecordObject, id: 'single-review', hoVaTen, cauHoiLamRo: initialData?.cauHoiLamRo, thongTinChuaRo: initialData?.thongTinChuaRo}]}
-              existingRecords={existingRecords}
-              onChange={handleReviewChange}
-            />
-
-            {/* Điều hướng Bước 2 */}
-            {activeTabStep === 2 && (
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (onBackToStep1) onBackToStep1();
-                    else if (onStepChange) onStepChange(1);
-                  }}
-                  className="w-full sm:w-auto px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                  <span>Quay Lại Bước 1 (Tải/Chụp lại ảnh)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (batchList.length ? batchList.some(employee => !employee.hoVaTen.trim()) : !hoVaTen.trim()) {
-                      setValidationError('Vui lòng nhập họ tên cho tất cả nhân viên trước khi chuyển sang Bước 3.');
-                      return;
-                    }
-                    setValidationError(null);
-                    handleSelectStep(3);
-                  }}
-                  className="w-full sm:w-auto px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
-                >
-                  <span>Xác Nhận Bước 2 &amp; Tiếp Tục Sang Bước 3 (Phân Bổ Phòng Ban)</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ========================================================================= */}
-        {/* BƯỚC 3: CON NGƯỜI THAO TÁC - LỰA CHỌN PHÒNG BAN, BỘ PHẬN, CÔNG VIỆC CHỨC VỤ */}
-        {/* ========================================================================= */}
-        {/* ========================================================================= */}
-        {/* BƯỚC 3: HIỆN TOÀN BỘ NHÂN VIÊN ĐÃ QUÉT Ở BƯỚC 2 DƯỚI DẠNG DANH SÁCH       */}
-        {/* ========================================================================= */}
-        {activeTabStep === 3 && (
           <div className="space-y-5 rounded-xl border border-emerald-200 bg-emerald-50/20 p-4 sm:p-5 animate-fade-in">
-            {/* Header Bước 3 */}
+            {/* Header Bước 2 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-200/80 pb-3">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="bg-emerald-600 text-white text-xs font-black px-2.5 py-1 rounded-lg">
-                    BƯỚC 3 (SOP)
+                    BƯỚC 2 (SOP)
                   </span>
                   <h3 className="text-base sm:text-lg font-bold text-slate-900">
-                    Bổ Sung Thông Tin Tiếp Nhận, Phòng Ban &amp; Công Việc Chức Vụ
+                    Chọn Đơn Vị (Khối → Ban → Phòng) &amp; Công Việc, Chức Vụ
                   </h3>
                 </div>
                 <p className="text-xs text-slate-600 mt-1">
-                  Danh sách toàn bộ <strong>{step3Employees.length} nhân sự</strong> đã quét ở Bước 2. Hãy hoàn thiện thông tin bổ sung tay (ngày vào làm, tạm trú, email, tình trạng hồ sơ), chọn Đơn vị công tác (Khối, Ban, Phòng) và Vị trí (Công việc, Chức vụ, Thẩm quyền) cho từng người.
+                  Đang xử lý <strong>{step2Employees.length} nhân sự</strong> từ Bước 1. Hoàn thiện Đơn vị công tác, Công việc / Chức vụ (theo chuẩn hoặc nhập tay), Địa bàn / Điểm làm việc, Loại hợp đồng, Ngày vào làm và Thẩm quyền.
                 </p>
               </div>
 
-              {step3Employees.length > 1 && (
+              {step2Employees.length > 1 && (
                 <div className="flex items-center gap-2 self-start sm:self-auto">
                   <button
                     type="button"
                     onClick={handleToggleSelectAllBatch}
                     className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
                   >
-                    {selectedBatchIds.length === step3Employees.length ? (
+                    {selectedBatchIds.length === step2Employees.length ? (
                       <>
                         <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Đã chọn tất cả ({step3Employees.length})</span>
+                        <span>Đã chọn tất cả ({step2Employees.length})</span>
                       </>
                     ) : (
                       <>
                         <Square className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Chọn tất cả ({step3Employees.length})</span>
+                        <span>Chọn tất cả ({step2Employees.length})</span>
                       </>
                     )}
                   </button>
                   <span className="text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg border border-emerald-200">
-                    Đã chọn: {selectedBatchIds.length} / {step3Employees.length}
+                    Đã chọn: {selectedBatchIds.length} / {step2Employees.length}
                   </span>
                 </div>
               )}
             </div>
 
-            {/* Thông báo áp dụng thành công */}
             {bulkSuccessMsg && (
               <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-bold text-emerald-900 flex items-center gap-2 shadow-2xs">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -1191,8 +999,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               </div>
             )}
 
-            {/* Thanh công cụ áp dụng nhanh hàng loạt (khi có nhiều nhân sự) */}
-            {step3Employees.length > 1 && (
+            {/* Thanh công cụ áp dụng nhanh hàng loạt */}
+            {step2Employees.length > 1 && (
               <div className="bg-white rounded-xl border border-emerald-300 p-4 shadow-xs space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <div className="flex items-center gap-2">
@@ -1202,11 +1010,11 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                     </span>
                   </div>
                   <span className="text-[11px] text-slate-500">
-                    Chọn giá trị rồi nhấn "Áp Dụng" để cập nhật đồng thời
+                    Chọn giá trị rồi nhấn &ldquo;Áp Dụng&rdquo; để cập nhật đồng thời
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2.5 text-xs">
                   <div>
                     <label className="block text-slate-600 font-medium mb-1">Khối</label>
                     <select
@@ -1277,6 +1085,8 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                     </select>
                   </div>
 
+
+
                   <div className="flex items-end">
                     <button
                       type="button"
@@ -1292,9 +1102,31 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               </div>
             )}
 
-            {/* DANH SÁCH TOÀN BỘ NHÂN VIÊN ĐÃ QUÉT Ở BƯỚC 2 */}
+            {/* Toggle chế độ nhập tay ngoài chuẩn */}
+            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-700 bg-white/90 border border-slate-200 rounded-xl px-4 py-2.5">
+              <label className="inline-flex items-center gap-2 cursor-pointer font-semibold">
+                <input
+                  type="checkbox"
+                  checked={isCustomOrg}
+                  onChange={(e) => setIsCustomOrg(e.target.checked)}
+                  className="rounded text-emerald-600"
+                />
+                <span>Cho phép nhập tay Khối / Ban / Phòng ngoài cơ cấu</span>
+              </label>
+              <label className="inline-flex items-center gap-2 cursor-pointer font-semibold">
+                <input
+                  type="checkbox"
+                  checked={isCustomJob}
+                  onChange={(e) => setIsCustomJob(e.target.checked)}
+                  className="rounded text-indigo-600"
+                />
+                <span>Cho phép nhập tay Công việc / Chức vụ ngoài danh mục chuẩn</span>
+              </label>
+            </div>
+
+            {/* Danh sách nhân viên Bước 2 */}
             <div className="space-y-4">
-              {step3Employees.map((emp, idx) => {
+              {step2Employees.map((emp, idx) => {
                 const isSelected = selectedBatchIds.includes(emp.id);
                 const currentKhoi = emp.khoi || orgHierarchy[0]?.name || '';
                 const kObj = orgHierarchy.find((k) => k.name === currentKhoi) || orgHierarchy[0];
@@ -1305,7 +1137,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                 const currentJob = emp.congViecDuKien || DEFAULT_JOB_POSITIONS[0]?.name || '';
                 const jObj = DEFAULT_JOB_POSITIONS.find((j) => j.name === currentJob) || DEFAULT_JOB_POSITIONS[0];
                 const currentTitle = emp.chucVu || jObj?.chucVus[0] || '';
-                const std = findTieuChuanLuong(currentJob, currentTitle);
+                const std = lookupStandard(currentJob, currentTitle);
 
                 return (
                   <div
@@ -1314,10 +1146,10 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                       isSelected ? 'border-emerald-500 ring-2 ring-emerald-100' : 'border-slate-200 hover:border-slate-300'
                     }`}
                   >
-                    {/* Header tóm tắt nhân sự từ Bước 2 */}
+                    {/* Header tóm tắt nhân sự */}
                     <div className="bg-slate-50 border-b border-slate-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        {step3Employees.length > 1 && (
+                        {step2Employees.length > 1 && (
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -1355,252 +1187,297 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                             Lương CB: {formatVND(std.luongCoBan)} đ
                           </span>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => handleSelectStep(2)}
-                          className="text-[11px] text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer"
-                        >
-                          Xem lại Bước 2
-                        </button>
+                        {onBackToStep1 && (
+                          <button
+                            type="button"
+                            onClick={onBackToStep1}
+                            className="text-[11px] text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg font-semibold transition cursor-pointer"
+                          >
+                            Sửa thông tin Bước 1
+                          </button>
+                        )}
                       </div>
                     </div>
 
-                    {/* Lưới 3 khối thông tin theo đúng 4 yêu cầu của người dùng */}
+                    {/* Lưới 3 khối thông tin Bước 2 */}
                     <div className="p-4 grid grid-cols-1 lg:grid-cols-12 gap-4 text-xs">
-                      {/* Khối 1: Thông tin cần bổ sung tay */}
-                      <div className="lg:col-span-4 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                      {/* Khối 1: Thông tin tiếp nhận & hợp đồng */}
+                      <div className="lg:col-span-12 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 space-y-3">
                         <div className="flex items-center gap-1.5 text-slate-800 font-bold border-b border-slate-200 pb-1.5">
                           <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                          <span className="uppercase text-[11px] tracking-wider">1. Thông Tin Bổ Sung Tay</span>
+                          <span className="uppercase text-[11px] tracking-wider">Thông tin tiếp nhận</span>
                         </div>
 
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            Ngày vào làm việc <span className="text-rose-500">*</span>
-                          </label>
-                          <input
-                            type="date"
-                            value={emp.ngayVaoLam || ''}
-                            onChange={(e) => handleReviewChange(emp.id, { ngayVaoLam: e.target.value })}
-                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                          />
-                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-slate-700 font-semibold mb-1">
+                              Ngày vào làm <span className="text-rose-500">*</span>
+                            </label>
+                            <input
+                              type="date"
+                              value={emp.ngayVaoLam || ''}
+                              onChange={(e) => handleReviewChange(emp.id, { ngayVaoLam: e.target.value })}
+                              className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                            />
+                          </div>
 
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            Địa chỉ tạm trú hiện tại
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="Nhập địa chỉ đang tạm trú..."
-                            value={emp.diaChiTamTru || ''}
-                            onChange={(e) => handleReviewChange(emp.id, { diaChiTamTru: e.target.value })}
-                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                          />
-                        </div>
+                          <div>
+                            <label className="block text-slate-700 font-semibold mb-1">
+                              Tình trạng hồ sơ <span className="text-rose-500">*</span>
+                            </label>
+                            <select
+                              value={emp.tinhTrangHoSo || 'Đủ hồ sơ'}
+                              onChange={(e) => handleReviewChange(emp.id, { tinhTrangHoSo: e.target.value })}
+                              className="w-full text-xs px-2 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
+                            >
+                              <option value="Đủ hồ sơ">Đủ hồ sơ</option>
+                              <option value="Chờ bổ sung CCCD">Chờ bổ sung CCCD</option>
+                              <option value="Chờ bổ sung bằng cấp">Chờ bổ sung bằng cấp</option>
+                              <option value="Chờ xác minh học vấn">Chờ xác minh học vấn</option>
+                              <option value="Thiếu giấy khám sức khỏe">Thiếu giấy khám sức khỏe</option>
+                              <option value="Hồ sơ thử việc">Hồ sơ thử việc</option>
+                            </select>
+                          </div>
 
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            Email cá nhân (nếu có)
-                          </label>
-                          <input
-                            type="email"
-                            placeholder="ten@example.com"
-                            value={emp.emailCaNhan || ''}
-                            onChange={(e) => handleReviewChange(emp.id, { emailCaNhan: e.target.value })}
-                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            Tình trạng hồ sơ
-                          </label>
-                          <select
-                            value={emp.tinhTrangHoSo || 'Đủ hồ sơ'}
-                            onChange={(e) => handleReviewChange(emp.id, { tinhTrangHoSo: e.target.value })}
-                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
-                          >
-                            <option value="Đủ hồ sơ">Đủ hồ sơ</option>
-                            <option value="Chờ bổ sung CCCD">Chờ bổ sung CCCD</option>
-                            <option value="Chờ bổ sung bằng cấp">Chờ bổ sung bằng cấp</option>
-                            <option value="Chờ xác minh học vấn">Chờ xác minh học vấn</option>
-                            <option value="Thiếu giấy khám sức khỏe">Thiếu giấy khám sức khỏe</option>
-                            <option value="Hồ sơ thử việc">Hồ sơ thử việc</option>
-                          </select>
+                          <div>
+                            <label className="block text-slate-700 font-semibold mb-1">
+                              Địa chỉ tạm trú hiện tại <span className="text-rose-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="Nhập địa chỉ đang tạm trú..."
+                              value={emp.diaChiTamTru || ''}
+                              onChange={(e) => handleReviewChange(emp.id, { diaChiTamTru: e.target.value })}
+                              className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                            />
+                          </div>
                         </div>
                       </div>
 
                       {/* Khối 2: Lựa chọn phòng ban (Khối, Ban, Phòng) */}
-                      <div className="lg:col-span-4 bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-200 space-y-3">
+                      <div className="lg:col-span-12 bg-emerald-50/40 p-3.5 rounded-xl border border-emerald-200 space-y-3">
                         <div className="flex items-center gap-1.5 text-emerald-950 font-bold border-b border-emerald-200/70 pb-1.5">
                           <Building className="w-3.5 h-3.5 text-emerald-700" />
-                          <span className="uppercase text-[11px] tracking-wider">2. Lựa Chọn Phòng Ban</span>
+                          <span className="uppercase text-[11px] tracking-wider">2. Lựa Chọn Đơn Vị (Team → Group → Part)</span>
                         </div>
 
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            Cấp Khối <span className="text-rose-500">*</span>
-                          </label>
-                          <select
-                            value={currentKhoi}
-                            onChange={(e) => {
-                              const newK = e.target.value;
-                              const newKObj = orgHierarchy.find((k) => k.name === newK);
-                              const firstBan = newKObj?.bans[0]?.name || '';
-                              const firstPhong = newKObj?.bans[0]?.phongs[0]?.name || '';
-                              handleReviewChange(emp.id, {
-                                khoi: newK,
-                                ban: firstBan,
-                                phong: firstPhong,
-                              });
-                            }}
-                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
-                          >
-                            {orgHierarchy.map((k) => (
-                              <option key={k.id || k.name} value={k.name}>
-                                {k.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-slate-700 font-semibold mb-1">
+                              Team (Khối) <span className="text-rose-500">*</span>
+                            </label>
+                            {isCustomOrg ? (
+                              <input
+                                type="text"
+                                value={emp.khoi || ''}
+                                onChange={(e) => handleReviewChange(emp.id, { khoi: e.target.value })}
+                                placeholder="Nhập tên Khối..."
+                                className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
+                              />
+                            ) : (
+                              <select
+                                value={currentKhoi}
+                                onChange={(e) => {
+                                  const newK = e.target.value;
+                                  const newKObj = orgHierarchy.find((k) => k.name === newK);
+                                  const firstBan = newKObj?.bans[0]?.name || '';
+                                  const firstPhong = newKObj?.bans[0]?.phongs[0]?.name || '';
+                                  handleReviewChange(emp.id, {
+                                    khoi: newK,
+                                    ban: firstBan,
+                                    phong: firstPhong,
+                                  });
+                                }}
+                                className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
+                              >
+                                {orgHierarchy.map((k) => (
+                                  <option key={k.id || k.name} value={k.name}>
+                                    {k.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
 
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            Cấp Ban <span className="text-rose-500">*</span>
-                          </label>
-                          <select
-                            value={currentBan}
-                            onChange={(e) => {
-                              const newB = e.target.value;
-                              const newBObj = kObj?.bans.find((b) => b.name === newB);
-                              const firstPhong = newBObj?.phongs[0]?.name || '';
-                              handleReviewChange(emp.id, {
-                                ban: newB,
-                                phong: firstPhong,
-                              });
-                            }}
-                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
-                          >
-                            {kObj?.bans.map((b) => (
-                              <option key={b.id || b.name} value={b.name}>
-                                {b.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                          <div>
+                            <label className="block text-slate-700 font-semibold mb-1">
+                              Group (Ban) <span className="text-rose-500">*</span>
+                            </label>
+                            {isCustomOrg ? (
+                              <input
+                                type="text"
+                                value={emp.ban || ''}
+                                onChange={(e) => handleReviewChange(emp.id, { ban: e.target.value })}
+                                placeholder="Nhập tên Ban..."
+                                className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
+                              />
+                            ) : (
+                              <select
+                                value={currentBan}
+                                onChange={(e) => {
+                                  const newB = e.target.value;
+                                  const newBObj = kObj?.bans.find((b) => b.name === newB);
+                                  const firstPhong = newBObj?.phongs[0]?.name || '';
+                                  handleReviewChange(emp.id, {
+                                    ban: newB,
+                                    phong: firstPhong,
+                                  });
+                                }}
+                                className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
+                              >
+                                {kObj?.bans.map((b) => (
+                                  <option key={b.id || b.name} value={b.name}>
+                                    {b.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
 
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            Cấp Phòng <span className="text-rose-500">*</span>
-                          </label>
-                          <select
-                            value={currentPhong}
-                            onChange={(e) => handleReviewChange(emp.id, { phong: e.target.value })}
-                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
-                          >
-                            {bObj?.phongs.map((p) => (
-                              <option key={p.id || p.name} value={p.name}>
-                                {p.name}
-                              </option>
-                            ))}
-                          </select>
+                          <div>
+                            <label className="block text-slate-700 font-semibold mb-1">
+                              Part (Bộ phận / Phòng) <span className="text-rose-500">*</span>
+                            </label>
+                            {isCustomOrg ? (
+                              <input
+                                type="text"
+                                value={emp.phong || ''}
+                                onChange={(e) => handleReviewChange(emp.id, { phong: e.target.value })}
+                                placeholder="Nhập tên Bộ phận / Phòng..."
+                                className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
+                              />
+                            ) : (
+                              <select
+                                value={currentPhong}
+                                onChange={(e) => handleReviewChange(emp.id, { phong: e.target.value })}
+                                className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
+                              >
+                                {bObj?.phongs.map((p) => (
+                                  <option key={p.id || p.name} value={p.name}>
+                                    {p.name}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
                         </div>
                       </div>
 
                       {/* Khối 3: Lựa chọn công việc & chức vụ (Công việc, Chức vụ, Thẩm quyền) */}
-                      <div className="lg:col-span-4 bg-indigo-50/40 p-3.5 rounded-xl border border-indigo-200 space-y-3">
+                      <div className="lg:col-span-12 bg-indigo-50/40 p-3.5 rounded-xl border border-indigo-200 space-y-3">
                         <div className="flex items-center gap-1.5 text-indigo-950 font-bold border-b border-indigo-200/70 pb-1.5">
                           <Briefcase className="w-3.5 h-3.5 text-indigo-700" />
                           <span className="uppercase text-[11px] tracking-wider">3. Công Việc, Chức Vụ &amp; Thẩm Quyền</span>
                         </div>
 
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            Nhóm Công Việc <span className="text-rose-500">*</span>
-                          </label>
-                          <select
-                            value={currentJob}
-                            onChange={(e) => {
-                              const newJ = e.target.value;
-                              const newJObj = DEFAULT_JOB_POSITIONS.find((j) => j.name === newJ);
-                              const firstTitle = newJObj?.chucVus[0] || '';
-                              const newStd = findTieuChuanLuong(newJ, firstTitle);
-                              handleReviewChange(emp.id, {
-                                congViecDuKien: newJ,
-                                chucVu: firstTitle,
-                                ...(newStd ? {
-                                  luongCoBan: newStd.luongCoBan,
-                                  phuCapChucVu: newStd.phuCapChucVu,
-                                  phuCapDienThoai: newStd.phuCapDienThoai,
-                                  troCapTayNghe: newStd.troCapTayNghe,
-                                  troCapGiaDinh: newStd.troCapGiaDinh,
-                                  thuongChuyenCan: newStd.thuongChuyenCan,
-                                  thuongSangKien: newStd.thuongSangKien,
-                                  luongDongBHXH: (newStd.luongCoBan || 0) + (newStd.phuCapChucVu || 0),
-                                } : {}),
-                              });
-                            }}
-                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-bold text-blue-900"
-                          >
-                            {DEFAULT_JOB_POSITIONS.map((j) => (
-                              <option key={j.id || j.name} value={j.name}>
-                                {j.name} ({j.chucVus.length} chức vụ)
-                              </option>
-                            ))}
-                          </select>
-                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <label className="block text-slate-700 font-semibold mb-1">
+                              Nhóm Công Việc <span className="text-rose-500">*</span>
+                            </label>
+                            {isCustomJob ? (
+                              <input
+                                type="text"
+                                value={emp.congViecDuKien || ''}
+                                onChange={(e) => handleReviewChange(emp.id, { congViecDuKien: e.target.value })}
+                                placeholder="Nhập tên nhóm công việc..."
+                                className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-bold text-blue-900"
+                              />
+                            ) : (
+                              <select
+                                value={currentJob}
+                                onChange={(e) => {
+                                  const newJ = e.target.value;
+                                  const newJObj = DEFAULT_JOB_POSITIONS.find((j) => j.name === newJ);
+                                  const firstTitle = newJObj?.chucVus[0] || '';
+                                  const newStd = lookupStandard(newJ, firstTitle);
+                                  handleReviewChange(emp.id, {
+                                    congViecDuKien: newJ,
+                                    chucVu: firstTitle,
+                                    ...(newStd ? {
+                                      luongCoBan: newStd.luongCoBan,
+                                      phuCapChucVu: newStd.phuCapChucVu,
+                                      phuCapDienThoai: newStd.phuCapDienThoai,
+                                      troCapTayNghe: newStd.troCapTayNghe,
+                                      troCapGiaDinh: newStd.troCapGiaDinh,
+                                      thuongChuyenCan: newStd.thuongChuyenCan,
+                                      thuongSangKien: newStd.thuongSangKien,
+                                      luongDongBHXH: (newStd.luongCoBan || 0) + (newStd.phuCapChucVu || 0),
+                                    } : {}),
+                                  });
+                                }}
+                                className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-bold text-blue-900"
+                              >
+                                {DEFAULT_JOB_POSITIONS.map((j) => (
+                                  <option key={j.id || j.name} value={j.name}>
+                                    {j.name} ({j.chucVus.length} chức vụ)
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </div>
 
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            Chức Vụ Tương Ứng <span className="text-rose-500">*</span>
-                          </label>
-                          <select
-                            value={currentTitle}
-                            onChange={(e) => {
-                              const newT = e.target.value;
-                              const newStd = findTieuChuanLuong(currentJob, newT);
-                              handleReviewChange(emp.id, {
-                                chucVu: newT,
-                                ...(newStd ? {
-                                  luongCoBan: newStd.luongCoBan,
-                                  phuCapChucVu: newStd.phuCapChucVu,
-                                  phuCapDienThoai: newStd.phuCapDienThoai,
-                                  troCapTayNghe: newStd.troCapTayNghe,
-                                  troCapGiaDinh: newStd.troCapGiaDinh,
-                                  thuongChuyenCan: newStd.thuongChuyenCan,
-                                  thuongSangKien: newStd.thuongSangKien,
-                                  luongDongBHXH: (newStd.luongCoBan || 0) + (newStd.phuCapChucVu || 0),
-                                } : {}),
-                              });
-                            }}
-                            className="w-full text-xs px-2.5 py-2 border border-indigo-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-bold text-indigo-900"
-                          >
-                            {jObj?.chucVus.map((t) => {
-                              const tStd = DEFAULT_TIEU_CHUAN_LUONG.find((s) => s.congViec === currentJob && s.chucVu === t);
-                              return (
-                                <option key={t} value={t}>
-                                  {t} {tStd ? `[Lương CB: ${formatVND(tStd.luongCoBan)} đ]` : ''}
-                                </option>
-                              );
-                            })}
-                          </select>
-                        </div>
+                          <div>
+                            <label className="block text-slate-700 font-semibold mb-1">
+                              Chức Vụ Tương Ứng <span className="text-rose-500">*</span>
+                            </label>
+                            {isCustomJob ? (
+                              <input
+                                type="text"
+                                value={emp.chucVu || ''}
+                                onChange={(e) => handleReviewChange(emp.id, { chucVu: e.target.value })}
+                                placeholder="Nhập tên chức vụ..."
+                                className="w-full text-xs px-2.5 py-2 border border-indigo-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-bold text-indigo-900"
+                              />
+                            ) : (
+                              <select
+                                value={currentTitle}
+                                onChange={(e) => {
+                                  const newT = e.target.value;
+                                  const newStd = lookupStandard(currentJob, newT);
+                                  handleReviewChange(emp.id, {
+                                    chucVu: newT,
+                                    ...(newStd ? {
+                                      luongCoBan: newStd.luongCoBan,
+                                      phuCapChucVu: newStd.phuCapChucVu,
+                                      phuCapDienThoai: newStd.phuCapDienThoai,
+                                      troCapTayNghe: newStd.troCapTayNghe,
+                                      troCapGiaDinh: newStd.troCapGiaDinh,
+                                      thuongChuyenCan: newStd.thuongChuyenCan,
+                                      thuongSangKien: newStd.thuongSangKien,
+                                      luongDongBHXH: (newStd.luongCoBan || 0) + (newStd.phuCapChucVu || 0),
+                                    } : {}),
+                                  });
+                                }}
+                                className="w-full text-xs px-2.5 py-2 border border-indigo-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-bold text-indigo-900"
+                              >
+                                {jObj?.chucVus.map((t) => {
+                                  const tStd = lookupStandard(currentJob, t);
+                                  return (
+                                    <option key={t} value={t}>
+                                      {t} {tStd ? `[Lương CB: ${formatVND(tStd.luongCoBan)} đ]` : ''}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            )}
+                          </div>
 
-                        <div>
-                          <label className="block text-slate-700 font-semibold mb-1">
-                            Thẩm Quyền
-                          </label>
-                          <select
-                            value={emp.thamQuyen || ''}
-                            onChange={(e) => handleReviewChange(emp.id, { thamQuyen: e.target.value as any })}
-                            className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium text-slate-700"
-                          >
-                            <option value="">Chưa chọn</option>
-                            <option value="Trưởng địa điểm">Trưởng địa điểm</option>
-                            <option value="Dinh dưỡng viên trưởng">Dinh dưỡng viên trưởng</option>
-                            <option value="Giám sát trưởng">Giám sát trưởng</option>
-                          </select>
+                          <div>
+                            <label className="block text-slate-700 font-semibold mb-1">
+                              Thẩm Quyền
+                            </label>
+                            <select
+                              value={emp.thamQuyen || ''}
+                              onChange={(e) => handleReviewChange(emp.id, { thamQuyen: e.target.value as any })}
+                              className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium text-slate-700"
+                            >
+                              <option value="">Chưa chọn</option>
+                              <option value="Trưởng địa điểm">Trưởng địa điểm</option>
+                              <option value="Dinh dưỡng viên trưởng">Dinh dưỡng viên trưởng</option>
+                              <option value="Giám sát trưởng">Giám sát trưởng</option>
+                            </select>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1609,35 +1486,38 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               })}
             </div>
 
-            {/* Điều hướng Bước 3 */}
+            {/* Điều hướng Bước 2 */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
               <button
                 type="button"
-                onClick={() => handleSelectStep(2)}
+                onClick={() => {
+                  if (onBackToStep1) onBackToStep1();
+                  else if (onStepChange) onStepChange(1);
+                }}
                 className="w-full sm:w-auto px-4 py-2.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
-                <span>Quay Lại Bước 2 (Thông tin cá nhân &amp; VNeID)</span>
+                <span>Trở lại bước 1</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => {
-                  const unassigned = step3Employees.find(
-                    (e) => !e.chucVu?.trim() || !e.congViecDuKien?.trim()
+                  const unassigned = step2Employees.find(
+                    (e) => !e.chucVu?.trim() || !e.congViecDuKien?.trim() || !e.ngayVaoLam?.trim() || !e.tinhTrangHoSo?.trim() || !e.diaChiTamTru?.trim()
                   );
                   if (unassigned) {
                     setValidationError(
-                      `Vui lòng chọn Công việc và Chức vụ cho nhân sự "${unassigned.hoVaTen || 'trong danh sách'}" trước khi tiếp tục.`
+                      `Vui lòng nhập đầy đủ các trường bắt buộc (Ngày vào làm, Tình trạng hồ sơ, Địa chỉ tạm trú, Công việc, Chức vụ) cho nhân sự "${unassigned.hoVaTen || 'trong danh sách'}".`
                     );
                     return;
                   }
                   setValidationError(null);
-                  handleSelectStep(4);
+                  handleSelectStep(3);
                 }}
                 className="w-full sm:w-auto px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
               >
-                <span>Xác Nhận Bước 3 &amp; Sang Bước 4 (Bảng Lương &amp; Lưu)</span>
+                <span>Lưu và sang Bước 3</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
@@ -1645,23 +1525,22 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
         )}
 
         {/* ========================================================================= */}
-        {/* BƯỚC 4: 12 KHOẢN LƯƠNG & PHỤ CẤP (ĐIỀN TAY) + LƯU SHEET + XUẤT EXCEL 43 CỘT */}
+        {/* BƯỚC 3: BẢNG TIÊU CHUẨN LƯƠNG & LƯU HỒ SƠ + XUẤT EXCEL 44 CỘT             */}
         {/* ========================================================================= */}
-        {activeTabStep === 4 && (
+        {activeTabStep === 3 && (
           <div className="space-y-5 rounded-xl border border-indigo-200 bg-indigo-50/20 p-4 sm:p-5 animate-fade-in">
-            {/* Header Bước 4 */}
+            {/* Header Bước 3 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100 pb-3">
               <div>
                 <div className="flex items-center gap-2">
                   <span className="bg-indigo-600 text-white text-xs font-black px-2 py-0.5 rounded">
-                    BƯỚC 4 (SOP)
+                    BƯỚC 3
                   </span>
                   <h3 className="text-base font-bold text-slate-900">
-                    Bảng 12 Khoản Lương &amp; Phụ Cấp (HR Điền Tay / Hiệu Chỉnh) &amp; Xuất File Excel
+                    Hoàn thiện thông tin tiền lương
                   </h3>
                 </div>
               </div>
-
             </div>
 
             <EmployeeSalaryGrid
@@ -1670,23 +1549,29 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
               disabled={isSaving || isSavedSuccess}
             />
 
-            {isSavedSuccess && <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800"><span>Đã lưu thành công {savedSummary?.count || 1} hồ sơ trong danh sách.</span><button type="button" onClick={() => handleSelectStep(5)} className="font-bold underline">Xem kết quả tiếp nhận</button></div>}
+            {isSavedSuccess && (
+              <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+                <span>Đã lưu thành công {savedSummary?.count || 1} hồ sơ trong danh sách.</span>
+                <button type="button" onClick={() => handleSelectStep(4)} className="font-bold underline cursor-pointer">
+                  Xem kết quả tiếp nhận
+                </button>
+              </div>
+            )}
 
-            {/* Điều hướng & Nút Lưu Dữ Liệu Vào Sheet + Nút Xuất File Excel */}
+            {/* Điều hướng & Nút Lưu Dữ Liệu + Xuất File Excel */}
             <div className="pt-3 border-t border-slate-200 flex flex-col lg:flex-row items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleSelectStep(3)}
+                  onClick={() => handleSelectStep(2)}
                   className="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" />
-                  <span>Quay Lại Bước 3 (Chức vụ &amp; Phòng ban)</span>
+                  <span>Trở lại bước 2</span>
                 </button>
               </div>
 
               <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
-                {/* NÚT XUẤT FILE BIẾN ĐỘNG NHÂN SỰ THEO MẪU (.XLSX) */}
                 <button
                   type="button"
                   onClick={handleExportBienDongNhanSu}
@@ -1698,7 +1583,7 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                   <span>
                     {isExportingExcel
                       ? 'Đang tạo File Excel...'
-                      : 'Xuất file Biến Động Nhân Sự (44 Cột)'}
+                      : 'Xuất Biến động nhân sự'}
                   </span>
                 </button>
 
@@ -1714,7 +1599,6 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                   <span>{isExportingHousehold ? 'Đang tạo phụ lục...' : 'Xuất phụ lục hộ gia đình'}</span>
                 </button>
 
-                {/* NÚT LƯU VÀO GOOGLE SHEETS */}
                 <button
                   type="submit"
                   disabled={isSaving || isSavedSuccess}
@@ -1726,26 +1610,21 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                     <>
                       <FileCheck2 className="w-4 h-4" />
                       <span>
-                        {batchList.length > 1
-                          ? `Lưu ${batchList.length} Hồ Sơ Vào Hệ Thống`
-                          : 'Lưu Hồ Sơ Vào Hệ Thống'}
+                        Lưu vào hệ thống
                       </span>
                     </>
                   )}
                 </button>
-                <p id="household-export-template-note" className="w-full text-xs text-slate-500">
-                  Phụ lục hộ gia đình: đúng mẫu 8 cột, mỗi nhân viên một sheet. Nơi cấp giấy khai sinh lấy từ địa chỉ thường trú. Kiểm tra hộ gia đình VNeID tại Bước 2 trước khi xuất.
-                  {missingHouseholds > 0 && <span className="mt-1 block text-amber-700">{missingHouseholds} nhân viên chưa có dữ liệu hộ gia đình; sheet tương ứng chỉ có mẫu trống.</span>}
-                </p>
+                 {missingHouseholds > 0 && <p className="w-full text-xs text-amber-700">{missingHouseholds} nhân viên chưa có dữ liệu hộ gia đình; sheet tương ứng chỉ có mẫu trống.</p>}
               </div>
             </div>
           </div>
         )}
 
         {/* ========================================================================= */}
-        {/* BƯỚC SAU BƯỚC 4 (BƯỚC 5): HOÀN TẤT & TIẾP NHẬN HỒ SƠ MỚI TIẾP THEO       */}
+        {/* HOÀN TẤT (SAU BƯỚC 3): ĐÃ LƯU & TIẾP NHẬN HỒ SƠ MỚI TIẾP THEO              */}
         {/* ========================================================================= */}
-        {activeTabStep === 5 && (
+        {activeTabStep === 4 && (
           <div className="space-y-6 rounded-2xl border-2 border-emerald-500 bg-gradient-to-br from-emerald-50/90 via-teal-50/40 to-white p-6 sm:p-10 shadow-lg animate-in fade-in duration-300">
             <div className="text-center space-y-4 max-w-2xl mx-auto">
               <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-emerald-600 to-teal-500 text-white flex items-center justify-center mx-auto shadow-lg ring-8 ring-emerald-100">
@@ -1754,17 +1633,16 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
 
               <div>
                 <span className="inline-block text-xs font-black uppercase tracking-wider text-emerald-800 bg-emerald-100 px-3.5 py-1 rounded-full mb-2">
-                  ✓ BƯỚC HOÀN TẤT (SAU BƯỚC 4): ĐÃ LƯU HỒ SƠ THÀNH CÔNG
+                  HOÀN TẤT (SAU BƯỚC 3): ĐÃ LƯU HỒ SƠ THÀNH CÔNG
                 </span>
                 <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
                   Đã Lưu Dòng Dữ Liệu Nhân Sự Thành Công!
                 </h3>
                 <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
-                  Dữ liệu của nhân sự <strong>{savedSummary?.hoVaTen || hoVaTen}</strong> đã được lưu vào hệ thống. Hãy bấm nút bên dưới để tiếp nhận hồ sơ nhân viên mới tiếp theo!
+                  Dữ liệu của nhân sự <strong>{savedSummary?.hoVaTen || hoVaTen}</strong> đã được lưu vào hệ thống. Hãy bấm nút bên dưới để tiếp nhận hồ sơ nhân viên mới tiếp theo.
                 </p>
               </div>
 
-              {/* Thẻ tóm tắt thông tin chi tiết của nhân sự vừa lưu */}
               {savedSummary && (
                 <div className="bg-white rounded-2xl border border-emerald-200 p-5 text-xs text-left grid grid-cols-1 sm:grid-cols-2 gap-3.5 shadow-sm">
                   <div>
@@ -1794,7 +1672,6 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                 </div>
               )}
 
-              {/* NÚT CHÍNH NỔI BẬT ĐƯỢC YÊU CẦU: + TIẾP NHẬN HỒ SƠ MỚI (NHẬP NHÂN VIÊN TIẾP THEO) */}
               <div className="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
                 {onResetNewRecord && (
                   <button
@@ -1813,14 +1690,13 @@ export const ExtractedForm: React.FC<ExtractedFormProps> = ({
                 )}
               </div>
 
-              {/* Các thao tác phụ */}
               <div className="pt-2 flex flex-wrap items-center justify-center gap-2 text-xs">
                 <button
                   type="button"
-                  onClick={() => setActiveTabStep(4)}
+                  onClick={() => setActiveTabStep(3)}
                   className="px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl font-semibold transition cursor-pointer"
                 >
-                  Xem lại biểu mẫu Bước 4
+                  Xem lại biểu mẫu Bước 3
                 </button>
                 {onViewRecordsTab && (
                   <button

@@ -214,6 +214,8 @@ export interface BatchEmployeeDraft extends EmployeeIntakeInfo, EmployeeIdentity
   soTaiLieuDinhKem?: number;
   thongTinChuaRo?: string[];
   cauHoiLamRo?: string[];
+  kskLockedFields?: string[];
+  trangThaiKSK?: string;
 }
 
 export interface EmployeeDocumentGroup {
@@ -262,13 +264,17 @@ export interface OptimizedImageFile {
   mimeType: string;
   base64Data: string; // purely the base64 payload without prefix
   dataUrl: string; // data:image/jpeg;base64,...
-  docType: 'cccd_truoc' | 'cccd_sau' | 'vneid_cu_tru' | 'so_yeu_ly_lich' | 'xac_nhan_cu_tru' | 'khac';
+  docType: 'cccd_truoc' | 'cccd_sau' | 'vneid_cu_tru' | 'cv' | 'so_yeu_ly_lich' | 'xac_nhan_cu_tru' | 'khac';
 }
 
 export interface DocumentExtractionResult extends EmployeeIdentityInfo, EmployeeHouseholdInfo {
   emailCaNhan?: string;
   diaChiTamTru?: string;
   tonGiao?: string;
+  hocVan?: string;
+  tenTruong?: string;
+  nganhHoc?: string;
+  namHoc?: string;
   hoVaTen: string;
   hoTen?: string;
   ngaySinh: string;
@@ -284,6 +290,7 @@ export interface DocumentExtractionResult extends EmployeeIdentityInfo, Employee
   noiThuongTru?: string;
   hoTenChuHo?: string;
   quanHeChuHo?: string;
+  chuHoInfo?: Partial<ThanhVienHoGiaDinh>;
   nguonDiaChi?: 'VNeID' | 'CCCD'; // AI tự động ghi nhận nguồn trích xuất
   ghiChuSapNhap?: string; // Nhắc nhở đơn vị hành chính mới sau sáp nhập
   soDienThoai: string;

@@ -5,7 +5,6 @@ import {
   DocumentExtractionResult,
   TieuChuanLuongItem,
   NhanSuRecord,
-  EmailLogItem,
   BatchEmployeeDraft,
   EmployeeDocumentGroup,
   EmployeeIntakeInfo,
@@ -15,6 +14,7 @@ import {
 } from './types';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from './data/organizationHierarchy';
 import { Header, AppTab } from './components/Header';
+import { Sidebar } from './components/Sidebar';
 import { LoginScreen } from './components/LoginScreen';
 import { DocumentUploader } from './components/DocumentUploader';
 import { IntakeDraftBar } from './components/IntakeDraftBar';
@@ -22,8 +22,8 @@ import { draftRequest, saveIntakeDraft, openIntakeDraft, type ActiveDraft } from
 import { ExtractedForm } from './components/ExtractedForm';
 import { NhanSuTable } from './components/NhanSuTable';
 import { TieuChuanLuongManager } from './components/TieuChuanLuongManager';
-import { HealthCheckStandardsManager } from './components/HealthCheckStandardsManager';
-import { EmailViewer } from './components/EmailViewerModal';
+import { OrganizationHierarchyManager } from './components/OrganizationHierarchyManager';
+import { HealthCheckStandardsManager, HealthSubTab } from './components/HealthCheckStandardsManager';
 
 import { UserManagement } from './components/UserManagement';
 import { SopProgressHeader } from './components/SopProgressHeader';
@@ -34,7 +34,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   ArrowRight,
-  ShieldCheck,
   UserCheck,
   RefreshCw,
   Edit3,
@@ -65,7 +64,42 @@ export default function App() {
     }
   });
 
-  const [activeTab, setActiveTab] = useState<AppTab>('upload');
+  const [activeTab, setActiveTab] = useState<AppTab>('health');
+  const [healthSubTab, setHealthSubTab] = useState<HealthSubTab>(() => {
+    const isMed = currentUser?.role !== 'admin' && currentUser?.hrmRole === 'nhan_vien_y_te';
+    return isMed ? 'tuyen_dung_theo_doi' : 'tuyen_dung_dang_ky';
+  });
+  const [healthCounts, setHealthCounts] = useState<{ regs: number; standards: number; providers: number }>(() => {
+    let regs = 2;
+    let standards = 0;
+    let providers = 3;
+    try {
+      const r = JSON.parse(localStorage.getItem('hr_recruitment_health_regs') || 'null');
+      if (Array.isArray(r)) regs = r.length;
+    } catch {}
+    try {
+      const s = JSON.parse(localStorage.getItem('hr_health_check_standards') || 'null');
+      if (Array.isArray(s)) standards = s.length;
+    } catch {}
+    try {
+      const p = JSON.parse(localStorage.getItem('hr_healthcare_providers') || 'null');
+      if (Array.isArray(p)) providers = p.length;
+    } catch {}
+    return { regs, standards, providers };
+  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('hr_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('hr_sidebar_collapsed', String(sidebarCollapsed));
+    } catch {}
+  }, [sidebarCollapsed]);
   const [images, setImages] = useState<OptimizedImageFile[]>([]);
   const [extractedData, setExtractedData] = useState<DocumentExtractionResult | null>(null);
   const [batchEmployees, setBatchEmployees] = useState<BatchEmployeeDraft[]>([]);
@@ -108,41 +142,56 @@ export default function App() {
 
   const handleTransferCandidate = (reg: any) => {
     setTransferredCandidate(reg);
-    const draft: BatchEmployeeDraft = {
-      id: crypto.randomUUID(),
-      hoVaTen: reg.hoVaTen,
-      soCCCD: reg.soCCCD,
-      ngaySinh: reg.ngaySinh || '2000-01-01',
-      gioiTinh: reg.gioiTinh || 'Nam',
-      soDienThoai: reg.soDienThoai || '',
-      khoi: reg.phongBanKhoi || '',
-      chucVu: reg.chucVu || 'Nhân viên',
-      congViecDuKien: reg.viTriViecLam || 'Nhân sự',
-      queQuan: '',
-      diaChiThuongTru: '',
-      ngayCap: '',
-      noiCap: '',
-      thongTinGiaDinh: [],
-      thanhVienHoGiaDinh: [],
-      thongTinChuaRo: [],
-      cauHoiLamRo: [],
-      luongCoBan: 5000000,
-      phuCapCoDinh: 1000000,
-      phuCapPhatSinh: 0,
-      tongThuNhapDuKien: 6000000,
-      soTaiLieuDinhKem: 0,
-    };
-    setSingleIntakeInfo(draft);
-    setBatchEmployees([draft]);
     setActiveTab('upload');
     setCurrentSopStep(1);
     showNotification('success', `Đã chuyển thông tin ứng viên ${reg.hoVaTen} sang Đăng ký nhân viên mới!`);
   };
 
+  const syncExtractedFromFirstBatch = (list: BatchEmployeeDraft[]) => {
+    if (list.length > 0) {
+      const first = list[0];
+      setExtractedData({
+        hoVaTen: first.hoVaTen,
+        aiVisionExtracted: first.aiVisionExtracted,
+        extractionMethod: first.extractionMethod,
+        ngaySinh: first.ngaySinh,
+        gioiTinh: first.gioiTinh,
+        danToc: first.danToc,
+        soCCCD: first.soCCCD,
+        ngayCap: first.ngayCap,
+        ngayHetHanCCCD: first.ngayHetHanCCCD,
+        tinhTrangHonNhan: first.tinhTrangHonNhan,
+        noiCap: first.noiCap,
+        queQuan: first.queQuan,
+        diaChiThuongTru: first.diaChiThuongTru,
+        nguonDiaChi: first.nguonDiaChi,
+        ghiChuSapNhap: first.ghiChuSapNhap,
+        soDienThoai: first.soDienThoai,
+        emailCaNhan: first.emailCaNhan,
+        hocVan: first.hocVan,
+        tenTruong: first.tenTruong,
+        nganhHoc: first.nganhHoc,
+        namHoc: first.namHoc,
+        congViecDuKien: first.congViecDuKien || '',
+        chucVu: first.chucVu || '',
+        thongTinGiaDinh: first.thongTinGiaDinh || [],
+        thanhVienHoGiaDinh: first.thanhVienHoGiaDinh || [],
+        thongTinChuaRo: first.thongTinChuaRo || [],
+        cauHoiLamRo: first.cauHoiLamRo || [],
+        canh_bao_sai_lech: first.canh_bao_sai_lech,
+      });
+    }
+  };
+
   const draftReader = useRef<{read: () => IntakeFormDraft}>(null);
   const changeSopStep = (step:number) => {
-    if (step === 1 && draftReader.current) setDraftFormState(draftReader.current.read());
-    setCurrentSopStep(step);
+    const normalizedStep = step > 3 ? 3 : Math.max(1, step);
+    if (normalizedStep === 1 && draftReader.current) setDraftFormState(draftReader.current.read());
+    if (normalizedStep >= 2 && currentSopStep === 1) {
+      setImages(employeeGroups.flatMap(group => group.documents));
+      syncExtractedFromFirstBatch(batchEmployees);
+    }
+    setCurrentSopStep(normalizedStep);
   };
   const draftOwner = useRef(currentUser?.email);
   draftOwner.current = currentUser?.email;
@@ -161,7 +210,7 @@ export default function App() {
     const owner = currentUser.email;
     setDraftBusy(true);setDraftStatus('Đang chuẩn bị bản nháp…');setDraftError('');
     try {
-      const saved = await saveIntakeDraft({step:Math.min(currentSopStep,4),employees:batchEmployees,groups:employeeGroups,form:draftReader.current?.read() || draftFormState},activeDraft,
+      const saved = await saveIntakeDraft({step:Math.min(currentSopStep,3),employees:batchEmployees,groups:employeeGroups,form:draftReader.current?.read() || draftFormState},activeDraft,
         draft => {if (draftOwner.current === owner) {setActiveDraft(draft);setDraftSavedAt('');}},
         message => {if (draftOwner.current === owner) setDraftStatus(message);});
       if (draftOwner.current !== owner) return;
@@ -199,7 +248,8 @@ export default function App() {
       setBatchEmployees(snapshot.employees);
       setExtractedData(snapshot.employees[0] as DocumentExtractionResult || null);
       setSingleIntakeInfo(snapshot.form?.employee || {});setDraftFormState(snapshot.form);setActiveDraft(active);setDraftSavedAt(draft.timestamp);setDraftCompleted(false);
-      setFormGeneration(previous => previous+1);setCurrentSopStep(snapshot.step);setActiveTab('upload');
+      const restoredStep = snapshot.step > 3 ? 3 : Math.max(1, snapshot.step || 1);
+      setFormGeneration(previous => previous+1);setCurrentSopStep(restoredStep);setActiveTab('upload');
     } catch (error) {if (draftOwner.current === owner) setDraftError((error as Error).message);}
     finally {if (draftOwner.current === owner) setDraftBusy(false);}
   };
@@ -229,7 +279,6 @@ export default function App() {
     return DEFAULT_ORGANIZATION_HIERARCHY;
   });
   const [records, setRecords] = useState<NhanSuRecord[]>([]);
-  const [emailLogs, setEmailLogs] = useState<EmailLogItem[]>([]);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const showNotification = (type: 'success' | 'error', message: string) => {
@@ -316,27 +365,12 @@ export default function App() {
     }
   };
 
-  // Lấy lịch sử email MailApp
-  const loadEmailLogs = async (email: string) => {
-    try {
-      const res = await safeFetchJson<{ logs: EmailLogItem[] }>('/api/email-logs', {
-        headers: { 'x-user-email': email },
-      });
-      if (Array.isArray(res.data?.logs)) {
-        setEmailLogs(res.data.logs);
-      }
-    } catch (err) {
-      console.warn('Lỗi tải email logs:', err);
-    }
-  };
-
   // Khởi tạo ban đầu khi người dùng đã đăng nhập
   useEffect(() => {
     if (currentUser?.email) {
       loadTieuChuanLuong();
       loadOrganizationHierarchy();
       loadRecords(currentUser.email);
-      loadEmailLogs(currentUser.email);
     }
   }, [currentUser?.email]);
 
@@ -356,12 +390,13 @@ export default function App() {
     setCurrentUser(user);
     setIsAuthenticated(true);
     localStorage.setItem('hr_current_user', JSON.stringify(user));
+    setActiveTab('health');
     const isMedical = user.role !== 'admin' && user.hrmRole === 'nhan_vien_y_te';
-    setActiveTab(isMedical ? 'health' : 'upload');
+    setHealthSubTab(isMedical ? 'tuyen_dung_theo_doi' : 'tuyen_dung_dang_ky');
     showNotification(
       'success',
       `Đăng nhập thành công: ${user.name} (${
-        user.role === 'admin' ? 'Quản trị viên' : isMedical ? 'Nhân viên y tế' : 'Nhân viên tuyển dụng'
+        user.role === 'admin' ? 'Quản trị viên' : (user.hrmRole === 'nhan_vien_y_te' ? 'Nhân viên y tế' : 'Nhân viên tuyển dụng')
       })`
     );
   };
@@ -392,7 +427,7 @@ export default function App() {
         if (activeTab !== 'health') {
           setActiveTab('health');
         }
-      } else if (activeTab === 'emails' || activeTab === 'users' || activeTab === 'organization' || activeTab === 'salary') {
+      } else if (activeTab === 'users' || activeTab === 'organization' || activeTab === 'salary') {
         setActiveTab('upload');
       }
     }
@@ -440,9 +475,8 @@ export default function App() {
         `Đã lưu hồ sơ của ${formData.hoVaTen || formData.hoTen || 'nhân viên'} lên hệ thống.`
       );
 
-      // Cập nhật lại danh sách và email logs
+      // Cập nhật lại danh sách
       await loadRecords(currentUser.email);
-      await loadEmailLogs(currentUser.email);
 
       return true;
     } catch (err) {
@@ -492,9 +526,8 @@ export default function App() {
         `Đã lưu thành công ${batchList.length} hồ sơ nhân sự lên hệ thống.`
       );
 
-      // Cập nhật lại danh sách và email logs
+      // Cập nhật lại danh sách
       await loadRecords(currentUser.email);
-      await loadEmailLogs(currentUser.email);
 
       return true;
     } catch (err) {
@@ -620,13 +653,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
-      {/* Header Bar */}
+      {/* Top Header Bar */}
       <Header
         currentUser={currentUser}
         onLogout={handleLogout}
-        activeTab={activeTab}
-        onTabChange={tab=>{if(uploaderBusy) {showNotification('error','Hãy tạm dừng quét trước khi chuyển màn hình.');return;}setActiveTab(tab);}}
-        recordsCount={records.length}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
 
       {/* Floating Notifications */}
@@ -649,8 +681,21 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Content Area - Tràn viền tối ưu 100% diện tích thao tác */}
-      <main className="flex-1 w-full max-w-[1720px] mx-auto p-3 sm:p-5 lg:p-6 space-y-5">
+      {/* Main Content Layout with Collapsible Sidebar */}
+      <div className="flex-1 flex min-h-0">
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={tab=>{if(uploaderBusy) {showNotification('error','Hãy tạm dừng quét trước khi chuyển màn hình.');return;}setActiveTab(tab);}}
+          healthSubTab={healthSubTab}
+          onHealthSubTabChange={setHealthSubTab}
+          healthCounts={healthCounts}
+          currentUser={currentUser}
+          recordsCount={records.length}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+
+        <main className="flex-1 min-w-0 max-w-[1720px] mx-auto p-4 sm:p-6 lg:p-8 space-y-5">
         {/* BANNER NỔI BẬT: CẢNH BÁO MẤT KẾT NỐI MÁY CHỦ VÀ NÚT HÀNH ĐỘNG THỬ LẠI / NHẬP TAY */}
         {saveNetworkError && (
           <div className="rounded-xl border border-rose-300 bg-rose-50/95 p-4 shadow-md text-rose-950 space-y-3 animate-fade-in" role="alert">
@@ -743,7 +788,7 @@ export default function App() {
                   if (offlineBackup.employees?.length) setBatchEmployees(offlineBackup.employees);
                   if (offlineBackup.groups?.length) setEmployeeGroups(offlineBackup.groups);
                   if (offlineBackup.formState) setDraftFormState(offlineBackup.formState);
-                  if (offlineBackup.step) changeSopStep(offlineBackup.step);
+                  if (offlineBackup.step) changeSopStep(offlineBackup.step > 3 ? 3 : Math.max(1, offlineBackup.step));
                   showNotification('success', 'Đã khôi phục dữ liệu từ bản sao lưu Offline trên thiết bị.');
                 }}
                 className="rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 font-bold transition cursor-pointer"
@@ -766,49 +811,33 @@ export default function App() {
 
         {activeTab === 'upload' && (
           <div className="space-y-4 animate-fade-in">
-            {/* Banner hiển thị vai trò */}
-            <div
-              className={`p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs ${
-                isAdmin
-                  ? 'bg-purple-50/80 border-purple-200 text-purple-900'
-                  : 'bg-sky-50/80 border-sky-200 text-sky-900'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                {isAdmin ? (
-                  <ShieldCheck className="w-4 h-4 text-purple-600 shrink-0" />
-                ) : (
+            {/* Banner hiển thị vai trò (chỉ hiển thị cho nhân viên tuyển dụng) */}
+            {!isAdmin && (
+              <div className="p-3.5 rounded-xl border flex flex-wrap items-center justify-between gap-3 text-xs bg-sky-50/80 border-sky-200 text-sky-900">
+                <div className="flex items-center gap-2">
                   <UserCheck className="w-4 h-4 text-sky-600 shrink-0" />
-                )}
-                <span>
-                  {isAdmin ? (
-                    <>
-                      <strong>Quản trị viên (Admin):</strong> Bạn có toàn quyền xem, sửa, xóa tất cả hồ sơ, cập nhật bảng lương tiêu chuẩn.
-                    </>
-                  ) : (
-                    <>
-                      <strong>Nhân viên tuyển dụng:</strong> Bạn đang ở giao diện chuyên biệt để thực hiện tiếp nhận, quét AI, nhập và điền thông tin hồ sơ ứng viên.
-                    </>
-                  )}
-                </span>
+                  <span>
+                    <strong>Nhân viên tuyển dụng:</strong> Bạn đang ở giao diện chuyên biệt để thực hiện tiếp nhận, quét AI, nhập và điền thông tin hồ sơ ứng viên.
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
-            <fieldset disabled={draftBusy || isSaving} className="min-w-0 space-y-4">
-            {/* Thanh tiến trình SOP 4 Bước (Tối ưu: Chỉ giữ tên bước) */}
-            {currentSopStep === 1 && <SopProgressHeader
+            <fieldset disabled={draftBusy || isSaving} className="min-w-0 space-y-4 px-8 py-6 rounded-2xl border border-slate-200 bg-white shadow-xs transition-all duration-300 hover:shadow-lg">
+            {/* Thanh tiến trình SOP 3 Bước */}
+            <SopProgressHeader
               currentStep={currentSopStep}
               onSelectStep={(step) => {
                 if(uploaderBusy) {showNotification('error','Hãy tạm dừng quét trước khi chuyển bước.');return;}
                 changeSopStep(step);
               }}
-              hasImages={images.length > 0}
-              hasExtractedData={!!extractedData}
-              step2Verified={!!extractedData && !!extractedData.hoVaTen}
-              step3Verified={currentSopStep >= 4}
-            />}
+              hasImages={images.length > 0 || employeeGroups.some(group => group.documents.length > 0)}
+              hasExtractedData={!!extractedData || batchEmployees.some(employee => Boolean(employee.hoVaTen?.trim() || employee.soCCCD?.trim()))}
+              step2Verified={currentSopStep > 2}
+              step3Verified={currentSopStep > 3}
+            />
 
-            {/* BƯỚC 1: Màn hình Uploader khi currentSopStep === 1 */}
+            {/* BƯỚC 1: Màn hình Uploader & Đối chiếu 2 cột khi currentSopStep === 1 */}
             {currentSopStep === 1 && (
               <div className="space-y-4 animate-fade-in">
 
@@ -826,41 +855,14 @@ export default function App() {
                     setDraftFormState(undefined);
                     setImages(employeeGroups.flatMap(group => group.documents));
                     setBatchEmployees(list);
-                    if (list.length > 0) {
-                      const first = list[0];
-                      setExtractedData({
-                        hoVaTen: first.hoVaTen,
-                        aiVisionExtracted:first.aiVisionExtracted,
-                        extractionMethod:first.extractionMethod,
-                        ngaySinh: first.ngaySinh,
-                        gioiTinh: first.gioiTinh,
-                        danToc: first.danToc,
-                        soCCCD: first.soCCCD,
-                        ngayCap: first.ngayCap,
-                        ngayHetHanCCCD: first.ngayHetHanCCCD,
-                        tinhTrangHonNhan: first.tinhTrangHonNhan,
-                        noiCap: first.noiCap,
-                        queQuan: first.queQuan,
-                        diaChiThuongTru: first.diaChiThuongTru,
-                        nguonDiaChi: first.nguonDiaChi,
-                        ghiChuSapNhap: first.ghiChuSapNhap,
-                        soDienThoai: first.soDienThoai,
-                        emailCaNhan: first.emailCaNhan,
-                        congViecDuKien: first.congViecDuKien || 'Đầu Bếp',
-                        chucVu: first.chucVu || 'Bếp Trưởng',
-                        thongTinGiaDinh: first.thongTinGiaDinh || [],
-                        thanhVienHoGiaDinh:first.thanhVienHoGiaDinh || [],
-                        thongTinChuaRo: first.thongTinChuaRo || [],
-                        cauHoiLamRo: first.cauHoiLamRo || [],
-                      });
-                    }
+                    syncExtractedFromFirstBatch(list);
                     setCurrentSopStep(2);
                   }}
                 />
               </div>
             )}
 
-            {/* BƯỚC 2, 3, 4: Biểu mẫu form chuẩn toàn màn hình */}
+            {/* BƯỚC 2, 3: Chọn Đơn Vị & Chức Vụ + Bảng Tiêu Chuẩn Lương & Lưu */}
             {currentSopStep >= 2 && (
               <div className="space-y-4">
                 {/* Form chi tiết hiển thị toàn màn hình */}
@@ -906,34 +908,17 @@ export default function App() {
               </div>
             )}
             </fieldset>
-            <IntakeDraftBar showIntro={currentSopStep !== 1} busy={draftBusy} disabled={isSaving || uploaderBusy} completed={draftCompleted}
-              status={draftStatus} activeId={activeDraft?.id} savedAt={draftSavedAt} drafts={drafts} error={draftError}
-              onSave={() => void saveDraft()} onRefresh={() => void refreshDrafts()}
-              onOpen={draft => void openDraft(draft)} onDiscard={draft => void discardDraft(draft)}
-              onNew={() => {
-                if (!window.confirm('Tạo đợt nhập mới? Hãy lưu tạm trước nếu bạn muốn giữ nội dung đang nhập.')) return;
-                setImages([]);setEmployeeGroups([]);setBatchEmployees([]);setExtractedData(null);setSingleIntakeInfo({});
-                setActiveDraft(null);setDraftSavedAt('');setDraftError('');setDraftCompleted(false);setCurrentSopStep(1);
-                setDraftFormState(undefined);
-              }} />
+
           </div>
         )}
 
         {/* Tab Cơ cấu tổ chức (Chỉ Admin) */}
         {isAdmin && activeTab === 'organization' && (
           <div className="animate-fade-in">
-            <TieuChuanLuongManager
-              standards={tieuChuanLuong}
+            <OrganizationHierarchyManager
               currentUser={currentUser}
-              onSaveStandard={handleSaveStandard}
-              onDeleteStandard={handleDeleteStandard}
               organizationHierarchy={organizationHierarchy}
               onSaveOrganizationHierarchy={handleSaveOrganizationHierarchy}
-              onStandardsUpdated={(updated) => {
-                setTieuChuanLuong(updated);
-                showNotification('success', `Đã đồng bộ ${updated.length} tiêu chuẩn lương từ Google Sheets vào hệ thống!`);
-              }}
-              initialTab="organization"
             />
           </div>
         )}
@@ -955,7 +940,13 @@ export default function App() {
         {/* Tab Hệ thống Quản lý Tiêu chuẩn Khám sức khỏe Định kỳ (Sheet "Tiêu chuẩn") */}
         {activeTab === 'health' && (
           <div className="animate-fade-in">
-            <HealthCheckStandardsManager currentUser={currentUser} onTransferToNewEmployee={handleTransferCandidate} />
+            <HealthCheckStandardsManager
+              currentUser={currentUser}
+              onTransferToNewEmployee={handleTransferCandidate}
+              activeSubTab={healthSubTab}
+              onSubTabChange={setHealthSubTab}
+              onCountsChange={setHealthCounts}
+            />
           </div>
         )}
 
@@ -966,23 +957,10 @@ export default function App() {
               currentUser={currentUser}
               onSaveStandard={handleSaveStandard}
               onDeleteStandard={handleDeleteStandard}
-              organizationHierarchy={organizationHierarchy}
-              onSaveOrganizationHierarchy={handleSaveOrganizationHierarchy}
               onStandardsUpdated={(updated) => {
                 setTieuChuanLuong(updated);
                 showNotification('success', `Đã đồng bộ ${updated.length} tiêu chuẩn lương từ Google Sheets vào hệ thống!`);
               }}
-              initialTab="standards"
-            />
-          </div>
-        )}
-
-        {isAdmin && activeTab === 'emails' && (
-          <div className="animate-fade-in">
-            <EmailViewer
-              emailLogs={emailLogs}
-              userEmail={currentUser.email}
-              isAdmin={true}
             />
           </div>
         )}
@@ -993,6 +971,7 @@ export default function App() {
           </div>
         )}
       </main>
+      </div>
 
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500">

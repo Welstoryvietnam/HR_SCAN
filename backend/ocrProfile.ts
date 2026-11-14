@@ -1,4 +1,5 @@
 import type {DocumentExtractionResult,ThanhVienHoGiaDinh} from '../src/types.js';
+import {applyVneidHouseholdRule} from '../src/utils/household.js';
 import {OCRError,type OCRPage} from './ocrService.js';
 import {GEMINI_TRANSCRIPT_SEPARATOR} from './visionFormat.js';
 export interface OCRDocument {id:string;fileName?:string;docType?:string;pages:OCRPage[];}
@@ -15,6 +16,7 @@ const labels={
   diaChiThuongTru:'dia chi thuong tru|noi thuong tru|thuong tru|place of residence',
   tinhTrangHonNhan:'tinh trang hon nhan|hon nhan',soDienThoai:'so thue bao di dong|so dien thoai|dien thoai|di dong|phone|mobile',
   emailCaNhan:'dia chi thu dien tu|email ca nhan|email|e-mail',quanHeVoiChuHo:'moi quan he voi chu ho|quan he voi chu ho|quan he chu ho',
+  hoTenChuHo:'ho,?\\s*chu\\s*dem\\s*va\\s*ten\\s*chu\\s*ho|ho va ten chu ho|ho ten chu ho|ten chu ho',
   quocTich:'quoc tich|nationality',danToc:'dan toc|ethnicity',
 };
 const otherLabels='cap nhat|ngay dang ky|noi o hien tai|dia chi tam tru|noi tam tru|nghe nghiep|ton giao|noi sinh|so thu tu|stt|vneid|thong tin|ho gia dinh|so yeu ly lich|can cuoc|identity card|cong hoa|doc lap|quan he gia dinh|hoan canh gia dinh|so cmnd(?: cu)?|so cmt(?: cu)?|ma tai lieu|ma ho so';
@@ -176,6 +178,26 @@ function source(doc:OCRDocument,text:string) {
   if(doc.docType?.startsWith('cccd') || /can cuoc|identity card|personal identification/.test(fold(text))) return 'cccd';
   return 'other';
 }
+function extractVneidHeadInfo(text:string):{hoTenChuHo:string;quanHeChuHo:string;chuHoInfo?:Partial<ThanhVienHoGiaDinh>} {
+  const lines=text.normalize('NFC').split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+  const headSectionIdx=lines.findIndex(line=>/thong tin chu ho(?: thuong tru)?/i.test(fold(line)));
+  const sectionText=headSectionIdx>=0 ? lines.slice(headSectionIdx,headSectionIdx+16).join('\n') : text;
+  const hoTenChuHo=
+    first(labeled(sectionText,labels.hoTenChuHo,2,false,true).map(validName)) ||
+    (headSectionIdx>=0 ? first(labeled(sectionText,labels.hoVaTen,2,false,true).map(validName)) : '');
+  const quanHeChuHo=first(labeled(text,labels.quanHeVoiChuHo));
+  const chuHoInfo:Partial<ThanhVienHoGiaDinh>|undefined = hoTenChuHo
+    ? {
+        hoTen:hoTenChuHo,
+        ngaySinh:headSectionIdx>=0 ? first(labeled(sectionText,labels.ngaySinh).map(date)) : '',
+        gioiTinh:headSectionIdx>=0 ? gender(first(labeled(sectionText,labels.gioiTinh))) : '',
+        diaChiThuongTru:headSectionIdx>=0 ? first(addresses(sectionText,labels.diaChiThuongTru)) : '',
+        quocTich:headSectionIdx>=0 ? first(labeled(sectionText,labels.quocTich)) : '',
+        danToc:headSectionIdx>=0 ? first(labeled(sectionText,labels.danToc)) : '',
+      }
+    : undefined;
+  return {hoTenChuHo,quanHeChuHo,chuHoInfo};
+}
 function household(text:string):ThanhVienHoGiaDinh[] {
   const result:ThanhVienHoGiaDinh[]=[];
   // VNeID member cards have explicit labels. Never infer a relationship from
@@ -236,21 +258,40 @@ export function parseOCRProfile(documents:OCRDocument[],options:{allowIncomplete
   const finalCap = readDate('ngayCap');
   const finalNoiCap = read('noiCap');
 
+  const finalNgaySinh=readDate('ngaySinh');
+  const finalGioiTinh=gender(read('gioiTinh'));
+  const finalDanToc=read('danToc');
+  const vneidDocs=docs.filter(doc=>doc.kind==='vneid');
+  const vneidHeadMatches=vneidDocs.map(doc=>extractVneidHeadInfo(doc.text));
+  const finalHoTenChuHo=first(vneidHeadMatches.map(item=>item.hoTenChuHo));
+  const finalQuanHeChuHo=first(vneidHeadMatches.map(item=>item.quanHeChuHo));
+  const finalChuHoInfo=vneidHeadMatches.find(item=>item.chuHoInfo)?.chuHoInfo;
+  const parsedHousehold=vneidDocs.flatMap(doc=>household(doc.text));
+  const finalHousehold=applyVneidHouseholdRule({
+    members:parsedHousehold,
+    employee:{hoVaTen:finalHoTen,ngaySinh:finalNgaySinh,gioiTinh:finalGioiTinh,diaChiThuongTru:finalThuongTru,danToc:finalDanToc,quocTich:'Việt Nam'},
+    hoTenChuHo:finalHoTenChuHo,
+    quanHeChuHo:finalQuanHeChuHo,
+    chuHoInfo:finalChuHoInfo,
+    hasVneidContext:vneidDocs.length>0,
+  });
+
   const result:DocumentExtractionResult={
     extractionMethod:'ocr',aiVisionExtracted:false,
     hoVaTen: finalHoTen, hoTen: finalHoTen,
     soCCCD: finalCCCD,
     loaiGiayTo: finalCCCD.length === 12 ? 'CCCD_12' : 'CHUA_RO',
-    ngaySinh:readDate('ngaySinh'),gioiTinh:gender(read('gioiTinh')),
+    ngaySinh:finalNgaySinh,gioiTinh:finalGioiTinh,
     ngayCap: finalCap, ngayCapCCCD: finalCap,
     ngayHetHanCCCD:readDate('ngayHetHanCCCD'),
     noiCap: finalNoiCap, noiCapCCCD: finalNoiCap,
     queQuan:first(vneidOrigin) || first(identity.flatMap(text=>addresses(text,labels.queQuan,2))),
     diaChiThuongTru: finalThuongTru, noiThuongTru: finalThuongTru, diaChiTamTru: finalThuongTru,
     ...(residence.length ? {nguonDiaChi:'VNeID' as const} : docs.some(doc=>doc.kind==='cccd') ? {nguonDiaChi:'CCCD' as const} : {}),
-    tinhTrangHonNhan:read('tinhTrangHonNhan'),danToc:read('danToc'),soDienThoai:phones.length===1 ? phones[0] : '',
+    tinhTrangHonNhan:read('tinhTrangHonNhan'),danToc:finalDanToc,soDienThoai:phones.length===1 ? phones[0] : '',
     emailCaNhan:first(identity.flatMap(text=>text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi) || [])),
-    congViecDuKien:'',chucVu:'',thongTinGiaDinh:[],thanhVienHoGiaDinh:docs.filter(doc=>doc.kind==='vneid').flatMap(doc=>household(doc.text)),
+    hoTenChuHo:finalHoTenChuHo,quanHeChuHo:finalQuanHeChuHo,chuHoInfo:finalChuHoInfo,
+    congViecDuKien:'',chucVu:'',thongTinGiaDinh:[],thanhVienHoGiaDinh:finalHousehold,
     mucDoTinCay:'CAN_XAC_NHAN',doTinCayOCR:98,thongTinChuaRo:[],cauHoiLamRo:['Dữ liệu được đọc bằng OCR và tách theo nhãn. Vui lòng đối chiếu lại họ tên, dấu tiếng Việt và số định danh với tài liệu gốc.'],
     ghiChu:'',
   };

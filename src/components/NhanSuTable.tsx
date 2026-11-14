@@ -45,13 +45,36 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedKhoiFilter, setSelectedKhoiFilter] = useState('');
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState('ALL');
   const [selectedRecord, setSelectedRecord] = useState<NhanSuRecord | null>(null);
   const [recordToEdit, setRecordToEdit] = useState<NhanSuRecord | null>(null);
   const [isExporting, setIsExporting] = useState(false);
 
   const isAdmin = currentUser.role === 'admin';
 
-  // Lọc tìm kiếm theo tên, số CCCD, chức vụ, email, khối, ban, phòng
+  const recruitmentMap = React.useMemo(() => {
+    try {
+      const cached = localStorage.getItem('hr_recruitment_health_regs');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          const map = new Map<string, { trangThai?: string; trangThaiNhanViec?: string }>();
+          for (const reg of parsed) {
+            if (reg.soCCCD) {
+              map.set(reg.soCCCD.replace(/\D/g, ''), reg);
+            }
+            if (reg.hoVaTen) {
+              map.set(reg.hoVaTen.trim().toLowerCase(), reg);
+            }
+          }
+          return map;
+        }
+      }
+    } catch {}
+    return new Map();
+  }, [records]);
+
+  // Lọc tìm kiếm theo tên, số CCCD, chức vụ, email, khối, ban, phòng và trạng thái KSK/Nhận việc
   const filteredRecords = records.filter((r) => {
     const term = searchTerm.toLowerCase().trim();
     const matchSearch =
@@ -67,7 +90,29 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
 
     const matchKhoi = !selectedKhoiFilter || r.khoi === selectedKhoiFilter;
 
-    return matchSearch && matchKhoi;
+    let matchStatus = true;
+    if (selectedStatusFilter !== 'ALL') {
+      const cleanCCCD = r.soCCCD.replace(/\D/g, '');
+      const reg = recruitmentMap.get(cleanCCCD) || recruitmentMap.get(r.hoVaTen.trim().toLowerCase());
+      const st = reg?.trangThai || 'Đã khám - Đạt';
+      const offer = reg?.trangThaiNhanViec || 'Đã nhận việc';
+
+      if (selectedStatusFilter === 'da_kham') {
+        matchStatus = st.includes('Đã khám') || Boolean(reg);
+      } else if (selectedStatusFilter === 'chua_kham') {
+        matchStatus = !reg || st === 'Chờ khám' || st === 'Hoãn';
+      } else if (selectedStatusFilter === 'dat') {
+        matchStatus = st === 'Đã khám - Đạt' || st === 'Đã khám (Đạt)' || !reg;
+      } else if (selectedStatusFilter === 'khong_dat') {
+        matchStatus = st === 'Đã khám - Không đạt' || st === 'Đã khám (không đạt)';
+      } else if (selectedStatusFilter === 'da_nhan_viec') {
+        matchStatus = offer === 'Đã nhận việc' || !reg;
+      } else if (selectedStatusFilter === 'khong_nhan_viec') {
+        matchStatus = offer === 'Không nhận việc';
+      }
+    }
+
+    return matchSearch && matchKhoi && matchStatus;
   });
 
   // Danh sách các Khối duy nhất hiện có trong dữ liệu
@@ -177,16 +222,26 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
 
       {/* Search & Filter bar */}
       <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="flex flex-col sm:flex-row gap-2.5 w-full sm:w-auto items-stretch sm:items-center">
-          <div className="relative w-full sm:w-72">
+        <div className="flex flex-col sm:flex-row gap-2.5 w-full sm:w-auto items-stretch sm:items-center flex-wrap">
+          <div className="relative w-full sm:w-80">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Tìm theo Tên, CCCD, Chức vụ, Phòng..."
+              placeholder="Tìm nhanh theo Tên hoặc Mã nhân viên / CCCD..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 bg-slate-50/50"
+              className="w-full pl-9 pr-8 py-2 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 bg-slate-50/50"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="Xóa tìm kiếm"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           {uniqueKhois.length > 0 && (
@@ -195,7 +250,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
               <select
                 value={selectedKhoiFilter}
                 onChange={(e) => setSelectedKhoiFilter(e.target.value)}
-                className="text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:ring-1 focus:ring-blue-500"
+                className="text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:ring-1 focus:ring-blue-500 font-medium"
               >
                 <option value="">-- Tất cả các Khối --</option>
                 {uniqueKhois.map((k) => (
@@ -206,6 +261,22 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
               </select>
             </div>
           )}
+
+          <div className="flex items-center gap-1.5">
+            <select
+              value={selectedStatusFilter}
+              onChange={(e) => setSelectedStatusFilter(e.target.value)}
+              className="text-xs px-2.5 py-2 border border-slate-300 rounded-lg bg-white text-slate-700 focus:ring-1 focus:ring-blue-500 font-medium"
+            >
+              <option value="ALL">-- Tất cả trạng thái KSK & Nhận việc --</option>
+              <option value="da_kham">Đã khám</option>
+              <option value="chua_kham">Chưa khám</option>
+              <option value="dat">Đạt</option>
+              <option value="khong_dat">Không đạt</option>
+              <option value="da_nhan_viec">Đã nhận việc</option>
+              <option value="khong_nhan_viec">Không nhận việc</option>
+            </select>
+          </div>
         </div>
 
         <div className="text-xs text-slate-500">

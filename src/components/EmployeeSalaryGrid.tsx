@@ -36,7 +36,7 @@ export function EmployeeSalaryGrid({ employees, onChange, disabled }: Props) {
         <div className="flex items-center gap-2 text-sm font-bold text-slate-800"><Users className="h-4 w-4 text-indigo-600" />Danh sách lương ({employees.length} nhân viên)</div>
         <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-2 py-1.5"><Search className="h-4 w-4 text-slate-400" /><input aria-label="Tìm nhân viên trong bảng lương" placeholder="Tìm họ tên hoặc CCCD" value={query} onChange={event => setQuery(event.target.value)} className="w-48 text-xs outline-none" /></label>
       </div>
-      <p className="bg-slate-50 px-3 py-2 text-xs text-slate-500">Mỗi dòng là một nhân viên. Mở “Chi tiết phụ cấp” để sửa từng khoản; tổng thu nhập được tính tự động. Lưu và xuất Excel áp dụng cho toàn bộ danh sách.</p>
+
       <div className="max-h-[65vh] overflow-auto">
         <table className="w-full min-w-[1500px] border-separate border-spacing-0 text-left text-xs" aria-label="Lương và phụ cấp Bước 4">
           <thead className="sticky top-0 z-20 bg-indigo-50 text-indigo-950"><tr>{['Nhân viên / Thông tin tiếp nhận','Đơn vị / Chức vụ','Lương cơ bản (đ)','Phụ cấp cố định (đ)','Phụ cấp khác (đ)','Lương đóng BHXH (đ)','Tổng thu nhập (đ)','Ghi chú'].map((title,index) => <th key={title} scope="col" className={`border-b border-indigo-200 px-3 py-3 ${index === 0 ? 'sticky left-0 z-30 min-w-60 bg-indigo-50' : ''}`}>{title}</th>)}</tr></thead>

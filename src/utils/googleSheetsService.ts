@@ -1,4 +1,4 @@
-import { TieuChuanLuongItem } from '../types';
+import { TieuChuanLuongItem, KhoiNode, BanNode, PhongNode } from '../types';
 
 export interface SheetTabInfo {
   sheetId: number;
@@ -450,6 +450,401 @@ export async function createStandardFormGoogleSheet(
                     ? { userEnteredValue: { numberValue: val } }
                     : { userEnteredValue: { stringValue: String(val) } }
                 )),
+              })),
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  const response = await fetch(createUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({}));
+    throw new Error(errorBody?.error?.message || `Lỗi tạo Google Sheet (Mã ${response.status})`);
+  }
+
+  const result = await response.json();
+  return {
+    spreadsheetId: result.spreadsheetId,
+    spreadsheetUrl: result.spreadsheetUrl,
+  };
+}
+
+export interface OrgFlatRow {
+  khoi: string;
+  ban: string;
+  phong: string;
+}
+
+export interface OrgParseResult {
+  hierarchy: KhoiNode[];
+  flatRows: OrgFlatRow[];
+  warnings: string[];
+  totalRows: number;
+  detectedHeaders: { [column: string]: string };
+}
+
+function makeOrgNodeId(prefix: string, name: string, fallbackIndex: number): string {
+  const slug = name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 32);
+  return `${prefix}_${slug || 'node'}_${fallbackIndex}`;
+}
+
+/**
+ * Parse raw rows from Google Sheet into KhoiNode[] (Khối / Team -> Ban / Group -> Phòng / Bộ phận / Part).
+ * Supports fill-down for merged cells and auto-detects column headers.
+ */
+export function parseOrganizationRows(rows: any[][]): OrgParseResult {
+  const warnings: string[] = [];
+  const flatRows: OrgFlatRow[] = [];
+  const detectedHeaders: { [col: string]: string } = {};
+
+  if (!rows || rows.length === 0) {
+    return {
+      hierarchy: [],
+      flatRows,
+      warnings: ['Trang tính không có dữ liệu (trống).'],
+      totalRows: 0,
+      detectedHeaders,
+    };
+  }
+
+  let headerRowIndex = -1;
+  const colIndexMap: { khoi?: number; ban?: number; phong?: number } = {};
+
+  for (let r = 0; r < Math.min(rows.length, 10); r++) {
+    const row = rows[r];
+    if (!Array.isArray(row)) continue;
+
+    let score = 0;
+    row.forEach((cell) => {
+      const norm = normalizeHeader(String(cell || ''));
+      if (norm.includes('khoi') || norm.includes('team') || norm.includes('division')) score++;
+      if (norm.includes('ban') || norm.includes('group')) score++;
+      if (
+        norm.includes('phong') ||
+        norm.includes('part') ||
+        norm.includes('bophan') ||
+        norm.includes('donvi') ||
+        norm.includes('diadiem')
+      ) {
+        score++;
+      }
+    });
+
+    if (score >= 2) {
+      headerRowIndex = r;
+      break;
+    }
+  }
+
+  // Check if row 0 looks like a header even with only 1 match or standard labels
+  const firstRow = rows[0] || [];
+  if (headerRowIndex === -1 && firstRow.length > 0) {
+    const hasHeaderLikeText = firstRow.some((cell) => {
+      const norm = normalizeHeader(String(cell || ''));
+      return (
+        norm === 'stt' ||
+        norm.includes('khoi') ||
+        norm.includes('team') ||
+        norm.includes('ban') ||
+        norm.includes('group') ||
+        norm.includes('phong') ||
+        norm.includes('part') ||
+        norm.includes('bophan')
+      );
+    });
+    if (hasHeaderLikeText) {
+      headerRowIndex = 0;
+    }
+  }
+
+  if (headerRowIndex >= 0) {
+    const headerRow = rows[headerRowIndex] || [];
+    headerRow.forEach((cell, c) => {
+      const raw = String(cell || '').trim();
+      const norm = normalizeHeader(raw);
+      if (raw) detectedHeaders[`Cột ${c + 1}`] = raw;
+
+      if (norm === 'stt' || norm === 'no' || norm === 'tt') {
+        return;
+      }
+
+      if (
+        colIndexMap.khoi === undefined &&
+        (norm.includes('khoi') || norm.includes('team') || norm.includes('division'))
+      ) {
+        colIndexMap.khoi = c;
+      } else if (
+        colIndexMap.ban === undefined &&
+        !norm.includes('phongban') &&
+        (norm.includes('ban') || norm.includes('group'))
+      ) {
+        colIndexMap.ban = c;
+      } else if (
+        colIndexMap.phong === undefined &&
+        (norm.includes('phong') ||
+          norm.includes('part') ||
+          norm.includes('bophan') ||
+          norm.includes('donvi') ||
+          norm.includes('diadiem') ||
+          norm.includes('canteen') ||
+          norm.includes('bep'))
+      ) {
+        colIndexMap.phong = c;
+      }
+    });
+  }
+
+  // Fallback column order: skip STT column if first column is STT or numeric
+  const refRow = rows[headerRowIndex >= 0 ? headerRowIndex : 0] || [];
+  if (
+    colIndexMap.khoi === undefined ||
+    colIndexMap.ban === undefined ||
+    colIndexMap.phong === undefined
+  ) {
+    const firstColNorm = normalizeHeader(String(refRow[0] || ''));
+    const hasSttCol =
+      firstColNorm === 'stt' ||
+      firstColNorm === 'no' ||
+      (headerRowIndex === -1 && /^\d+$/.test(String(refRow[0] || '').trim()));
+    const offset = hasSttCol ? 1 : 0;
+
+    if (colIndexMap.khoi === undefined && refRow.length > offset) {
+      colIndexMap.khoi = offset;
+    }
+    if (colIndexMap.ban === undefined && refRow.length > offset + 1) {
+      colIndexMap.ban = offset + 1;
+    }
+    if (colIndexMap.phong === undefined && refRow.length > offset + 2) {
+      colIndexMap.phong = offset + 2;
+    }
+  }
+
+  if (colIndexMap.khoi === undefined) {
+    return {
+      hierarchy: [],
+      flatRows,
+      warnings: ['Không nhận diện được cột Team (Khối), Group (Ban), Part (Bộ phận / Phòng) trong trang tính.'],
+      totalRows: 0,
+      detectedHeaders,
+    };
+  }
+
+  const khoiMap = new Map<string, { node: KhoiNode; banMap: Map<string, { node: BanNode; phongSet: Set<string> }> }>();
+  const startRow = headerRowIndex >= 0 ? headerRowIndex + 1 : 0;
+
+  let lastKhoi = '';
+  let lastBan = '';
+  let nodeSeq = 0;
+
+  for (let r = startRow; r < rows.length; r++) {
+    const row = rows[r];
+    if (!Array.isArray(row) || row.every((c) => c === null || c === undefined || String(c).trim() === '')) {
+      continue;
+    }
+
+    const rawKhoi = colIndexMap.khoi !== undefined ? String(row[colIndexMap.khoi] ?? '').trim() : '';
+    const rawBan = colIndexMap.ban !== undefined ? String(row[colIndexMap.ban] ?? '').trim() : '';
+    const rawPhong = colIndexMap.phong !== undefined ? String(row[colIndexMap.phong] ?? '').trim() : '';
+
+    // Skip duplicate repeated header row inside body
+    const normKhoi = normalizeHeader(rawKhoi);
+    const normBan = normalizeHeader(rawBan);
+    if ((normKhoi === 'khoi' || normKhoi === 'team') && (normBan === 'ban' || normBan === 'group')) {
+      continue;
+    }
+
+    if (rawKhoi && rawKhoi.toUpperCase() !== lastKhoi.toUpperCase()) {
+      lastKhoi = rawKhoi;
+      lastBan = '';
+    }
+    const effectiveKhoi = rawKhoi || lastKhoi;
+    if (!effectiveKhoi) continue;
+
+    if (rawBan) {
+      lastBan = rawBan;
+    }
+    const effectiveBan = rawBan || lastBan || effectiveKhoi;
+    const effectivePhong = rawPhong || effectiveBan;
+
+    const khoiKey = effectiveKhoi.toUpperCase();
+    const banKey = effectiveBan.toUpperCase();
+    const phongKey = effectivePhong.toUpperCase();
+
+    let khoiEntry = khoiMap.get(khoiKey);
+    if (!khoiEntry) {
+      nodeSeq++;
+      khoiEntry = {
+        node: {
+          id: makeOrgNodeId('khoi', effectiveKhoi, nodeSeq),
+          name: effectiveKhoi.toUpperCase(),
+          bans: [],
+        },
+        banMap: new Map(),
+      };
+      khoiMap.set(khoiKey, khoiEntry);
+    }
+
+    let banEntry = khoiEntry.banMap.get(banKey);
+    if (!banEntry) {
+      nodeSeq++;
+      const banNode: BanNode = {
+        id: makeOrgNodeId('ban', effectiveBan, nodeSeq),
+        name: effectiveBan.toUpperCase(),
+        phongs: [],
+      };
+      banEntry = { node: banNode, phongSet: new Set() };
+      khoiEntry.banMap.set(banKey, banEntry);
+      khoiEntry.node.bans.push(banNode);
+    }
+
+    if (!banEntry.phongSet.has(phongKey)) {
+      nodeSeq++;
+      const phongNode: PhongNode = {
+        id: makeOrgNodeId('part', effectivePhong, nodeSeq),
+        name: effectivePhong.toUpperCase(),
+      };
+      banEntry.phongSet.add(phongKey);
+      banEntry.node.phongs.push(phongNode);
+      flatRows.push({
+        khoi: khoiEntry.node.name,
+        ban: banEntry.node.name,
+        phong: phongNode.name,
+      });
+    }
+  }
+
+  const hierarchy = Array.from(khoiMap.values()).map((entry) => entry.node);
+
+  if (hierarchy.length === 0) {
+    warnings.push('Không tìm thấy dữ liệu Team (Khối) / Group (Ban) / Part (Phòng) hợp lệ trong trang tính.');
+  }
+
+  return {
+    hierarchy,
+    flatRows,
+    warnings,
+    totalRows: flatRows.length,
+    detectedHeaders,
+  };
+}
+
+/**
+ * Merge incoming KhoiNode[] into existing KhoiNode[] without duplicating Teams/Groups/Parts (case-insensitive).
+ */
+export function mergeOrganizationHierarchies(existing: KhoiNode[], incoming: KhoiNode[]): KhoiNode[] {
+  const result: KhoiNode[] = existing.map((k) => ({
+    ...k,
+    bans: k.bans.map((b) => ({
+      ...b,
+      phongs: b.phongs.map((p) => ({ ...p })),
+    })),
+  }));
+
+  incoming.forEach((incKhoi) => {
+    const existingKhoi = result.find(
+      (k) => k.name.trim().toUpperCase() === incKhoi.name.trim().toUpperCase()
+    );
+    if (!existingKhoi) {
+      result.push(incKhoi);
+      return;
+    }
+
+    incKhoi.bans.forEach((incBan) => {
+      const existingBan = existingKhoi.bans.find(
+        (b) => b.name.trim().toUpperCase() === incBan.name.trim().toUpperCase()
+      );
+      if (!existingBan) {
+        existingKhoi.bans.push(incBan);
+        return;
+      }
+
+      incBan.phongs.forEach((incPhong) => {
+        const hasPhong = existingBan.phongs.some(
+          (p) => p.name.trim().toUpperCase() === incPhong.name.trim().toUpperCase()
+        );
+        if (!hasPhong) {
+          existingBan.phongs.push(incPhong);
+        }
+      });
+    });
+  });
+
+  return result;
+}
+
+/**
+ * Create a new Google Spreadsheet populated with the current organization hierarchy template.
+ */
+export async function createOrganizationGoogleSheet(
+  title: string,
+  hierarchy: KhoiNode[],
+  accessToken: string
+): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
+  const createUrl = 'https://sheets.googleapis.com/v4/spreadsheets';
+  const headers = ['STT', 'Team (Khối)', 'Group (Ban)', 'Part (Bộ phận / Phòng)'];
+
+  const rows: (string | number)[][] = [];
+  let stt = 1;
+  hierarchy.forEach((khoi) => {
+    if (khoi.bans.length === 0) {
+      rows.push([stt++, khoi.name, '', '']);
+      return;
+    }
+    khoi.bans.forEach((ban) => {
+      if (ban.phongs.length === 0) {
+        rows.push([stt++, khoi.name, ban.name, '']);
+        return;
+      }
+      ban.phongs.forEach((phong) => {
+        rows.push([stt++, khoi.name, ban.name, phong.name]);
+      });
+    });
+  });
+
+  const body = {
+    properties: {
+      title: title || 'Biểu mẫu Cơ cấu tổ chức (Team - Group - Part)',
+    },
+    sheets: [
+      {
+        properties: {
+          title: 'CoCauToChuc',
+          gridProperties: {
+            frozenRowCount: 1,
+          },
+        },
+        data: [
+          {
+            startRow: 0,
+            startColumn: 0,
+            rowData: [
+              {
+                values: headers.map((h) => ({
+                  userEnteredValue: { stringValue: h },
+                })),
+              },
+              ...rows.map((r) => ({
+                values: r.map((val) =>
+                  typeof val === 'number'
+                    ? { userEnteredValue: { numberValue: val } }
+                    : { userEnteredValue: { stringValue: String(val) } }
+                ),
               })),
             ],
           },

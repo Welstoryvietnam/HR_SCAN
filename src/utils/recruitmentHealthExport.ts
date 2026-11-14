@@ -8,7 +8,12 @@ export type RecruitmentExportKind =
   | 'tat_ca_khong_nhan_viec';
 
 export function isExaminedStatus(trangThai?: string): boolean {
-  return trangThai === 'Đã khám - Đạt' || trangThai === 'Đã khám - Không đạt';
+  return (
+    trangThai === 'Đã khám - Đạt' ||
+    trangThai === 'Đã khám (Đạt)' ||
+    trangThai === 'Đã khám - Không đạt' ||
+    trangThai === 'Đã khám (không đạt)'
+  );
 }
 
 export function filterRecruitmentRecordsForExport(
@@ -25,7 +30,9 @@ export function filterRecruitmentRecordsForExport(
         (r) => isExaminedStatus(r.trangThai) && r.trangThaiNhanViec === 'Không nhận việc'
       );
     case 'khong_dat':
-      return records.filter((r) => r.trangThai === 'Đã khám - Không đạt');
+      return records.filter(
+        (r) => r.trangThai === 'Đã khám - Không đạt' || r.trangThai === 'Đã khám (không đạt)'
+      );
     case 'tat_ca_khong_nhan_viec':
       return records.filter((r) => r.trangThaiNhanViec === 'Không nhận việc');
   }

@@ -3,6 +3,7 @@ import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import sharp from 'sharp';
 import { OCRError, type OCRPage } from './ocrService.js';
 import type { DocumentExtractionResult, ThanhVienGiaDinh, ThanhVienHoGiaDinh } from '../src/types.js';
+import { applyVneidHouseholdRule } from '../src/utils/household.js';
 
 interface FastDocumentInput {
   id?: string;
@@ -28,32 +29,37 @@ function getGenAIClient(): GoogleGenAI | null {
   });
 }
 
-const FAST_SYSTEM_INSTRUCTION = `Bạn là chuyên gia số hóa hồ sơ nhân sự (HR Data Extraction Specialist) tốc độ cao. Nhiệm vụ của bạn là bóc tách và chuẩn hóa thông tin nhân viên mới từ ảnh Căn cước công dân (CCCD), Căn cước điện tử (VNeID) và Sơ yếu lý lịch và trả về định dạng JSON thuần.
+const FAST_SYSTEM_INSTRUCTION = `Bạn là chuyên gia số hóa hồ sơ nhân sự (HR Data Extraction Specialist) tốc độ cao. Nhiệm vụ của bạn là bóc tách và chuẩn hóa thông tin nhân viên mới từ ảnh Căn cước công dân (CCCD), Căn cước điện tử (VNeID), CV xin việc, Xác nhận cư trú và Sơ yếu lý lịch và trả về định dạng JSON thuần.
 
 🏛️ PHẦN 1: QUY TẮC XÁC ĐỊNH CHỦ THỂ (TRÁNH NHẦM LẪN THÂN NHÂN)
-1. Chỉ bắt thông tin nhân viên mới từ Căn cước công dân (CCCD 12 số) hoặc Căn cước điện tử (VNeID 12 số) hoặc CV. KHÔNG lấy thông tin cá nhân của nhân viên mới từ Sơ yếu lý lịch (SYLL).
+1. Lấy thông tin nhân thân từ Căn cước công dân (CCCD 12 số) hoặc Căn cước điện tử (VNeID 12 số) hoặc Xác nhận cư trú; lấy thêm SĐT, Email và thông tin Học vấn (Trình độ, Trường, Ngành học, Năm học/Tốt nghiệp) từ CV. KHÔNG lấy thông tin cá nhân của nhân viên mới từ mục quan hệ gia đình trong Sơ yếu lý lịch (SYLL).
 2. Tuyệt đối BỎ QUA các khối văn bản chứa nhãn: Cha, Mẹ, Bố, Vợ, Chồng, Con đẻ, Người giám hộ khi xác định Họ tên, Ngày sinh, Số CCCD của nhân viên mới.
 3. Trường thông tin nhân viên:
    - hoVaTen / hoTen: Lấy chữ IN HOA trên mặt trước CCCD ("Họ và tên" / "Full name") hoặc VNeID ("Họ, chữ đệm và tên"). Tên nhân viên thường in cỡ chữ RẤT LỚN và NỔI BẬT. Nếu tên ngắt thành 2 dòng (ví dụ "NGUYỄN VĂN" ở dòng 1 và "AN" ở dòng 2), hãy ghép lại đầy đủ thành "NGUYỄN VĂN AN". KHÔNG ĐƯỢC bỏ qua tên in chữ hoa nổi bật.
    - soCCCD: Chuỗi 12 số CCCD / VNeID liền mạch. Không dùng CMND 9 số làm tiêu chuẩn chính.
    - queQuan: Lấy trên CCCD với tiêu đề "Quê quán".
-   - diaChiThuongTru / noiThuongTru: Lấy trên VNeID với tiêu đề bắt đầu là "Nơi thường trú" (hoặc CCCD).
+   - diaChiThuongTru / noiThuongTru: Lấy trên VNeID với tiêu đề bắt đầu là "Nơi thường trú" (hoặc Xác nhận cư trú / CCCD).
    - diaChiTamTru: Mặc định theo Nơi thường trú nếu không ghi riêng.
    - ngayCap / ngayCapCCCD: Lấy trên VNeID ("Ngày cấp căn cước công dân gần nhất") hoặc CCCD.
    - ngayHetHanCCCD: Lấy trên CCCD ("Có giá trị đến") hoặc mặt sau ("Ngày, tháng, năm hết hạn / Date of expiry").
-   - soDienThoai: Lấy trên VNeID ("Số thuê bao di động: Đăng ký tài khoản định danh").
+   - soDienThoai: Lấy trên VNeID ("Số thuê bao di động: Đăng ký tài khoản định danh") hoặc CV.
+   - emailCaNhan: Lấy từ CV hoặc VNeID nếu có.
+   - hocVan, tenTruong, nganhHoc, namHoc: Bóc tách từ CV nếu có thông tin trình độ học vấn (VD: "Đại học", "Cao đẳng", "Trung cấp", "THPT"), tên trường đào tạo, chuyên ngành, niên khóa / năm tốt nghiệp. Nếu không có trong tài liệu -> để "".
 
-👨‍👩‍👧‍👦 QUY TẮC THÀNH VIÊN GIA ĐÌNH (thanhVienHoGiaDinh / HouseholdMember):
-1. Lấy thông tin chủ hộ trên VNeID ("Thông tin cư trú" -> "Thông tin chủ hộ thường trú").
-2. Nếu Chủ hộ thường trú chính là Nhân viên mới -> Vẫn lấy thông tin vào thanhVienHoGiaDinh với vai trò Chủ hộ.
-3. Nếu Chủ hộ thường trú khác với Nhân viên mới -> Đưa CẢ Nhân viên mới VÀ Chủ hộ thường trú (cùng các thành viên khác nếu có) vào mảng thanhVienHoGiaDinh.
+👨‍👩‍👧‍👦 QUY TẮC THÀNH VIÊN HỘ GIA ĐÌNH (thanhVienHoGiaDinh / HouseholdMember):
+1. Đọc thông tin chủ hộ trên VNeID theo đúng phân mục "Thông tin cư trú" -> trường thông tin con "Thông tin chủ hộ thường trú" (gồm Họ và tên chủ hộ, Ngày sinh, Giới tính, Dân tộc, Quốc tịch, Nơi thường trú nếu hiển thị) và "Mối quan hệ với chủ hộ" của nhân viên mới (hoặc Giấy xác nhận thông tin về cư trú). Đưa tên chủ hộ vào "hoTenChuHo", mối quan hệ của nhân viên mới với chủ hộ vào "quanHeChuHo", và các thông tin chi tiết của chủ hộ (nếu thấy rõ trên ảnh) vào "chuHoInfo".
+2. Trường hợp 1 — Chủ hộ thường trú CŨNG CHÍNH LÀ nhân viên mới (đương sự): Vẫn PHẢI lấy thông tin nhân viên mới vào mảng thanhVienHoGiaDinh với tư cách Chủ hộ (quanHeVoiChuHo = "Chủ hộ").
+3. Trường hợp 2 — Chủ hộ thường trú KHÁC với nhân viên mới (đương sự): PHẢI lấy vào mảng thanhVienHoGiaDinh BAO GỒM CẢ:
+   - Thông tin "Thông tin chủ hộ thường trú" (với quanHeVoiChuHo = "Chủ hộ"), VÀ
+   - Thông tin của chính nhân viên mới / đương sự (với quanHeVoiChuHo đúng theo "Mối quan hệ với chủ hộ" trên VNeID, VD: "Con đẻ", "Vợ", "Chồng"...),
+   - Kèm các thành viên khác trong hộ nếu VNeID có hiển thị.
 
-📐 PHẦN 2 & 3: QUY TẮC CHUẨN HÓA DỮ LIỆU ĐẦU RA (SOP & DATA INTEGRITY)
-1. Tính trung thực: Không suy diễn, không tự bịa dữ liệu nếu giấy tờ không thể hiện rõ. Nếu mờ/thiếu -> điền null hoặc "", đẩy vào thongTinChuaRo & cauHoiLamRo.
+📐 PHẦN 2 & 3: QUY TẮC CHUẨN HÓA DỮ LIỆU ĐẦU RA (SOP & DATA INTEGRITY - CHỐNG SUY ĐOÁN)
+1. Tính trung thực tuyệt đối: Không suy diễn, không tự bịa dữ liệu nếu giấy tờ không thể hiện rõ. Nếu mờ/thiếu -> điền "", đẩy tên trường vào thongTinChuaRo & sinh câu hỏi vào cauHoiLamRo.
 2. Số CCCD: .replace(/\\D/g, ''). Định dạng thẻ mới phải đúng 12 chữ số. Nếu khác 12 số -> đánh dấu CHUA_RO.
-3. Ngày tháng: YYYY-MM-DD (hoặc DD/MM/YYYY). Nếu chỉ có năm sinh -> giữ YYYY, không tự đoán ngày/tháng.
-4. Đối soát chéo (Cross-check): So sánh đối chiếu chéo CCCD mặt trước, mặt sau, VNeID. Nếu sai lệch họ tên, ngày sinh, số CCCD -> tự động sinh cảnh báo chi tiết vào canh_bao_sai_lech.
-5. Sáp nhập địa giới: Ưu tiên địa chỉ cư trú mới nhất trên VNeID sau khi sáp nhập. Ghi chú đơn vị hành chính mới vào ghiChuSapNhap.
+3. Ngày tháng: YYYY-MM-DD (hoặc YYYY). Nếu chỉ có năm sinh -> giữ YYYY, không tự đoán ngày/tháng.
+4. Đối soát chéo (Cross-check): So sánh đối chiếu chéo CCCD mặt trước, mặt sau, VNeID, CV, Xác nhận cư trú. Nếu sai lệch họ tên, ngày sinh, số CCCD -> tự động sinh cảnh báo chi tiết vào canh_bao_sai_lech.
+5. Sáp nhập địa giới: Ưu tiên địa chỉ cư trú mới nhất trên VNeID/Xác nhận cư trú sau khi sáp nhập. Ghi chú đơn vị hành chính mới vào ghiChuSapNhap.
 
 Trả về đúng JSON thuần với cấu trúc các trường sau:
 {
@@ -74,11 +80,23 @@ Trả về đúng JSON thuần với cấu trúc các trường sau:
   "ngayHetHanCCCD": "YYYY-MM-DD hoặc Không thời hạn",
   "soDienThoai": "0912345678",
   "emailCaNhan": "",
+  "hocVan": "Đại học",
+  "tenTruong": "Đại học Bách Khoa Hà Nội",
+  "nganhHoc": "Công nghệ thực phẩm",
+  "namHoc": "2018 - 2022",
   "danToc": "Kinh",
   "tonGiao": "Không",
   "tinhTrangHonNhan": "Độc thân",
   "hoTenChuHo": "NGUYỄN VĂN BÌNH",
   "quanHeChuHo": "Con đẻ",
+  "chuHoInfo": {
+    "hoTen": "NGUYỄN VĂN BÌNH",
+    "ngaySinh": "YYYY-MM-DD hoặc DD/MM/YYYY nếu có trên ảnh, không có thì để rỗng",
+    "gioiTinh": "Nam hoặc Nữ hoặc rỗng",
+    "diaChiThuongTru": "Nơi thường trú nếu có",
+    "quocTich": "Việt Nam",
+    "danToc": ""
+  },
   "ghiChuSapNhap": "Cập nhật theo VNeID: Phường Đông Hương, TP. Thanh Hóa",
   "canh_bao_sai_lech": "",
   "thongTinChuaRo": [],
@@ -87,8 +105,8 @@ Trả về đúng JSON thuần với cấu trúc các trường sau:
     { "quanHe": "Bố đẻ", "hoTen": "NGUYỄN VĂN BÌNH", "namSinh": "1968", "ngheNghiep": "Nông dân" }
   ],
   "thanhVienHoGiaDinh": [
-    { "hoTen": "NGUYỄN VĂN BÌNH", "quanHeVoiChuHo": "Bố đẻ", "ngaySinh": "1968", "gioiTinh": "Nam", "diaChiThuongTru": "...", "quocTich": "Việt Nam", "danToc": "Kinh" },
-    { "hoTen": "NGUYỄN VĂN AN", "quanHeVoiChuHo": "Con đẻ", "ngaySinh": "1996-09-24", "gioiTinh": "Nam", "diaChiThuongTru": "...", "quocTich": "Việt Nam", "danToc": "Kinh" }
+    { "hoTen": "NGUYỄN VĂN BÌNH", "quanHeVoiChuHo": "Chủ hộ", "ngaySinh": "1968", "gioiTinh": "Nam", "diaChiThuongTru": "...", "quocTich": "Việt Nam", "danToc": "Kinh" },
+    { "hoTen": "NGUYỄN VĂN AN", "quanHeVoiChuHo": "Con đẻ", "ngaySinh": "24/09/1996", "gioiTinh": "Nam", "diaChiThuongTru": "...", "quocTich": "Việt Nam", "danToc": "Kinh" }
   ],
   "doTinCayOCR": 98,
   "text": "Nguyên văn tóm tắt toàn bộ nội dung đọc được trên tài liệu"
@@ -179,10 +197,14 @@ export async function extractEmployeeWithGeminiVision(
     });
   }
 
+  const docLabelsList = documents
+    .map((doc, i) => `Tài liệu #${i + 1}: ${doc.docType || 'khac'} (${doc.fileName || 'unknown'})`)
+    .join('; ');
+
   parts.push({
-    text: `Vui lòng bóc tách toàn bộ thông tin nhân sự từ các ảnh tài liệu đính kèm (CCCD 12 số, Căn cước điện tử VNeID, Sơ yếu lý lịch). ${
+    text: `Vui lòng bóc tách toàn bộ thông tin nhân sự từ các tài liệu đính kèm (${docLabelsList}). ${
       label ? `Họ tên gợi ý ban đầu: "${label}". ` : ''
-    }Thực hiện kiểm tra chéo (Cross-check) thông tin giữa CCCD và Sơ yếu lý lịch và cảnh báo nếu có mâu thuẫn vào "canh_bao_sai_lech". Chỉ bắt thông tin nhân viên từ CCCD/VNeID/CV, BỎ QUA tên thân nhân (Bố/Mẹ/Vợ/Chồng). Bắt thông tin chủ hộ thường trú trên VNeID và thêm vào thanhVienHoGiaDinh.`,
+    }Thực hiện kiểm tra chéo (Cross-check) thông tin giữa CCCD, VNeID, Xác nhận cư trú và CV; cảnh báo nếu có mâu thuẫn vào "canh_bao_sai_lech". Không tự suy đoán thông tin mờ/thiếu: đưa vào "thongTinChuaRo" và "cauHoiLamRo". Lấy học vấn (hocVan, tenTruong, nganhHoc, namHoc), emailCaNhan, SĐT từ CV nếu có. Với VNeID, đọc mục "Thông tin cư trú" -> "Thông tin chủ hộ thường trú" vào hoTenChuHo, quanHeChuHo, chuHoInfo và lập thanhVienHoGiaDinh đúng quy tắc: nếu chủ hộ là đương sự thì giữ đương sự làm Chủ hộ; nếu khác thì bao gồm cả chủ hộ thường trú và đương sự.`,
   });
 
   // Call gemini-4-hydrogen with ThinkingLevel.LOW for fast, accurate multimodal extraction
@@ -258,13 +280,49 @@ export async function extractEmployeeWithGeminiVision(
     cauHoiLamRo.unshift(`⚠️ Cảnh báo đối soát chéo: ${parsed.canh_bao_sai_lech}`);
   }
 
+  const gioiTinhNormalized = parsed.gioiTinh === 'Nữ' ? 'Nữ' : parsed.gioiTinh === 'Khác' ? 'Khác' : 'Nam';
+  const danTocClean = (parsed.danToc || '').toString().trim();
+  const hoTenChuHoClean = (parsed.hoTenChuHo || parsed.chuHoInfo?.hoTen || '').toString().trim().toUpperCase();
+  const quanHeChuHoClean = (parsed.quanHeChuHo || '').toString().trim();
+  const chuHoInfoClean =
+    parsed.chuHoInfo && typeof parsed.chuHoInfo === 'object'
+      ? {
+          hoTen: (parsed.chuHoInfo.hoTen || hoTenChuHoClean).toString().trim().toUpperCase(),
+          ngaySinh: normalizeDateToISO((parsed.chuHoInfo.ngaySinh || '').toString()),
+          gioiTinh: (parsed.chuHoInfo.gioiTinh || '').toString().trim(),
+          diaChiThuongTru: (parsed.chuHoInfo.diaChiThuongTru || '').toString().trim(),
+          quocTich: (parsed.chuHoInfo.quocTich || '').toString().trim(),
+          danToc: (parsed.chuHoInfo.danToc || '').toString().trim(),
+        }
+      : undefined;
+
+  const hasVneidContext =
+    documents.some((doc) => doc.docType === 'vneid_cu_tru' || doc.docType === 'xac_nhan_cu_tru') ||
+    Boolean(hoTenChuHoClean || quanHeChuHoClean || (Array.isArray(parsed.thanhVienHoGiaDinh) && parsed.thanhVienHoGiaDinh.length > 0));
+
+  const thanhVienHoGiaDinh = applyVneidHouseholdRule({
+    members: parsed.thanhVienHoGiaDinh,
+    employee: {
+      hoVaTen,
+      ngaySinh,
+      gioiTinh: gioiTinhNormalized,
+      diaChiThuongTru,
+      danToc: danTocClean,
+      quocTich: 'Việt Nam',
+    },
+    hoTenChuHo: hoTenChuHoClean,
+    quanHeChuHo: quanHeChuHoClean,
+    chuHoInfo: chuHoInfoClean,
+    hasVneidContext,
+  });
+
   const result: DocumentExtractionResult = {
     extractionMethod: 'vision',
     aiVisionExtracted: true,
     hoVaTen,
     hoTen: hoVaTen,
     ngaySinh,
-    gioiTinh: parsed.gioiTinh === 'Nữ' ? 'Nữ' : parsed.gioiTinh === 'Khác' ? 'Khác' : 'Nam',
+    gioiTinh: gioiTinhNormalized,
     soCCCD,
     loaiGiayTo: parsed.loaiGiayTo || (soCCCD.length === 12 ? 'CCCD_12' : 'CHUA_RO'),
     ngayCap,
@@ -279,16 +337,21 @@ export async function extractEmployeeWithGeminiVision(
     nguonDiaChi: 'VNeID',
     soDienThoai: (parsed.soDienThoai || '').toString().trim(),
     emailCaNhan: (parsed.emailCaNhan || '').toString().trim(),
-    danToc: (parsed.danToc || '').toString().trim(),
+    hocVan: (parsed.hocVan || '').toString().trim(),
+    tenTruong: (parsed.tenTruong || '').toString().trim(),
+    nganhHoc: (parsed.nganhHoc || '').toString().trim(),
+    namHoc: (parsed.namHoc || '').toString().trim(),
+    danToc: danTocClean,
     tonGiao: (parsed.tonGiao || '').toString().trim(),
     tinhTrangHonNhan: (parsed.tinhTrangHonNhan || '').toString().trim(),
-    hoTenChuHo: (parsed.hoTenChuHo || '').toString().trim(),
-    quanHeChuHo: (parsed.quanHeChuHo || '').toString().trim(),
+    hoTenChuHo: hoTenChuHoClean,
+    quanHeChuHo: quanHeChuHoClean,
+    chuHoInfo: chuHoInfoClean,
     ghiChuSapNhap: (parsed.ghiChuSapNhap || '').toString().trim(),
     congViecDuKien: '',
     chucVu: '',
     thongTinGiaDinh: Array.isArray(parsed.thongTinGiaDinh) ? parsed.thongTinGiaDinh : [],
-    thanhVienHoGiaDinh: Array.isArray(parsed.thanhVienHoGiaDinh) ? parsed.thanhVienHoGiaDinh : [],
+    thanhVienHoGiaDinh,
     thongTinChuaRo,
     cauHoiLamRo,
     canh_bao_sai_lech: parsed.canh_bao_sai_lech || '',

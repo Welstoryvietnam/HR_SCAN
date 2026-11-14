@@ -70,7 +70,6 @@ export interface HealthcareProviderItem {
   nguoiPhuTrach: string;
   soDienThoai: string;
   email: string;
-  dichVuTheManh: string;
   ghiChu: string;
 }
 
@@ -105,9 +104,20 @@ export interface RecruitmentStandardItem {
   luuYdacBiet: string;
 }
 
+export type HealthSubTab =
+  | 'tuyen_dung_dang_ky'
+  | 'tuyen_dung_theo_doi'
+  | 'tuyen_dung_tieu_chuan'
+  | 'dinh_ky'
+  | 'nha_cung_cap'
+  | 'tuyen_dung_dashboard';
+
 interface HealthCheckStandardsManagerProps {
   currentUser: UserProfile;
   onTransferToNewEmployee?: (reg: RecruitmentHealthRegItem) => void;
+  activeSubTab?: HealthSubTab;
+  onSubTabChange?: (tab: HealthSubTab) => void;
+  onCountsChange?: (counts: { regs: number; standards: number; providers: number }) => void;
 }
 
 const PHAN_LOAI_OPTIONS = ['Bếp Samsung', 'Bếp ngoài', 'OFFICE'];
@@ -152,6 +162,9 @@ export const RECRUITMENT_CHECK_ITEMS = HEALTH_CHECK_ITEMS.filter(
 export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerProps> = ({
   currentUser,
   onTransferToNewEmployee,
+  activeSubTab,
+  onSubTabChange,
+  onCountsChange,
 }) => {
   const isAdmin = currentUser.role === 'admin';
   const isMedicalStaff = !isAdmin && currentUser.hrmRole === 'nhan_vien_y_te';
@@ -180,15 +193,19 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const [filterCompany, setFilterCompany] = useState('ALL');
   const [filterActivity, setFilterActivity] = useState<'ALL' | 'ksk' | 'blood'>('ALL');
 
-  // Sub-tabs state for Tiêu chuẩn KSK
-  const [healthSubTab, setHealthSubTab] = useState<
-    | 'tuyen_dung_dang_ky'
-    | 'tuyen_dung_theo_doi'
-    | 'tuyen_dung_tieu_chuan'
-    | 'dinh_ky'
-    | 'nha_cung_cap'
-    | 'tuyen_dung_dashboard'
-  >(() => (isMedicalStaff ? 'tuyen_dung_theo_doi' : 'tuyen_dung_dang_ky'));
+  // Sub-tabs state for Tiêu chuẩn KSK (controlled from Sidebar when provided)
+  const [internalHealthSubTab, setInternalHealthSubTab] = useState<HealthSubTab>(
+    () => (isMedicalStaff ? 'tuyen_dung_theo_doi' : 'tuyen_dung_dang_ky')
+  );
+
+  const healthSubTab = activeSubTab ?? internalHealthSubTab;
+  const setHealthSubTab = (tab: HealthSubTab) => {
+    if (onSubTabChange) {
+      onSubTabChange(tab);
+    } else {
+      setInternalHealthSubTab(tab);
+    }
+  };
 
   // Enforce role permissions on active sub-tab
   useEffect(() => {
@@ -223,7 +240,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
         nguoiPhuTrach: 'Bs. Nguyễn Văn Hùng',
         soDienThoai: '0912345678',
         email: 'contact@huuphuclinic.vn',
-        dichVuTheManh: 'Khám tuyển dụng nhanh, XN máu, X-Quang phổi',
         ghiChu: 'Đối tác chiến lược KCN Yên Phong.',
       },
       {
@@ -234,7 +250,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
         nguoiPhuTrach: 'ThS. Trần Thị Mai',
         soDienThoai: '0988776655',
         email: 'hospital@auco.vn',
-        dichVuTheManh: 'Khám chuyên khoa sâu, siêu âm, phụ khoa',
         ghiChu: 'Ưu đãi giá khám đoàn.',
       },
       {
@@ -245,7 +260,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
         nguoiPhuTrach: 'Lê Văn Tuấn',
         soDienThoai: '0903112233',
         email: 'huelinh@clinic.vn',
-        dichVuTheManh: 'Xét nghiệm viên gan, ma túy, soi phân',
         ghiChu: 'Lấy mẫu tại doanh nghiệp theo yêu cầu.',
       },
     ];
@@ -265,7 +279,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const [provPhuTrach, setProvPhuTrach] = useState('');
   const [provDienThoai, setProvDienThoai] = useState('');
   const [provEmail, setProvEmail] = useState('');
-  const [provDichVu, setProvDichVu] = useState('');
   const [provGhiChu, setProvGhiChu] = useState('');
 
   const handleOpenProviderModal = (prov?: HealthcareProviderItem) => {
@@ -277,7 +290,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       setProvPhuTrach(prov.nguoiPhuTrach);
       setProvDienThoai(prov.soDienThoai);
       setProvEmail(prov.email);
-      setProvDichVu(prov.dichVuTheManh);
       setProvGhiChu(prov.ghiChu);
     } else {
       setEditingProvider(null);
@@ -287,7 +299,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       setProvPhuTrach('');
       setProvDienThoai('');
       setProvEmail('');
-      setProvDichVu('');
       setProvGhiChu('');
     }
     setIsProviderModalOpen(true);
@@ -307,7 +318,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       nguoiPhuTrach: provPhuTrach.trim(),
       soDienThoai: provDienThoai.trim(),
       email: provEmail.trim(),
-      dichVuTheManh: provDichVu.trim(),
       ghiChu: provGhiChu.trim(),
     };
     const updated = editingProvider
@@ -385,6 +395,14 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     } catch {}
   }, [recruitmentRegs]);
 
+  useEffect(() => {
+    onCountsChange?.({
+      regs: recruitmentRegs.length,
+      standards: standards.length,
+      providers: providers.length,
+    });
+  }, [recruitmentRegs.length, standards.length, providers.length]);
+
   // Bước 1: Danh sách đăng ký nháp tại Bảng 2 (chỉ đẩy sang Bước 2 sau khi nhấn "Gửi đăng ký")
   const [draftRecruitmentRegs, setDraftRecruitmentRegs] = useState<RecruitmentHealthRegItem[]>(() => {
     try {
@@ -420,6 +438,40 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const [regNguoiDangKy, setRegNguoiDangKy] = useState(currentUser.name || currentUser.email);
   const [regGhiChu, setRegGhiChu] = useState('');
   const [isOcrScanning, setIsOcrScanning] = useState(false);
+  const [duplicateWarningModal, setDuplicateWarningModal] = useState<{
+    message: string;
+    onContinue: () => void;
+  } | null>(null);
+
+  const getDuplicateCccds = (cccdList: string[], excludeId?: string): string[] => {
+    const existingCccds = new Set<string>();
+    for (const reg of recruitmentRegs) {
+      if (reg.soCCCD && reg.soCCCD.trim() && (!excludeId || reg.id !== excludeId)) {
+        existingCccds.add(reg.soCCCD.trim());
+      }
+    }
+    try {
+      const empCached = localStorage.getItem('hr_employee_directory');
+      if (empCached) {
+        const emps = JSON.parse(empCached);
+        if (Array.isArray(emps)) {
+          for (const e of emps) {
+            if (e.cccd && String(e.cccd).trim()) {
+              existingCccds.add(String(e.cccd).trim());
+            }
+          }
+        }
+      }
+    } catch {}
+
+    const duplicates: string[] = [];
+    for (const c of cccdList) {
+      if (c && existingCccds.has(c.trim()) && !duplicates.includes(c.trim())) {
+        duplicates.push(c.trim());
+      }
+    }
+    return duplicates;
+  };
 
   // Multi-candidate upload slots for recruitment registration step 1 (isolated photo upload/capture boxes per candidate)
   interface RecruitmentUploadSlot {
@@ -805,29 +857,50 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       showToast('error', 'Vui lòng nhập họ tên ứng viên!');
       return;
     }
-    const newItem: RecruitmentHealthRegItem = {
-      id: editingReg ? editingReg.id : 'reg-' + Date.now(),
-      hoVaTen: regHoVaTen.trim(),
-      soCCCD: regCCCD.trim(),
-      ngaySinh: regNgaySinh,
-      gioiTinh: regGioiTinh,
-      khoi: regKhoi,
-      ban: regBan,
-      phong: regPhong,
-      congViec: regCongViec,
-      chucVu: regChucVu,
-      nhaCungCap: regNhaCungCap,
-      ngayDangKyKham: regNgayDangKyKham,
-      ngayHenKham: regNgayHenKham,
-      nguoiDangKy: regNguoiDangKy,
-      ghiChu: regGhiChu.trim(),
+    if (regNgayDangKyKham && regNgayHenKham && regNgayDangKyKham > regNgayHenKham) {
+      showToast('error', 'ngày đăng ký phải trước ngày khám, vui lòng chọn lại');
+      return;
+    }
+    const cleanCccd = regCCCD.trim();
+    const executeSave = () => {
+      const newItem: RecruitmentHealthRegItem = {
+        id: editingReg ? editingReg.id : 'reg-' + Date.now(),
+        hoVaTen: regHoVaTen.trim(),
+        soCCCD: cleanCccd,
+        ngaySinh: regNgaySinh,
+        gioiTinh: regGioiTinh,
+        khoi: regKhoi,
+        ban: regBan,
+        phong: regPhong,
+        congViec: regCongViec,
+        chucVu: regChucVu,
+        nhaCungCap: regNhaCungCap,
+        ngayDangKyKham: regNgayDangKyKham,
+        ngayHenKham: regNgayHenKham,
+        nguoiDangKy: regNguoiDangKy,
+        ghiChu: regGhiChu.trim(),
+      };
+      const updated = editingReg
+        ? recruitmentRegs.map((r) => (r.id === editingReg.id ? newItem : r))
+        : [newItem, ...recruitmentRegs];
+      setRecruitmentRegs(updated);
+      setIsRegModalOpen(false);
+      setDuplicateWarningModal(null);
+      showToast('success', editingReg ? 'Đã cập nhật đăng ký KSK tuyển dụng!' : 'Đã đăng ký lịch khám tuyển dụng thành công!');
     };
-    const updated = editingReg
-      ? recruitmentRegs.map((r) => (r.id === editingReg.id ? newItem : r))
-      : [newItem, ...recruitmentRegs];
-    setRecruitmentRegs(updated);
-    setIsRegModalOpen(false);
-    showToast('success', editingReg ? 'Đã cập nhật đăng ký KSK tuyển dụng!' : 'Đã đăng ký lịch khám tuyển dụng thành công!');
+
+    if (cleanCccd) {
+      const duplicates = getDuplicateCccds([cleanCccd], editingReg?.id);
+      if (duplicates.length > 0) {
+        setDuplicateWarningModal({
+          message: `Số căn cước ${duplicates.join(', ')} đã được đăng ký, vui lòng kiểm tra lại`,
+          onContinue: executeSave,
+        });
+        return;
+      }
+    }
+
+    executeSave();
   };
 
   const [confirmDeleteRegId, setConfirmDeleteRegId] = useState<string | null>(null);
@@ -900,6 +973,12 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       return;
     }
 
+    const invalidDateIdx = draftRecruitmentRegs.findIndex((r) => r.ngayDangKyKham && r.ngayHenKham && r.ngayDangKyKham > r.ngayHenKham);
+    if (invalidDateIdx !== -1) {
+      showToast('error', 'ngày đăng ký phải trước ngày khám, vui lòng chọn lại');
+      return;
+    }
+
     const readyItems: RecruitmentHealthRegItem[] = draftRecruitmentRegs.map((r) => ({
       ...r,
       hoVaTen: r.hoVaTen.trim(),
@@ -910,10 +989,26 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       trangThai: r.trangThai || 'Chờ khám',
     }));
 
-    setRecruitmentRegs((prev) => [...readyItems, ...prev]);
-    setDraftRecruitmentRegs([]);
-    setConfirmDeleteRegId(null);
-    showToast('success', `Đã gửi ${readyItems.length} hồ sơ đăng ký sang Bước 2 - Theo dõi KSK tuyển dụng!`);
+    const cccdList = readyItems.map((r) => r.soCCCD).filter(Boolean);
+    const duplicates = getDuplicateCccds(cccdList);
+
+    const executeSubmit = () => {
+      setRecruitmentRegs((prev) => [...readyItems, ...prev]);
+      setDraftRecruitmentRegs([]);
+      setConfirmDeleteRegId(null);
+      setDuplicateWarningModal(null);
+      showToast('success', `Đã gửi ${readyItems.length} hồ sơ đăng ký sang Bước 2 - Theo dõi KSK tuyển dụng!`);
+    };
+
+    if (duplicates.length > 0) {
+      setDuplicateWarningModal({
+        message: `Số căn cước ${duplicates.join(', ')} đã được đăng ký, vui lòng kiểm tra lại`,
+        onContinue: executeSubmit,
+      });
+      return;
+    }
+
+    executeSubmit();
   };
 
   // 3. Tiêu chuẩn KSK Tuyển dụng
@@ -1009,16 +1104,32 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const [trackingStatusFilter, setTrackingStatusFilter] = useState('ALL');
   const [trackingViewMode, setTrackingViewMode] = useState<'active' | 'declined'>('active');
 
+  const [trackingDraftRegs, setTrackingDraftRegs] = useState<RecruitmentHealthRegItem[]>(() => recruitmentRegs);
+  useEffect(() => {
+    setTrackingDraftRegs(recruitmentRegs);
+  }, [recruitmentRegs]);
+
+  const handleSaveStep2TrackingResults = () => {
+    setRecruitmentRegs(trackingDraftRegs);
+    showToast('success', 'Đã lưu kết quả khám thành công vào hệ thống!');
+  };
+
+  const handleUpdateTrackingItem = (id: string, patch: Partial<RecruitmentHealthRegItem>) => {
+    setTrackingDraftRegs((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  };
+
   const trackingPeriodRegs = useMemo(() => {
-    return recruitmentRegs.filter((reg) => {
+    return trackingDraftRegs.filter((reg) => {
       if (trackingSearch.trim()) {
         const q = trackingSearch.toLowerCase();
         const matchName = (reg.hoVaTen || '').toLowerCase().includes(q);
         const matchCCCD = (reg.soCCCD || '').includes(q);
         const matchPhone = (reg.soDienThoai || '').includes(q);
+        const matchProvider = (reg.nhaCungCap || '').toLowerCase().includes(q);
+        const matchRoom = (reg.phong || '').toLowerCase().includes(q);
         const posLabel = reg.viTriViecLam || [reg.congViec, reg.chucVu].filter(Boolean).join(' - ');
-        const matchPos = posLabel.toLowerCase().includes(q) || (reg.phong || '').toLowerCase().includes(q) || (reg.ban || '').toLowerCase().includes(q);
-        if (!matchName && !matchCCCD && !matchPhone && !matchPos) return false;
+        const matchPos = posLabel.toLowerCase().includes(q) || (reg.ban || '').toLowerCase().includes(q);
+        if (!matchName && !matchCCCD && !matchPhone && !matchProvider && !matchRoom && !matchPos) return false;
       }
       if (reg.ngayHenKham) {
         const [, m] = reg.ngayHenKham.split('-');
@@ -1028,7 +1139,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       }
       return true;
     });
-  }, [recruitmentRegs, trackingSearch, trackingMonth, trackingStartDate, trackingEndDate]);
+  }, [trackingDraftRegs, trackingSearch, trackingMonth, trackingStartDate, trackingEndDate]);
 
   const activeTrackingRegs = useMemo(() => {
     return trackingPeriodRegs.filter((reg) => reg.trangThaiNhanViec !== 'Không nhận việc');
@@ -1041,7 +1152,22 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const filteredTrackingRegs = useMemo(() => {
     const base = trackingViewMode === 'declined' ? declinedTrackingRegs : activeTrackingRegs;
     if (trackingStatusFilter === 'ALL') return base;
-    return base.filter((reg) => (reg.trangThai || 'Chờ khám') === trackingStatusFilter);
+    return base.filter((reg) => {
+      const st = reg.trangThai || 'Chờ Khám';
+      if (trackingStatusFilter === 'Chờ Khám' || trackingStatusFilter === 'Chờ khám') {
+        return st === 'Chờ Khám' || st === 'Chờ khám' || !st;
+      }
+      if (trackingStatusFilter.includes('Đạt') && !trackingStatusFilter.includes('không')) {
+        return st.includes('Đạt') && !st.includes('không');
+      }
+      if (trackingStatusFilter.includes('không đạt') || trackingStatusFilter.includes('Không đạt')) {
+        return st.includes('không đạt') || st.includes('Không đạt');
+      }
+      if (trackingStatusFilter === 'Hoãn') {
+        return st === 'Hoãn';
+      }
+      return st === trackingStatusFilter;
+    });
   }, [trackingViewMode, activeTrackingRegs, declinedTrackingRegs, trackingStatusFilter]);
 
   const handleMarkOfferDecision = (
@@ -1062,7 +1188,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
   const handleExportTrackingExcel = async (kind: RecruitmentExportKind) => {
     try {
-      const count = await exportRecruitmentHealthExcel(trackingPeriodRegs, kind);
+      const count = await exportRecruitmentHealthExcel(filteredTrackingRegs, kind);
       if (count === 0) {
         const emptyLabels: Record<RecruitmentExportKind, string> = {
           da_kham_nhan_viec: 'Không có ứng viên nào thuộc nhóm Đã khám và nhận việc trong bộ lọc hiện tại.',
@@ -1081,7 +1207,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
   const handleExportSummaryExcel = async () => {
     try {
-      const res = await exportRecruitmentSummaryMultiSheet(trackingPeriodRegs);
+      const res = await exportRecruitmentSummaryMultiSheet(filteredTrackingRegs);
       const total = res.nhanViecCount + res.khongNhanViecCount + res.khongDatCount;
       if (total === 0) {
         showToast('error', 'Chưa có dữ liệu ở 3 nhóm (Đã khám nhận việc / Đã khám không nhận việc / Không đạt) để xuất báo cáo.');
@@ -1834,7 +1960,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
         </div>
       )}
 
-      {/* Sub-Tabs Navigation (Ordered & Scoped by Role) */}
+      {/* Sub-Tabs Navigation (Hiển thị nội bộ chỉ khi không dùng Sidebar ngoài) */}
+      {!onSubTabChange && (
       <div className="flex flex-wrap items-center gap-2 bg-slate-100 border border-slate-200 rounded-2xl p-2 shadow-2xs">
         {(isAdmin || isRecruiter) && (
           <button
@@ -1922,6 +2049,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
           </>
         )}
       </div>
+      )}
 
       {healthSubTab === 'tuyen_dung_dang_ky' && (isAdmin || isRecruiter) && (
         <div className="space-y-6 animate-fade-in">
@@ -1930,10 +2058,10 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
               <div>
                 <h3 className="text-sm font-bold text-slate-100">
-                  Bước 1: Tải Lên Ảnh CCCD Từng Ứng Viên Riêng Biệt ({recruitmentUploadSlots.length} ứng viên)
+                  Bước 1: Tải Lên Ảnh CCCD
                 </h3>
                 <p className="text-[11px] text-slate-400">
-                  Mỗi nhân viên mới 1 ô tải ảnh riêng biệt để tránh lẫn thông tin. Tự động đọc dữ liệu bằng Gemini AI &amp; OCR.
+                  Mỗi nhân viên mới 1 ô tải ảnh riêng biệt
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -2044,10 +2172,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                       </div>
                       <div className="text-left min-w-0">
                         <div className="text-xs font-bold text-slate-200 leading-snug">
-                          Kéo thả ảnh CCCD hoặc chọn tệp từ máy / điện thoại
-                        </div>
-                        <div className="text-[10px] text-slate-400 leading-snug">
-                          Hỗ trợ định dạng JPG, PNG, PDF (Tối đa 10MB)
+                          Upload ảnh CCCD/chọn tệp từ thiết bị (Tối đa 10MB)
                         </div>
                       </div>
                     </div>
@@ -2161,13 +2286,14 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                     <th className="p-2.5 text-center w-10">STT</th>
-                    <th className="p-2.5 min-w-[170px]">Họ và tên / CCCD</th>
+                    <th className="p-2.5 min-w-[140px]">Phòng</th>
+                    <th className="p-2.5 min-w-[160px]">Họ và tên</th>
+                    <th className="p-2.5 min-w-[140px]">Căn cước công dân</th>
                     <th className="p-2.5 min-w-[130px]">Công việc</th>
                     <th className="p-2.5 min-w-[130px]">Chức vụ</th>
-                    <th className="p-2.5 text-center min-w-[130px]">Ngày khám</th>
-                    <th className="p-2.5 min-w-[140px]">Phòng</th>
-                    <th className="p-2.5 min-w-[170px]">Nhà cung cấp khám</th>
+                    <th className="p-2.5 text-center min-w-[130px]">Ngày dự kiến khám</th>
                     <th className="p-2.5 text-center min-w-[130px]">Ngày đăng ký</th>
+                    <th className="p-2.5 min-w-[170px]">Nhà cung cấp khám</th>
                     <th className="p-2.5 min-w-[140px]">Nhân viên phụ trách</th>
                     <th className="p-2.5 text-center w-24">Xóa</th>
                   </tr>
@@ -2175,7 +2301,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                 <tbody className="divide-y divide-slate-200">
                   {draftRecruitmentRegs.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="p-8 text-center text-slate-500">
+                      <td colSpan={11} className="p-8 text-center text-slate-500">
                         Chưa có ứng viên nào trong danh sách chờ gửi. Nhấn &quot;Quét AI &amp; Đưa vào bảng&quot; hoặc &quot;Thêm dòng nhập tay&quot; để nhập thông tin đăng ký.
                       </td>
                     </tr>
@@ -2186,7 +2312,32 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                       return (
                         <tr key={reg.id} className="hover:bg-slate-50/80 transition align-top">
                           <td className="p-2.5 text-center font-bold text-slate-600 pt-3.5">{idx + 1}</td>
-                          <td className="p-2 space-y-1">
+                          <td className="p-2">
+                            <select
+                              value={reg.phong}
+                              onChange={(e) => {
+                                const nextPhong = e.target.value;
+                                const matched = allPhongs.find((p) => p.phong === nextPhong);
+                                handleInlineUpdateReg(reg.id, {
+                                  phong: nextPhong,
+                                  ban: matched?.ban || reg.ban,
+                                  khoi: matched?.khoi || reg.khoi,
+                                  nhaCungCap: lookupNhaCungCap(nextPhong),
+                                });
+                              }}
+                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 focus:border-[#1a73e8] bg-white font-semibold text-slate-900 outline-none"
+                            >
+                              {!allPhongs.some((p) => p.phong === reg.phong) && reg.phong && (
+                                <option value={reg.phong}>{reg.phong}</option>
+                              )}
+                              {allPhongs.map((p) => (
+                                <option key={p.phong} value={p.phong}>
+                                  {p.phong}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="p-2">
                             <input
                               type="text"
                               value={reg.hoVaTen}
@@ -2194,12 +2345,14 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                               placeholder="Họ và tên ứng viên..."
                               className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-[#1a73e8] bg-white font-semibold text-slate-900 outline-none"
                             />
+                          </td>
+                          <td className="p-2">
                             <input
                               type="text"
                               value={reg.soCCCD}
                               onChange={(e) => handleInlineUpdateReg(reg.id, { soCCCD: e.target.value })}
                               placeholder="Số CCCD (12 số)..."
-                              className="w-full px-2.5 py-1 rounded-lg border border-slate-200 focus:border-[#1a73e8] bg-slate-50 font-mono text-[11px] text-slate-700 outline-none"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-[#1a73e8] bg-slate-50 font-mono text-xs text-slate-700 outline-none"
                             />
                           </td>
                           <td className="p-2">
@@ -2248,29 +2401,12 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                             />
                           </td>
                           <td className="p-2">
-                            <select
-                              value={reg.phong}
-                              onChange={(e) => {
-                                const nextPhong = e.target.value;
-                                const matched = allPhongs.find((p) => p.phong === nextPhong);
-                                handleInlineUpdateReg(reg.id, {
-                                  phong: nextPhong,
-                                  ban: matched?.ban || reg.ban,
-                                  khoi: matched?.khoi || reg.khoi,
-                                  nhaCungCap: lookupNhaCungCap(nextPhong),
-                                });
-                              }}
-                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 focus:border-[#1a73e8] bg-white font-semibold text-slate-900 outline-none"
-                            >
-                              {!allPhongs.some((p) => p.phong === reg.phong) && reg.phong && (
-                                <option value={reg.phong}>{reg.phong}</option>
-                              )}
-                              {allPhongs.map((p) => (
-                                <option key={p.phong} value={p.phong}>
-                                  {p.phong}
-                                </option>
-                              ))}
-                            </select>
+                            <input
+                              type="date"
+                              value={reg.ngayDangKyKham || ''}
+                              onChange={(e) => handleInlineUpdateReg(reg.id, { ngayDangKyKham: e.target.value })}
+                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 focus:border-[#1a73e8] bg-white font-mono text-slate-700 outline-none"
+                            />
                           </td>
                           <td className="p-2">
                             <input
@@ -2280,14 +2416,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                               onChange={(e) => handleInlineUpdateReg(reg.id, { nhaCungCap: e.target.value })}
                               placeholder="Nhà cung cấp khám..."
                               className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-[#1a73e8] bg-white font-medium text-teal-800 outline-none"
-                            />
-                          </td>
-                          <td className="p-2">
-                            <input
-                              type="date"
-                              value={reg.ngayDangKyKham || ''}
-                              onChange={(e) => handleInlineUpdateReg(reg.id, { ngayDangKyKham: e.target.value })}
-                              className="w-full px-2 py-1.5 rounded-lg border border-slate-200 focus:border-[#1a73e8] bg-white font-mono text-slate-700 outline-none"
                             />
                           </td>
                           <td className="p-2">
@@ -2496,41 +2624,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
       {healthSubTab === 'tuyen_dung_theo_doi' && (isAdmin || isMedicalStaff) && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5 animate-fade-in">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-200 pb-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Theo Dõi KSK Tuyển Dụng &amp; Tiến Độ Khám</h3>
-              <p className="text-xs text-slate-500">
-                Tra cứu lịch hẹn khám, cập nhật trạng thái KSK, phân loại nhận việc / không nhận việc và xuất danh sách Excel theo nhóm.
-              </p>
-            </div>
-
-            {/* Segmented Switcher: Active Tracking vs Separate Declined List */}
-            <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-xl shrink-0">
-              <button
-                type="button"
-                onClick={() => setTrackingViewMode('active')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  trackingViewMode === 'active'
-                    ? 'bg-white text-slate-900 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <CalendarCheck className="w-3.5 h-3.5 text-[#1a73e8]" />
-                <span>Theo dõi KSK ({activeTrackingRegs.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setTrackingViewMode('declined')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  trackingViewMode === 'declined'
-                    ? 'bg-white text-rose-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-rose-700'
-                }`}
-              >
-                <UserX className="w-3.5 h-3.5 text-rose-600" />
-                <span>Không nhận việc ({declinedTrackingRegs.length})</span>
-              </button>
-            </div>
+          <div className="border-b border-slate-200 pb-4">
+            <h3 className="text-base font-bold text-slate-900">Quản lý KSK tuyển dụng</h3>
           </div>
 
           {/* Search & Date Range Filters Bar */}
@@ -2547,10 +2642,11 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
             </div>
 
             <div>
+              <div className="text-[10px] font-semibold text-slate-500 mb-0.5">Tháng:</div>
               <select
                 value={trackingMonth}
                 onChange={(e) => setTrackingMonth(e.target.value)}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none font-medium"
+                className="w-2/3 px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none font-medium"
               >
                 <option value="ALL">Tất cả các tháng</option>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -2585,10 +2681,10 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                 onChange={(e) => setTrackingStatusFilter(e.target.value)}
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none font-medium mt-4"
               >
-                <option value="ALL">Tất cả trạng thái</option>
-                <option value="Chờ khám">Chờ khám</option>
-                <option value="Đã khám - Đạt">Đã khám - Đạt</option>
-                <option value="Đã khám - Không đạt">Đã khám - Không đạt</option>
+                <option value="ALL">Tất cả kết quả khám</option>
+                <option value="Chờ Khám">Chờ Khám</option>
+                <option value="Đã khám (Đạt)">Đã khám (Đạt)</option>
+                <option value="Đã khám (không đạt)">Đã khám (không đạt)</option>
                 <option value="Hoãn">Hoãn</option>
               </select>
             </div>
@@ -2596,63 +2692,149 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
           {/* Excel Export Toolbar for Recruitment Outcomes */}
           {(() => {
-            const countNhanViec = filterRecruitmentRecordsForExport(trackingPeriodRegs, 'da_kham_nhan_viec').length;
-            const countKhongNhanViec = filterRecruitmentRecordsForExport(trackingPeriodRegs, 'da_kham_khong_nhan_viec').length;
-            const countKhongDat = filterRecruitmentRecordsForExport(trackingPeriodRegs, 'khong_dat').length;
-            const countAllDeclined = filterRecruitmentRecordsForExport(trackingPeriodRegs, 'tat_ca_khong_nhan_viec').length;
+            const countNhanViec = filterRecruitmentRecordsForExport(filteredTrackingRegs, 'da_kham_nhan_viec').length;
+            const countKhongNhanViec = filterRecruitmentRecordsForExport(filteredTrackingRegs, 'da_kham_khong_nhan_viec').length;
+            const countKhongDat = filterRecruitmentRecordsForExport(filteredTrackingRegs, 'khong_dat').length;
+            const countAllDeclined = filterRecruitmentRecordsForExport(filteredTrackingRegs, 'tat_ca_khong_nhan_viec').length;
             return (
               <div className="flex flex-wrap items-center justify-between gap-2.5 px-4 py-3 rounded-xl bg-slate-50 border border-slate-200">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
                   <FileSpreadsheet className="w-4 h-4 text-[#1a73e8]" />
                   <span>Xuất danh sách kết quả KSK tuyển dụng (Excel):</span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleExportTrackingExcel('da_kham_nhan_viec')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0"
+                <div className="flex items-center gap-2">
+                  <select
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      if (val === 'summary') {
+                        void handleExportSummaryExcel();
+                      } else {
+                        void handleExportTrackingExcel(val as RecruitmentExportKind);
+                      }
+                      e.target.value = '';
+                    }}
+                    defaultValue=""
+                    className="px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 outline-none cursor-pointer focus:border-[#1a73e8]"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Đã khám &amp; Nhận việc ({countNhanViec})</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleExportTrackingExcel('da_kham_khong_nhan_viec')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Đã khám - Không nhận việc ({countKhongNhanViec})</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleExportTrackingExcel('khong_dat')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>KQ khám Không đạt ({countKhongDat})</span>
-                  </button>
-                  {trackingViewMode === 'declined' && (
-                    <button
-                      type="button"
-                      onClick={() => void handleExportTrackingExcel('tat_ca_khong_nhan_viec')}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Tất cả Không nhận việc ({countAllDeclined})</span>
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => void handleExportSummaryExcel()}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1a73e8] hover:bg-blue-700 text-white text-xs font-semibold transition cursor-pointer whitespace-nowrap shrink-0"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5" />
-                    <span>Xuất tổng hợp (3 Sheet)</span>
-                  </button>
+                    <option value="" disabled>
+                      -- Chọn danh mục xuất Excel --
+                    </option>
+                    <option value="da_kham_nhan_viec">
+                      Đã khám &amp; Nhận việc ({countNhanViec})
+                    </option>
+                    <option value="da_kham_khong_nhan_viec">
+                      Đã khám - Không nhận việc ({countKhongNhanViec})
+                    </option>
+                    <option value="khong_dat">
+                      KQ khám Không đạt ({countKhongDat})
+                    </option>
+                    {trackingViewMode === 'declined' && (
+                      <option value="tat_ca_khong_nhan_viec">
+                        Tất cả Không nhận việc ({countAllDeclined})
+                      </option>
+                    )}
+                    <option value="summary">
+                      Xuất tổng hợp (3 Sheet)
+                    </option>
+                  </select>
                 </div>
               </div>
             );
           })()}
+
+          {/* Summary Progress Bar */}
+          {(() => {
+            let daKham = 0;
+            let hoan = 0;
+            let choKham = 0;
+            const currentList = filteredTrackingRegs;
+            for (const reg of currentList) {
+              const st = reg.trangThai || 'Chờ Khám';
+              if (st.includes('Đạt') || st.includes('không đạt') || st.includes('Đã khám')) {
+                daKham += 1;
+              } else if (st === 'Hoãn') {
+                hoan += 1;
+              } else {
+                choKham += 1;
+              }
+            }
+            const total = currentList.length;
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-md bg-blue-100 text-[#1a73e8] flex items-center justify-center font-bold text-xs">👥</span>
+                    <span className="text-xs font-semibold text-slate-600">Tổng ứng viên</span>
+                  </div>
+                  <span className="text-base font-bold text-slate-900">{total}</span>
+                </div>
+
+                <div className="bg-teal-50/60 border border-teal-200/80 rounded-xl px-3.5 py-2.5 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-md bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-xs">✓</span>
+                    <span className="text-xs font-semibold text-teal-700">Đã khám</span>
+                  </div>
+                  <span className="text-base font-bold text-teal-900">{daKham}</span>
+                </div>
+
+                <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl px-3.5 py-2.5 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-md bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-xs">⏳</span>
+                    <span className="text-xs font-semibold text-amber-700">Hoãn</span>
+                  </div>
+                  <span className="text-base font-bold text-amber-900">{hoan}</span>
+                </div>
+
+                <div className="bg-blue-50/60 border border-blue-200/80 rounded-xl px-3.5 py-2.5 flex items-center justify-between shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">🕒</span>
+                    <span className="text-xs font-semibold text-blue-700">Chờ khám</span>
+                  </div>
+                  <span className="text-base font-bold text-blue-900">{choKham}</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Action Bar: Switcher & Save Button above table */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-xl shrink-0">
+              <button
+                type="button"
+                onClick={() => setTrackingViewMode('active')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  trackingViewMode === 'active'
+                    ? 'bg-white text-slate-900 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <CalendarCheck className="w-3.5 h-3.5 text-[#1a73e8]" />
+                <span>Theo dõi KSK ({activeTrackingRegs.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTrackingViewMode('declined')}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
+                  trackingViewMode === 'declined'
+                    ? 'bg-white text-rose-700 shadow-2xs'
+                    : 'text-slate-600 hover:text-rose-700'
+                }`}
+              >
+                <UserX className="w-3.5 h-3.5 text-rose-600" />
+                <span>Không nhận việc ({declinedTrackingRegs.length})</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveStep2TrackingResults}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-sm transition cursor-pointer"
+            >
+              <Check className="w-4 h-4" />
+              <span>Lưu kết quả khám</span>
+            </button>
+          </div>
 
           {trackingViewMode === 'active' ? (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -2665,15 +2847,14 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                     <th className="p-3">Nhà cung cấp khám</th>
                     <th className="p-3 text-center">Ngày hẹn khám</th>
                     <th className="p-3 text-center">Trạng thái KSK</th>
-                    <th className="p-3 text-center">Cập nhật nhanh trạng thái</th>
-                    <th className="p-3 text-center">Tiếp nhận / Không nhận việc</th>
+                    <th className="p-3 text-center min-w-[160px]">Cập nhật Kết quả</th>
                     <th className="p-3 text-center w-24">Xóa</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {filteredTrackingRegs.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-8 text-center text-slate-500">
+                      <td colSpan={8} className="p-8 text-center text-slate-500">
                         Không tìm thấy lịch khám tuyển dụng phù hợp với điều kiện tìm kiếm.
                       </td>
                     </tr>
@@ -2707,8 +2888,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                             const currentStatus = reg.trangThai || 'Chờ khám';
                             return (
                               <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                currentStatus === 'Đã khám - Đạt' ? 'bg-teal-100 text-teal-800' :
-                                currentStatus === 'Đã khám - Không đạt' ? 'bg-rose-100 text-rose-800' :
+                                currentStatus.includes('Đạt') && !currentStatus.includes('không') ? 'bg-teal-100 text-teal-800' :
+                                currentStatus.includes('không đạt') || currentStatus.includes('Không đạt') ? 'bg-rose-100 text-rose-800' :
                                 currentStatus === 'Hoãn' ? 'bg-amber-100 text-amber-800' :
                                 'bg-blue-100 text-blue-800'
                               }`}>
@@ -2719,53 +2900,18 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                         </td>
                         <td className="p-3 text-center">
                           <select
-                            value={reg.trangThai || 'Chờ khám'}
+                            value={reg.trangThai || 'Chờ Khám'}
                             onChange={(e) => {
-                              const val = e.target.value;
-                              setRecruitmentRegs(recruitmentRegs.map(r => r.id === reg.id ? {...r, trangThai: val} : r));
-                              showToast('success', `Đã cập nhật trạng thái của ${reg.hoVaTen} thành ${val}!`);
+                              handleUpdateTrackingItem(reg.id, { trangThai: e.target.value });
+                              showToast('success', `Đã cập nhật kết quả KSK thành ${e.target.value}!`);
                             }}
-                            className="px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
+                            className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                           >
-                            <option value="Chờ khám">Chờ khám</option>
-                            <option value="Đã khám - Đạt">Đã khám - Đạt</option>
-                            <option value="Đã khám - Không đạt">Đã khám - Không đạt</option>
+                            <option value="Chờ Khám">Chờ Khám</option>
+                            <option value="Đã khám (Đạt)">Đã khám (Đạt)</option>
+                            <option value="Đã khám (không đạt)">Đã khám (không đạt)</option>
                             <option value="Hoãn">Hoãn</option>
                           </select>
-                        </td>
-                        <td className="p-3 text-center">
-                          <div className="inline-flex flex-wrap items-center justify-center gap-1.5">
-                            {!isMedicalStaff && (
-                              <button
-                                type="button"
-                                onClick={() => handleMarkOfferDecision(reg, 'Đã nhận việc')}
-                                className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg font-bold text-[11px] shadow-2xs transition cursor-pointer whitespace-nowrap shrink-0 ${
-                                  reg.trangThaiNhanViec === 'Đã nhận việc'
-                                    ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                                    : 'bg-teal-600 hover:bg-teal-700 text-white'
-                                }`}
-                                title="Đánh dấu đã nhận việc & chuyển thông tin ứng viên sang Đăng ký nhân viên mới"
-                              >
-                                {reg.trangThaiNhanViec === 'Đã nhận việc' ? (
-                                  <UserCheck className="w-3.5 h-3.5" />
-                                ) : (
-                                  <UserPlus className="w-3.5 h-3.5" />
-                                )}
-                                <span>
-                                  {reg.trangThaiNhanViec === 'Đã nhận việc' ? 'Đã nhận việc / ĐK NV' : 'Đăng Ký NV Mới'}
-                                </span>
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleMarkOfferDecision(reg, 'Không nhận việc')}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] transition cursor-pointer whitespace-nowrap shrink-0"
-                              title="Chuyển ứng viên sang danh sách Không nhận việc để quản lý riêng"
-                            >
-                              <UserX className="w-3.5 h-3.5" />
-                              <span>Không nhận việc</span>
-                            </button>
-                          </div>
                         </td>
                         <td className="p-3 text-center">
                           {confirmDeleteTrackingRegId === reg.id ? (
@@ -2949,7 +3095,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-4">
             <div>
               <h3 className="text-base font-bold text-slate-900">Quản Lý Danh Sách Nhà Cung Cấp Khám Sức Khỏe (Bệnh Viện / Phòng Khám)</h3>
-              <p className="text-xs text-slate-500">Quản lý thời hạn hợp đồng, thông tin liên hệ phụ trách (tên, SĐT, email) và dịch vụ y tế đối tác.</p>
+              <p className="text-xs text-slate-500">Quản lý thời hạn hợp đồng, thông tin liên hệ phụ trách (tên, SĐT, email) và đối tác y tế.</p>
             </div>
             {isAdmin && (
               <button
@@ -2963,69 +3109,86 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {providers.map((prov) => (
-              <div key={prov.id} className="bg-white rounded-2xl border border-slate-200 p-5 space-y-3 shadow-2xs flex flex-col justify-between">
-                <div className="space-y-2.5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                        <Hospital className="w-4 h-4 text-[#1a73e8]" />
-                        {prov.tenNhaCungCap}
-                      </h4>
-                      <p className="text-[11px] text-slate-500 mt-0.5">{prov.diaChi}</p>
-                    </div>
-                    {isAdmin && (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenProviderModal(prov)}
-                          className="p-1.5 rounded hover:bg-amber-50 text-slate-500 hover:text-amber-600 cursor-pointer"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteProvider(prov.id)}
-                          className="p-1.5 rounded hover:bg-rose-50 text-slate-500 hover:text-rose-600 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="bg-amber-50/80 border border-amber-200/80 rounded-lg p-2 text-[11px] text-amber-900 font-medium">
-                    <strong>Hạn hợp đồng:</strong> {prov.thoiHanHopDong || 'Chưa cập nhật'}
-                  </div>
-
-                  <div className="space-y-1 text-xs pt-1 border-t border-slate-100 text-slate-700">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-500">Phụ trách:</span>
-                      <span>{prov.nguoiPhuTrach || '---'}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Phone className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="font-mono">{prov.soDienThoai || '---'}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-blue-600 truncate">{prov.email || '---'}</span>
-                    </div>
-                  </div>
-
-                  <div className="text-[11px] text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200">
-                    <strong>Thế mạnh:</strong> {prov.dichVuTheManh || '---'}
-                  </div>
-                </div>
-
-                {prov.ghiChu && (
-                  <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-500 italic">
-                    Ghi chú: {prov.ghiChu}
-                  </div>
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full border-collapse text-left text-xs">
+              <thead className="bg-[#1e3c72] text-white">
+                <tr>
+                  <th className="py-3 px-3 font-bold text-center border-r border-blue-800/60 w-12">STT</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[200px]">Tên Bệnh viện / Phòng khám</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[120px]">Hạn hợp đồng</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[140px]">Người phụ trách</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[120px]">Số điện thoại</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[160px]">Email</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[180px]">Ghi chú</th>
+                  {isAdmin && <th className="py-3 px-3 font-bold text-center min-w-[90px]">Thao tác</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {providers.length === 0 ? (
+                  <tr>
+                    <td colSpan={isAdmin ? 8 : 7} className="py-8 text-center text-slate-400">
+                      Chưa có nhà cung cấp nào được thêm.
+                    </td>
+                  </tr>
+                ) : (
+                  providers.map((prov, index) => (
+                    <tr key={prov.id} className="hover:bg-slate-50 transition">
+                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-500 border-r border-slate-100">
+                        {index + 1}
+                      </td>
+                      <td className="py-3 px-3 font-bold text-slate-900 border-r border-slate-100">
+                        <div className="flex items-center gap-2">
+                          <Hospital className="w-4 h-4 text-[#1a73e8] shrink-0" />
+                          <div>
+                            <div>{prov.tenNhaCungCap}</div>
+                            <div className="text-[11px] font-normal text-slate-500 mt-0.5">{prov.diaChi || '—'}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 border-r border-slate-100">
+                        <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-900 font-mono text-[11px] font-semibold border border-amber-200">
+                          {prov.thoiHanHopDong || '—'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-slate-700 font-medium border-r border-slate-100">
+                        {prov.nguoiPhuTrach || '—'}
+                      </td>
+                      <td className="py-3 px-3 font-mono text-slate-700 border-r border-slate-100">
+                        {prov.soDienThoai || '—'}
+                      </td>
+                      <td className="py-3 px-3 text-blue-600 border-r border-slate-100 truncate max-w-[180px]">
+                        {prov.email || '—'}
+                      </td>
+                      <td className="py-3 px-3 text-slate-600 text-[11px] border-r border-slate-100">
+                        {prov.ghiChu || '—'}
+                      </td>
+                      {isAdmin && (
+                        <td className="py-3 px-3 text-center whitespace-nowrap">
+                          <div className="inline-flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenProviderModal(prov)}
+                              className="p-1.5 rounded-lg hover:bg-amber-50 text-slate-500 hover:text-amber-600 transition cursor-pointer"
+                              title="Chỉnh sửa"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteProvider(prov.id)}
+                              className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                              title="Xóa"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))
                 )}
-              </div>
-            ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -4628,10 +4791,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                   <input type="email" value={provEmail} onChange={(e) => setProvEmail(e.target.value)} placeholder="VD: contact@clinic.vn" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none" />
                 </div>
               </div>
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Dịch vụ thế mạnh / Gói khám</label>
-                <input type="text" value={provDichVu} onChange={(e) => setProvDichVu(e.target.value)} placeholder="VD: Khám tuyển dụng nhanh, XN máu, X-Quang" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none" />
-              </div>
+
               <div>
                 <label className="block font-bold text-slate-700 mb-1">Ghi chú</label>
                 <textarea rows={2} value={provGhiChu} onChange={(e) => setProvGhiChu(e.target.value)} placeholder="VD: Đối tác chiến lược tại khu vực..." className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none" />
@@ -4803,6 +4963,43 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                 <button type="submit" className="px-5 py-2 bg-[#1a73e8] hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs cursor-pointer">Lưu Tiêu Chuẩn</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {duplicateWarningModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Cảnh Báo Trùng Lặp CCCD</h3>
+                <p className="text-xs text-slate-500">Phát hiện hồ sơ trùng thông tin định danh.</p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-950 text-xs font-semibold">
+              &ldquo;{duplicateWarningModal.message}&rdquo;
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDuplicateWarningModal(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold cursor-pointer transition"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={() => duplicateWarningModal.onContinue()}
+                className="px-5 py-2 rounded-xl bg-[#1a73e8] hover:bg-blue-700 text-white text-xs font-bold shadow-xs cursor-pointer transition"
+              >
+                Tiếp tục
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -454,7 +454,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                 <td className="p-2.5 text-center">
                   <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px]">Toàn quyền</span>
                 </td>
-                <td className="p-2.5 text-slate-500 text-[11px]">Quản trị bảng lương, cơ cấu tổ chức, hộp thư MailApp và cấp phát tài khoản.</td>
+                <td className="p-2.5 text-slate-500 text-[11px]">Quản trị bảng lương, cơ cấu tổ chức và cấp phát tài khoản.</td>
               </tr>
             </tbody>
           </table>
