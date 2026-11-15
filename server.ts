@@ -92,7 +92,7 @@ interface SystemAccount extends Account {
   lastLogin?: string;
 }
 
-// Cơ sở dữ liệu tài khoản người dùng được khởi tạo và lưu trữ trên hệ thống
+// Cơ sở dữ liệu tài khoản người dùng được khởi tạo và lưu trữ trên hệ thống (Chỉ giữ tài khoản admin mặc định)
 let userAccounts: SystemAccount[] = [
   {
     id: "usr_admin_01",
@@ -101,39 +101,34 @@ let userAccounts: SystemAccount[] = [
     email: "Happyendpu@gmail.com".toLowerCase(),
     fullName: "Quản Trị Viên Hệ Thống",
     role: "admin",
+    hrmRole: "admin",
     status: "active",
     createdAt: "2026-09-01T08:00:00.000Z",
   },
-  {
-    id: "usr_admin_thang",
-    username: "tranvanthang",
-    password: "admin123",
-    email: "tranvanthang@congty.com".toLowerCase(),
-    fullName: "Trần Văn Thắng (Quản Trị Viên)",
-    role: "admin",
-    status: "active",
-    createdAt: "2026-09-05T08:00:00.000Z",
-  },
-  {
-    id: "usr_recruiter_01",
-    username: "tuyendung",
-    password: "tuyendung123",
-    email: "tuyendung@congty.com".toLowerCase(),
-    fullName: "Nguyễn Thu Hà (Tuyển Dụng)",
-    role: "employee",
-    status: "active",
-    createdAt: "2026-09-10T08:00:00.000Z",
-  },
-  {
-    id: "usr_recruiter_02",
-    username: "hr_mai",
-    password: "123456",
-    email: "mai.tran@congty.com".toLowerCase(),
-    fullName: "Trần Thị Mai (Chuyên viên Nhân sự)",
-    role: "employee",
-    status: "active",
-    createdAt: "2026-09-15T08:00:00.000Z",
-  },
+  ...(process.env.NODE_ENV === "test"
+    ? ([
+        {
+          id: "usr_recruiter_01",
+          username: "tuyendung",
+          password: "tuyendung123",
+          email: "tuyendung@congty.com".toLowerCase(),
+          fullName: "Nguyễn Thu Hà (Tuyển Dụng)",
+          role: "employee",
+          status: "active",
+          createdAt: "2026-09-10T08:00:00.000Z",
+        },
+        {
+          id: "usr_recruiter_02",
+          username: "hr_mai",
+          password: "123456",
+          email: "mai.tran@congty.com".toLowerCase(),
+          fullName: "Trần Thị Mai (Chuyên viên Nhân sự)",
+          role: "employee",
+          status: "active",
+          createdAt: "2026-09-15T08:00:00.000Z",
+        },
+      ] as SystemAccount[])
+    : []),
 ];
 let cloudAccountsEnabled=false;
 const syncAccounts=async()=>{

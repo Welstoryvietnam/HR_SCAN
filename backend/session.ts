@@ -1,7 +1,7 @@
-import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { firebaseCredentials, firestoreConfigured } from './recordStore.js';
 
-const localSecret = randomBytes(32);
+const localSecret = Buffer.from(process.env.SESSION_SECRET || 'welstory-hrm-local-dev-secret-2026', 'utf8');
 const key = () => firestoreConfigured() ? firebaseCredentials().privateKey : localSecret;
 export interface SessionUser { id: string; email: string; role: string; }
 
