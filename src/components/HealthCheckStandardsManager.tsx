@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserProfile, OptimizedImageFile, EmployeeDocumentGroup } from '../types';
+import { UserProfile, OptimizedImageFile, EmployeeDocumentGroup, KhoiNode } from '../types';
 import {
   HEALTH_CHECK_ITEMS,
   HEALTH_CHECK_GROUP_LABELS,
@@ -15,7 +15,7 @@ import { safeFetchJson } from '../utils/apiHelper';
 import { optimizeImageFile } from '../utils/imageOptimizer';
 import { extractOCRGroup } from '../utils/ocrClient';
 import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
-import { DEFAULT_ORGANIZATION_HIERARCHY } from '../data/organizationHierarchy';
+import { DEFAULT_ORGANIZATION_HIERARCHY as DEFAULT_ORGANIZATION_HIERARCHY_FALLBACK } from '../data/organizationHierarchy';
 import { RecruitmentHealthDashboard } from './RecruitmentHealthDashboard';
 import {
   exportRecruitmentHealthExcel,
@@ -118,6 +118,7 @@ interface HealthCheckStandardsManagerProps {
   activeSubTab?: HealthSubTab;
   onSubTabChange?: (tab: HealthSubTab) => void;
   onCountsChange?: (counts: { regs: number; standards: number; providers: number }) => void;
+  organizationHierarchy?: KhoiNode[];
 }
 
 const PHAN_LOAI_OPTIONS = ['Bếp Samsung', 'Bếp ngoài', 'OFFICE'];
@@ -165,7 +166,9 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   activeSubTab,
   onSubTabChange,
   onCountsChange,
+  organizationHierarchy,
 }) => {
+  const DEFAULT_ORGANIZATION_HIERARCHY = organizationHierarchy && organizationHierarchy.length > 0 ? organizationHierarchy : DEFAULT_ORGANIZATION_HIERARCHY_FALLBACK;
   const isAdmin = currentUser.role === 'admin';
   const isMedicalStaff = !isAdmin && currentUser.hrmRole === 'nhan_vien_y_te';
   const isRecruiter = !isAdmin && !isMedicalStaff;

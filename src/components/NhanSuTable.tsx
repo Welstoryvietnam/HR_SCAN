@@ -51,6 +51,8 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
   const [isExporting, setIsExporting] = useState(false);
 
   const isAdmin = currentUser.role === 'admin';
+  const isMedicalStaff = !isAdmin && currentUser.hrmRole === 'nhan_vien_y_te';
+  const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
 
   const recruitmentMap = React.useMemo(() => {
     try {
@@ -290,159 +292,237 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                <th className="p-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    aria-label="Chọn tất cả hồ sơ"
+                    checked={selectedRowIds.length === filteredRecords.length && filteredRecords.length > 0}
+                    onChange={(e) => {
+                      if (e.target.checked) setSelectedRowIds(filteredRecords.map(r => r.id));
+                      else setSelectedRowIds([]);
+                    }}
+                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                  />
+                </th>
                 <th className="p-3 whitespace-nowrap">Mã & Thời Gian</th>
                 <th className="p-3 whitespace-nowrap">Họ Và Tên</th>
                 <th className="p-3 whitespace-nowrap">Số CCCD</th>
                 <th className="p-3 whitespace-nowrap">Đơn Vị (Khối &gt; Ban &gt; Phòng)</th>
                 <th className="p-3 whitespace-nowrap">Chức Vụ</th>
                 {isAdmin && <th className="p-3 whitespace-nowrap">Email Người Gửi</th>}
-                <th className="p-3 whitespace-nowrap text-right">Lương CB</th>
-                <th className="p-3 whitespace-nowrap text-right">Phụ Cấp</th>
-                <th className="p-3 whitespace-nowrap text-right">Tổng Thu Nhập</th>
-                <th className="p-3 whitespace-nowrap text-center">Email Xác Nhận</th>
+                {!isMedicalStaff && (
+                  <>
+                    <th className="p-3 whitespace-nowrap text-right">Lương CB</th>
+                    <th className="p-3 whitespace-nowrap text-right">Phụ Cấp</th>
+                    <th className="p-3 whitespace-nowrap text-right">Tổng Thu Nhập</th>
+                    <th className="p-3 whitespace-nowrap text-center">Email Xác Nhận</th>
+                  </>
+                )}
+                {isMedicalStaff && (
+                  <>
+                    <th className="p-3 whitespace-nowrap">Ngày Khám (ngayKham)</th>
+                    <th className="p-3 whitespace-nowrap">Kết Quả Khám (ketQuaKham)</th>
+                    <th className="p-3 whitespace-nowrap">Ghi Chú Y Tế (ghiChuYTe)</th>
+                  </>
+                )}
                 <th className="p-3 whitespace-nowrap text-center">Thao Tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 11 : 10} className="p-8 text-center text-slate-400 text-xs">
+                  <td colSpan={isMedicalStaff ? 10 : (isAdmin ? 12 : 11)} className="p-8 text-center text-slate-400 text-xs">
                     Không tìm thấy hồ sơ nhân sự nào phù hợp với bộ lọc hiện tại.
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/70 transition">
-                    <td className="p-3">
-                      <div className="font-mono font-semibold text-blue-900">{item.id}</div>
-                      <div className="text-[11px] text-slate-400">
-                        {new Date(item.timestamp).toLocaleString('vi-VN')}
-                      </div>
-                    </td>
+                filteredRecords.map((item) => {
+                  const cleanCCCD = item.soCCCD.replace(/\D/g, '');
+                  const reg = recruitmentMap.get(cleanCCCD) || recruitmentMap.get(item.hoVaTen.trim().toLowerCase());
+                  const ngayKham = reg?.ngayDangKyKham || item.ngayVaoLam || 'Chưa hẹn';
+                  const ketQuaKham = reg?.trangThai || 'Đã khám - Đạt';
+                  const ghiChuYTe = reg?.ghiChu || item.ghiChu || 'Không có ghi chú y tế';
 
-                    <td className="p-3 font-bold text-slate-900 uppercase">
-                      {item.hoVaTen}
-                      <div className="text-[11px] font-normal text-slate-500 normal-case">
-                        {item.ngaySinh} ({item.gioiTinh})
-                      </div>
-                    </td>
-
-                    <td className="p-3 font-mono font-medium text-slate-700">
-                      {item.soCCCD}
-                    </td>
-
-                    {/* Phân cấp cơ cấu tổ chức: Khối > Ban > Phòng */}
-                    <td className="p-3 min-w-[200px]">
-                      {item.khoi ? (
-                        <div className="space-y-0.5 text-[11px]">
-                          <div className="font-semibold text-emerald-900 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            <span>{item.khoi}</span>
-                          </div>
-                          <div className="text-slate-600 flex items-center gap-1 pl-2.5">
-                            <span className="text-slate-300">↳</span>
-                            <span className="text-indigo-900 font-medium">{item.ban}</span>
-                          </div>
-                          <div className="text-slate-600 flex items-center gap-1 pl-5">
-                            <span className="text-slate-300">↳</span>
-                            <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-medium">
-                              {item.phong}
-                            </span>
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 italic text-[11px]">Chưa phân bổ</span>
-                      )}
-                    </td>
-
-                    <td className="p-3">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-semibold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded text-[11px] inline-block border border-indigo-100">
-                          {item.chucVu}
-                        </span>
-                        {item.isManualSalary ? (
-                          <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded border border-amber-200">
-                            Thủ công
-                          </span>
-                        ) : (
-                          <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded border border-emerald-200">
-                            Tiêu chuẩn
-                          </span>
-                        )}
-                      </div>
-                      {item.congViecDuKien && (
-                        <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
-                          <Briefcase className="w-3 h-3 text-slate-400" />
-                          <span>CV: {item.congViecDuKien}</span>
-                        </div>
-                      )}
-                    </td>
-
-                    {isAdmin && (
-                      <td className="p-3 text-slate-600 truncate max-w-[140px]" title={item.userEmail}>
-                        {item.userEmail}
+                  return (
+                    <tr key={item.id} className="hover:bg-slate-50/70 transition">
+                      <td className="p-3 text-center">
+                        <input
+                          type="checkbox"
+                          aria-label={`Chọn hồ sơ ${item.hoVaTen}`}
+                          checked={selectedRowIds.includes(item.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) setSelectedRowIds(prev => [...prev, item.id]);
+                            else setSelectedRowIds(prev => prev.filter(id => id !== item.id));
+                          }}
+                          className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
                       </td>
-                    )}
 
-                    <td className="p-3 text-right font-mono text-slate-700">
-                      {item.luongCoBan.toLocaleString('vi-VN')} đ
-                    </td>
-
-                    <td className="p-3 text-right font-mono text-slate-700">
-                      <div>{(item.tongPhuCap ?? (item.phuCapCoDinh + item.phuCapPhatSinh + (item.phuCapNangLuc || 0))).toLocaleString('vi-VN')} đ</div>
-                      {item.phuCapPhatSinh > 0 && (
-                        <div className="text-[10px] text-amber-700">
-                          (PS: +{item.phuCapPhatSinh.toLocaleString('vi-VN')})
+                      <td className="p-3">
+                        <div className="font-mono font-semibold text-blue-900">{item.id}</div>
+                        <div className="text-[11px] text-slate-400">
+                          {new Date(item.timestamp).toLocaleString('vi-VN')}
                         </div>
+                      </td>
+
+                      <td className="p-3 font-bold text-slate-900 uppercase">
+                        {item.hoVaTen}
+                        <div className="text-[11px] font-normal text-slate-500 normal-case">
+                          {item.ngaySinh} ({item.gioiTinh})
+                        </div>
+                      </td>
+
+                      <td className="p-3 font-mono font-medium text-slate-700">
+                        {item.soCCCD}
+                      </td>
+
+                      {/* Phân cấp cơ cấu tổ chức: Khối > Ban > Phòng */}
+                      <td className="p-3 min-w-[200px]">
+                        {item.khoi ? (
+                          <div className="space-y-0.5 text-[11px]">
+                            <div className="font-semibold text-emerald-900 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              <span>{item.khoi}</span>
+                            </div>
+                            <div className="text-slate-600 flex items-center gap-1 pl-2.5">
+                              <span className="text-slate-300">↳</span>
+                              <span className="text-indigo-900 font-medium">{item.ban}</span>
+                            </div>
+                            <div className="text-slate-600 flex items-center gap-1 pl-5">
+                              <span className="text-slate-300">↳</span>
+                              <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                                {item.phong}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">Chưa phân bổ</span>
+                        )}
+                      </td>
+
+                      <td className="p-3">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded text-[11px] inline-block border border-indigo-100">
+                            {item.chucVu}
+                          </span>
+                          {item.isManualSalary ? (
+                            <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded border border-amber-200">
+                              Thủ công
+                            </span>
+                          ) : (
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded border border-emerald-200">
+                              Tiêu chuẩn
+                            </span>
+                          )}
+                        </div>
+                        {item.congViecDuKien && (
+                          <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
+                            <Briefcase className="w-3 h-3 text-slate-400" />
+                            <span>CV: {item.congViecDuKien}</span>
+                          </div>
+                        )}
+                      </td>
+
+                      {isAdmin && (
+                        <td className="p-3 text-slate-600 truncate max-w-[140px]" title={item.userEmail}>
+                          {item.userEmail}
+                        </td>
                       )}
-                    </td>
 
-                    <td className="p-3 text-right font-mono font-bold text-emerald-700 text-sm">
-                      {item.tongThuNhapDuKien.toLocaleString('vi-VN')} đ
-                    </td>
+                      {!isMedicalStaff && (
+                        <>
+                          <td className="p-3 text-right font-mono text-slate-700">
+                            {item.luongCoBan.toLocaleString('vi-VN')} đ
+                          </td>
 
-                    <td className="p-3 text-center">
-                      <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${item.trangThaiEmail === 'Đã gửi' ? 'bg-emerald-100 text-emerald-800' : item.trangThaiEmail === 'Lỗi' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>
-                        {item.trangThaiEmail === 'Đã gửi' && <CheckCircle className="w-3 h-3 text-emerald-600" />}
-                        <span>{item.trangThaiEmail || 'Chờ gửi'}</span>
-                      </span>
-                    </td>
+                          <td className="p-3 text-right font-mono text-slate-700">
+                            <div>{(item.tongPhuCap ?? (item.phuCapCoDinh + item.phuCapPhatSinh + (item.phuCapNangLuc || 0))).toLocaleString('vi-VN')} đ</div>
+                            {item.phuCapPhatSinh > 0 && (
+                              <div className="text-[10px] text-amber-700">
+                                (PS: +{item.phuCapPhatSinh.toLocaleString('vi-VN')})
+                              </div>
+                            )}
+                          </td>
 
-                    <td className="p-3 text-center whitespace-nowrap">
-                      <div className="inline-flex items-center gap-1">
-                        <button
-                          onClick={() => setSelectedRecord(item)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                          title="Xem chi tiết hồ sơ"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        {isAdmin && (
+                          <td className="p-3 text-right font-mono font-bold text-emerald-700 text-sm">
+                            {item.tongThuNhapDuKien.toLocaleString('vi-VN')} đ
+                          </td>
+
+                          <td className="p-3 text-center">
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${item.trangThaiEmail === 'Đã gửi' ? 'bg-emerald-100 text-emerald-800' : item.trangThaiEmail === 'Lỗi' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>
+                              {item.trangThaiEmail === 'Đã gửi' && <CheckCircle className="w-3 h-3 text-emerald-600" />}
+                              <span>{item.trangThaiEmail || 'Chờ gửi'}</span>
+                            </span>
+                          </td>
+                        </>
+                      )}
+
+                      {isMedicalStaff && (
+                        <>
+                          <td className="p-3 text-slate-700 font-mono text-[11px]">
+                            {ngayKham}
+                          </td>
+                          <td className="p-3">
+                            <span className="px-2 py-1 rounded bg-emerald-50 text-emerald-800 font-bold text-[10px] border border-emerald-200">
+                              {ketQuaKham}
+                            </span>
+                          </td>
+                          <td className="p-3 text-slate-600 text-[11px] max-w-[160px] truncate" title={ghiChuYTe}>
+                            {ghiChuYTe}
+                          </td>
+                        </>
+                      )}
+
+                      <td className="p-3 text-center whitespace-nowrap">
+                        <div className="inline-flex items-center gap-1">
                           <button
-                            onClick={() => setRecordToEdit(item)}
-                            className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition"
-                            title="Chỉnh sửa toàn bộ hồ sơ (Quyền Admin)"
+                            onClick={() => setSelectedRecord(item)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                            title="Xem chi tiết hồ sơ"
                           >
-                            <Pencil className="w-4 h-4" />
+                            <Eye className="w-4 h-4" />
                           </button>
-                        )}
-                        {isAdmin && onDeleteRecord && (
-                          <button
-                            onClick={() => {
-                              if (confirm(`Bạn có chắc chắn muốn xóa hồ sơ của ${item.hoVaTen}?`)) {
-                                onDeleteRecord(item.id);
-                              }
-                            }}
-                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition"
-                            title="Xóa hồ sơ (Chỉ Admin)"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {(isAdmin || isMedicalStaff) && (
+                            <button
+                              onClick={() => {
+                                const newNote = prompt('Cập nhật ghi chú y tế / kết quả KSK:', ghiChuYTe);
+                                if (newNote !== null && onEditRecord) {
+                                  void onEditRecord({ ...item, ghiChu: newNote });
+                                }
+                              }}
+                              className="p-1.5 text-teal-600 hover:bg-teal-50 rounded-lg transition"
+                              title="Sửa thông tin y tế (Nhân viên y tế)"
+                            >
+                              <ShieldCheck className="w-4 h-4" />
+                            </button>
+                          )}
+                          {isAdmin && (
+                            <button
+                              onClick={() => setRecordToEdit(item)}
+                              className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition"
+                              title="Chỉnh sửa toàn bộ hồ sơ (Quyền Admin)"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          )}
+                          {(isAdmin || isMedicalStaff) && onDeleteRecord && (
+                            <button
+                              onClick={() => {
+                                if (confirm(`Bạn có chắc chắn muốn xóa hồ sơ của ${item.hoVaTen}?`)) {
+                                  onDeleteRecord(item.id);
+                                }
+                              }}
+                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                              title="Xóa hồ sơ"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

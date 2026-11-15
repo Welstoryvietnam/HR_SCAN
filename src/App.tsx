@@ -321,14 +321,42 @@ export default function App() {
       }
       setOrganizationHierarchy(newHierarchy);
       localStorage.setItem('hr_org_hierarchy', JSON.stringify(newHierarchy));
-      if (res.data.tieuChuanKksList) {
-        localStorage.setItem('hr_health_check_standards', JSON.stringify(res.data.tieuChuanKksList));
-      }
-      showNotification('success', 'Đã lưu cơ cấu tổ chức và tự động đồng bộ danh sách phòng khám KSK định kỳ thành công!');
+      
+      const kskList = res.data.tieuChuanKksList || newHierarchy.flatMap(k => k.bans.flatMap(b => b.phongs)).map((p, idx) => ({
+        id: `KSK_SYNC_${idx}`,
+        stt: idx + 1,
+        phong: p.name,
+        thoiHan: '6 tháng',
+        phanLoai: p.name.includes('OFFICE') ? 'OFFICE' : 'Bếp ngoài',
+        mucDichKham: 'ĐK',
+        nhaCungCap: 'Hữu Phúc',
+        ghiChu: 'Tự động đồng bộ từ Cơ Cấu Tổ Chức',
+        khuVuc: 'Bắc Ninh',
+        items: {},
+        capNhatLuc: new Date().toISOString()
+      }));
+      localStorage.setItem('hr_health_check_standards', JSON.stringify(kskList));
+      window.dispatchEvent(new Event('storage'));
+
+      showNotification('success', 'Đã lưu cơ cấu tổ chức và đồng bộ tức thì sang Đăng ký nhân viên mới & Đăng ký khám sức khỏe!');
     } catch (err) {
       showNotification('error', (err as Error).message);
       setOrganizationHierarchy(newHierarchy);
       localStorage.setItem('hr_org_hierarchy', JSON.stringify(newHierarchy));
+      localStorage.setItem('hr_health_check_standards', JSON.stringify(newHierarchy.flatMap(k => k.bans.flatMap(b => b.phongs)).map((p, idx) => ({
+        id: `KSK_SYNC_${idx}`,
+        stt: idx + 1,
+        phong: p.name,
+        thoiHan: '6 tháng',
+        phanLoai: p.name.includes('OFFICE') ? 'OFFICE' : 'Bếp ngoài',
+        mucDichKham: 'ĐK',
+        nhaCungCap: 'Hữu Phúc',
+        ghiChu: 'Tự động đồng bộ từ Cơ Cấu Tổ Chức',
+        khuVuc: 'Bắc Ninh',
+        items: {},
+        capNhatLuc: new Date().toISOString()
+      }))));
+      window.dispatchEvent(new Event('storage'));
     }
   };
 
@@ -946,6 +974,7 @@ export default function App() {
               activeSubTab={healthSubTab}
               onSubTabChange={setHealthSubTab}
               onCountsChange={setHealthCounts}
+              organizationHierarchy={organizationHierarchy}
             />
           </div>
         )}
