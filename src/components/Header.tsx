@@ -40,16 +40,18 @@ export const Header: React.FC<HeaderProps> = ({
             {sidebarCollapsed ? <PanelLeftOpen className="w-5 h-5" /> : <PanelLeftClose className="w-5 h-5" />}
           </button>
 
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-700 to-indigo-600 flex items-center justify-center text-white shadow-sm font-bold text-xs">
-            WELV
-          </div>
+          <img
+            src="/assets/aistudio/______________Vietnam_CMYK__439d9ecc.png"
+            alt="Welstory Vietnam"
+            className="h-8 w-auto shrink-0 object-contain"
+          />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight">
-                WELV HR Workspace
+                HR Workspace
               </h1>
               <span className="bg-emerald-100 text-emerald-800 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                HR
+                WELV
               </span>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NhanSuRecord, UserProfile, TieuChuanLuongItem } from '../types';
 import { exportBienDongNhanSuExcel } from '../utils/excelExport';
 import { exportHouseholdAppendix } from '../utils/householdExport';
@@ -11,19 +11,18 @@ import {
   Filter,
   ShieldCheck,
   User,
-  Calendar,
-  DollarSign,
   Users,
   CheckCircle,
-  FileSpreadsheet,
   X,
-  Building,
-  Mail,
   Network,
   ChevronRight,
-  Layers,
   Briefcase,
-  Pencil
+  Pencil,
+  Lock,
+  Stethoscope,
+  Settings2,
+  CheckSquare,
+  Save
 } from 'lucide-react';
 
 interface NhanSuTableProps {
@@ -34,6 +33,64 @@ interface NhanSuTableProps {
   onEditRecord?: (updatedRecord: NhanSuRecord) => Promise<boolean>;
   tieuChuanLuongList?: TieuChuanLuongItem[];
 }
+
+interface RoleFeaturePermissions {
+  nhan_vien_y_te: {
+    viewIdentity: boolean;
+    viewUnit: boolean;
+    viewPosition: boolean;
+    viewSensitiveHR: boolean;
+    viewSalary: boolean;
+    viewMedical: boolean;
+    editIdentity: boolean;
+    editUnit: boolean;
+    editSalary: boolean;
+    editMedical: boolean;
+    deleteMedicalRecord: boolean;
+  };
+  nhan_vien_tuyen_dung: {
+    viewIdentity: boolean;
+    viewUnit: boolean;
+    viewPosition: boolean;
+    viewSensitiveHR: boolean;
+    viewSalary: boolean;
+    viewMedical: boolean;
+    editIdentity: boolean;
+    editUnit: boolean;
+    editSalary: boolean;
+    editMedical: boolean;
+    deleteMedicalRecord: boolean;
+  };
+}
+
+const DEFAULT_ROLE_PERMISSIONS: RoleFeaturePermissions = {
+  nhan_vien_y_te: {
+    viewIdentity: true,
+    viewUnit: true,
+    viewPosition: true,
+    viewSensitiveHR: false,
+    viewSalary: false,
+    viewMedical: true,
+    editIdentity: false,
+    editUnit: false,
+    editSalary: false,
+    editMedical: true,
+    deleteMedicalRecord: true,
+  },
+  nhan_vien_tuyen_dung: {
+    viewIdentity: true,
+    viewUnit: true,
+    viewPosition: true,
+    viewSensitiveHR: true,
+    viewSalary: true,
+    viewMedical: true,
+    editIdentity: true,
+    editUnit: true,
+    editSalary: false,
+    editMedical: false,
+    deleteMedicalRecord: false,
+  },
+};
 
 export const NhanSuTable: React.FC<NhanSuTableProps> = ({
   records,
@@ -49,10 +106,69 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
   const [selectedRecord, setSelectedRecord] = useState<NhanSuRecord | null>(null);
   const [recordToEdit, setRecordToEdit] = useState<NhanSuRecord | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const isAdmin = currentUser.role === 'admin';
-  const isMedicalStaff = !isAdmin && currentUser.hrmRole === 'nhan_vien_y_te';
+  // Hỗ trợ kiểm tra cả currentUser.role và currentUser.hrmRole cho vai trò 'nhan_vien_y_te'
+  const isRealAdmin = currentUser.role === 'admin';
+  const [adminPreviewRole, setAdminPreviewRole] = useState<'admin' | 'nhan_vien_y_te' | 'nhan_vien_tuyen_dung'>('admin');
+  const [showPermissionPanel, setShowPermissionPanel] = useState(false);
+
+  const [rolePermissions, setRolePermissions] = useState<RoleFeaturePermissions>(() => {
+    try {
+      const saved = localStorage.getItem('hr_table_role_permissions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          nhan_vien_y_te: { ...DEFAULT_ROLE_PERMISSIONS.nhan_vien_y_te, ...(parsed.nhan_vien_y_te || {}) },
+          nhan_vien_tuyen_dung: { ...DEFAULT_ROLE_PERMISSIONS.nhan_vien_tuyen_dung, ...(parsed.nhan_vien_tuyen_dung || {}) },
+        };
+      }
+    } catch {}
+    return DEFAULT_ROLE_PERMISSIONS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('hr_table_role_permissions', JSON.stringify(rolePermissions));
+    } catch {}
+  }, [rolePermissions]);
+
+  const effectiveRole = isRealAdmin
+    ? adminPreviewRole
+    : (currentUser.role as string) === 'nhan_vien_y_te' || currentUser.hrmRole === 'nhan_vien_y_te'
+    ? 'nhan_vien_y_te'
+    : 'nhan_vien_tuyen_dung';
+
+  const isAdmin = effectiveRole === 'admin';
+  const isMedicalStaff = effectiveRole === 'nhan_vien_y_te';
+  const activePerms = isMedicalStaff
+    ? rolePermissions.nhan_vien_y_te
+    : rolePermissions.nhan_vien_tuyen_dung;
+
   const [selectedRowIds, setSelectedRowIds] = useState<string[]>([]);
+  const [rowAccessGrants, setRowAccessGrants] = useState<Record<string, { yTeEdit: boolean; tuyenDungEdit: boolean }>>(() => {
+    try {
+      const saved = localStorage.getItem('hr_row_access_grants');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {};
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('hr_row_access_grants', JSON.stringify(rowAccessGrants));
+    } catch {}
+  }, [rowAccessGrants]);
+
+  // Modal chỉnh sửa nhanh thông tin y tế cho nhân viên y tế / Admin
+  const [medicalEditTarget, setMedicalEditTarget] = useState<{
+    record: NhanSuRecord;
+    ngayKham: string;
+    ketQuaKham: string;
+    ghiChuYTe: string;
+  } | null>(null);
+
+  const [recruitmentRefreshTick, setRecruitmentRefreshTick] = useState(0);
 
   const recruitmentMap = React.useMemo(() => {
     try {
@@ -60,7 +176,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
-          const map = new Map<string, { trangThai?: string; trangThaiNhanViec?: string }>();
+          const map = new Map<string, { id?: string; ngayDangKyKham?: string; trangThai?: string; trangThaiNhanViec?: string; ghiChu?: string }>();
           for (const reg of parsed) {
             if (reg.soCCCD) {
               map.set(reg.soCCCD.replace(/\D/g, ''), reg);
@@ -74,7 +190,76 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
       }
     } catch {}
     return new Map();
-  }, [records]);
+  }, [records, recruitmentRefreshTick]);
+
+  const notify = (type: 'success' | 'error', text: string) => {
+    setStatusMessage({ type, text });
+    setTimeout(() => setStatusMessage(null), 4000);
+  };
+
+  const handleSaveMedicalInfo = async () => {
+    if (!medicalEditTarget) return;
+    const { record, ngayKham, ketQuaKham, ghiChuYTe } = medicalEditTarget;
+
+    try {
+      const cached = localStorage.getItem('hr_recruitment_health_regs');
+      const list = cached ? JSON.parse(cached) : [];
+      const cleanCCCD = record.soCCCD.replace(/\D/g, '');
+      let found = false;
+      const updatedList = Array.isArray(list)
+        ? list.map((reg: any) => {
+            const regCCCD = (reg.soCCCD || '').replace(/\D/g, '');
+            const regName = (reg.hoVaTen || '').trim().toLowerCase();
+            if ((cleanCCCD && regCCCD === cleanCCCD) || regName === record.hoVaTen.trim().toLowerCase()) {
+              found = true;
+              return {
+                ...reg,
+                ngayDangKyKham: ngayKham,
+                trangThai: ketQuaKham,
+                ghiChu: ghiChuYTe,
+              };
+            }
+            return reg;
+          })
+        : [];
+
+      if (!found) {
+        updatedList.unshift({
+          id: `KSK_REC_${Date.now()}`,
+          hoVaTen: record.hoVaTen,
+          soCCCD: record.soCCCD,
+          ngaySinh: record.ngaySinh,
+          gioiTinh: record.gioiTinh,
+          khoi: record.khoi || '',
+          ban: record.ban || '',
+          phong: record.phong || '',
+          congViec: record.congViecDuKien || '',
+          chucVu: record.chucVu || '',
+          nhaCungCap: 'Hữu Phúc',
+          ngayDangKyKham: ngayKham,
+          ngayHenKham: ngayKham,
+          nguoiDangKy: currentUser.email,
+          trangThai: ketQuaKham,
+          ghiChu: ghiChuYTe,
+        });
+      }
+
+      localStorage.setItem('hr_recruitment_health_regs', JSON.stringify(updatedList));
+      setRecruitmentRefreshTick((t) => t + 1);
+
+      if (onEditRecord) {
+        await onEditRecord({
+          ...record,
+          ghiChu: ghiChuYTe,
+        });
+      }
+
+      setMedicalEditTarget(null);
+      notify('success', `Đã cập nhật hồ sơ y tế cho ${record.hoVaTen}.`);
+    } catch (err) {
+      notify('error', 'Không thể lưu thông tin y tế: ' + (err as Error).message);
+    }
+  };
 
   // Lọc tìm kiếm theo tên, số CCCD, chức vụ, email, khối, ban, phòng và trạng thái KSK/Nhận việc
   const filteredRecords = records.filter((r) => {
@@ -120,13 +305,14 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
   // Danh sách các Khối duy nhất hiện có trong dữ liệu
   const uniqueKhois = Array.from(new Set(records.map((r) => r.khoi).filter(Boolean)));
 
-  // Xuất file Excel (.xlsx) Mẫu Biến Động Nhân Sự)
+  // Xuất file Excel (.xlsx) Mẫu Biến Động Nhân Sự
   const handleDownloadExcelBienDong = async () => {
     setIsExporting(true);
     try {
-      const recordsToExport = filteredRecords.length > 0 ? filteredRecords : records;
+      const selectedList = filteredRecords.filter((r) => selectedRowIds.includes(r.id));
+      const recordsToExport = selectedList.length > 0 ? selectedList : filteredRecords.length > 0 ? filteredRecords : records;
       if (recordsToExport.length === 0) {
-        alert('Không có bản ghi nào để xuất file Excel.');
+        notify('error', 'Không có bản ghi nào để xuất file Excel.');
         return;
       }
       const fileName =
@@ -135,7 +321,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
           : `Mau_Bien_Dong_Nhan_Su_${recordsToExport.length}_Nhan_Vien.xlsx`;
       await exportBienDongNhanSuExcel(recordsToExport, fileName);
     } catch (err) {
-      alert('Lỗi xuất file Excel: ' + (err as Error).message);
+      notify('error', 'Lỗi xuất file Excel: ' + (err as Error).message);
     } finally {
       setIsExporting(false);
     }
@@ -145,79 +331,409 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
   const handleExportHousehold = async () => {
     setIsExportingHousehold(true);
     try {
-      const recordsToExport = filteredRecords.length > 0 ? filteredRecords : records;
+      const selectedList = filteredRecords.filter((r) => selectedRowIds.includes(r.id));
+      const recordsToExport = selectedList.length > 0 ? selectedList : filteredRecords.length > 0 ? filteredRecords : records;
       if (recordsToExport.length === 0) {
-        alert('Không có bản ghi nào để xuất phụ lục hộ gia đình.');
+        notify('error', 'Không có bản ghi nào để xuất phụ lục hộ gia đình.');
         return;
       }
       await exportHouseholdAppendix(recordsToExport);
     } catch (err) {
-      alert('Lỗi xuất phụ lục hộ gia đình: ' + (err as Error).message);
+      notify('error', 'Lỗi xuất phụ lục hộ gia đình: ' + (err as Error).message);
     } finally {
       setIsExportingHousehold(false);
     }
   };
 
+  const togglePermission = (
+    roleKey: keyof RoleFeaturePermissions,
+    permKey: keyof RoleFeaturePermissions['nhan_vien_y_te']
+  ) => {
+    setRolePermissions((prev) => ({
+      ...prev,
+      [roleKey]: {
+        ...prev[roleKey],
+        [permKey]: !prev[roleKey][permKey],
+      },
+    }));
+  };
+
+  const handleBulkGrantRowAccess = (field: 'yTeEdit' | 'tuyenDungEdit', value: boolean) => {
+    if (selectedRowIds.length === 0) return;
+    setRowAccessGrants((prev) => {
+      const next = { ...prev };
+      for (const id of selectedRowIds) {
+        next[id] = {
+          yTeEdit: next[id]?.yTeEdit ?? true,
+          tuyenDungEdit: next[id]?.tuyenDungEdit ?? true,
+          [field]: value,
+        };
+      }
+      return next;
+    });
+    notify(
+      'success',
+      `Đã cập nhật phân quyền dòng cho ${selectedRowIds.length} hồ sơ đã chọn.`
+    );
+  };
+
+  // Tính toán ẩn/hiện cột dựa trên vai trò
+  const showSensitiveHRCol = isAdmin || (!isMedicalStaff && activePerms.viewSensitiveHR);
+  const showSalaryCols = isAdmin || (!isMedicalStaff && activePerms.viewSalary);
+  const showMedicalCols = isAdmin || isMedicalStaff || activePerms.viewMedical;
+
+  const canEditIdentity = isAdmin || (!isMedicalStaff && activePerms.editIdentity);
+  const canEditUnit = isAdmin || (!isMedicalStaff && activePerms.editUnit);
+  const canEditMedical = isAdmin || (isMedicalStaff && activePerms.editMedical) || (!isMedicalStaff && activePerms.editMedical);
+
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-xs space-y-5">
+      {statusMessage && (
+        <div
+          className={`p-3 rounded-xl border text-xs font-semibold flex items-center justify-between ${
+            statusMessage.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-rose-50 border-rose-200 text-rose-800'
+          }`}
+        >
+          <span>{statusMessage.text}</span>
+          <button
+            type="button"
+            onClick={() => setStatusMessage(null)}
+            className="text-slate-400 hover:text-slate-600 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Top Header & Export Action */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-lg font-bold text-slate-900">
-              Cơ Sở Dữ Liệu: Hồ sơ đã lưu
+              {isMedicalStaff
+                ? 'Bảng Theo Dõi Sức Khỏe Nhân Sự (Chế độ Y Tế)'
+                : 'Cơ Sở Dữ Liệu: Hồ sơ đã lưu'}
             </h2>
             {isAdmin ? (
               <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
                 <ShieldCheck className="w-3.5 h-3.5" /> Toàn quyền Admin ({records.length} hồ sơ)
               </span>
+            ) : isMedicalStaff ? (
+              <span className="inline-flex items-center gap-1 bg-teal-100 text-teal-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
+                <Stethoscope className="w-3.5 h-3.5" /> Nhân viên Y tế ({records.length} hồ sơ)
+              </span>
             ) : (
               <span className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded-full">
-                <User className="w-3.5 h-3.5" /> Hồ sơ cá nhân của bạn ({records.length} hồ sơ)
+                <User className="w-3.5 h-3.5" /> Nhân viên Tuyển dụng ({records.length} hồ sơ)
               </span>
             )}
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             {isAdmin
-              ? 'Quản trị viên có đặc quyền xem toàn bộ nhân sự các phòng ban và xuất file Biến Động Nhân Sự (44 Cột).'
-              : `Chế độ nhân viên: Bạn chỉ xem được các hồ sơ được gửi từ tài khoản ${currentUser.email}.`}
+              ? 'Quản trị viên có đặc quyền cấu hình phân quyền cột/dòng theo vai trò và xuất file Biến Động Nhân Sự.'
+              : isMedicalStaff
+              ? 'Chế độ bảo mật Y tế: Các cột thông tin lương và nhân sự nhạy cảm đã được ẩn. Các ô có biểu tượng khóa (🔒) chỉ được phép xem.'
+              : `Chế độ nhân viên: Bạn đang thao tác với tài khoản ${currentUser.email}.`}
           </p>
         </div>
 
-        {/* Nút bấm xuất file Biến Động Nhân Sự (44 Cột) & Phụ lục hộ gia đình - Giống hệt Bước 4 */}
+        {/* Các nút công cụ & Phân quyền */}
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={handleDownloadExcelBienDong}
-            disabled={isExporting || records.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs hover:shadow-md transition disabled:opacity-50 cursor-pointer"
-            title="Xuất file mẫu biến động nhân sự"
-          >
-            <Download className="w-4 h-4 text-white" />
-            <span>{isExporting ? 'Đang tạo File Excel...' : 'Xuất file Biến Động Nhân Sự (44 Cột)'}</span>
-          </button>
+          {isRealAdmin && (
+            <>
+              <div className="inline-flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+                <span className="px-2 font-semibold text-slate-600">Xem dưới góc độ:</span>
+                <button
+                  type="button"
+                  onClick={() => setAdminPreviewRole('admin')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
+                    adminPreviewRole === 'admin'
+                      ? 'bg-purple-700 text-white shadow-2xs'
+                      : 'text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  Admin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminPreviewRole('nhan_vien_y_te')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
+                    adminPreviewRole === 'nhan_vien_y_te'
+                      ? 'bg-teal-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  NV Y tế
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminPreviewRole('nhan_vien_tuyen_dung')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
+                    adminPreviewRole === 'nhan_vien_tuyen_dung'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'text-slate-600 hover:bg-white'
+                  }`}
+                >
+                  NV Tuyển dụng
+                </button>
+              </div>
 
-          <button
-            type="button"
-            onClick={handleExportHousehold}
-            disabled={isExportingHousehold || records.length === 0}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-indigo-50 text-indigo-800 border-2 border-indigo-300 rounded-xl text-xs sm:text-sm font-bold shadow-2xs hover:shadow-xs transition disabled:opacity-50 cursor-pointer"
-            title="Xuất phụ lục hộ gia đình"
-          >
-            <Users className="w-4 h-4 text-indigo-700" />
-            <span>{isExportingHousehold ? 'Đang tạo phụ lục...' : 'Xuất phụ lục hộ gia đình'}</span>
-          </button>
+              <button
+                type="button"
+                onClick={() => setShowPermissionPanel((prev) => !prev)}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold border transition cursor-pointer ${
+                  showPermissionPanel
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                <Settings2 className="w-4 h-4" />
+                <span>Phân Quyền Tính Năng</span>
+              </button>
+            </>
+          )}
+
+          {!isMedicalStaff && (
+            <>
+              <button
+                type="button"
+                onClick={handleDownloadExcelBienDong}
+                disabled={isExporting || records.length === 0}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-bold shadow-xs hover:shadow-md transition disabled:opacity-50 cursor-pointer"
+                title="Xuất file mẫu biến động nhân sự"
+              >
+                <Download className="w-4 h-4 text-white" />
+                <span>{isExporting ? 'Đang tạo File Excel...' : 'Xuất file Biến Động Nhân Sự (44 Cột)'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportHousehold}
+                disabled={isExportingHousehold || records.length === 0}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-indigo-50 text-indigo-800 border-2 border-indigo-300 rounded-xl text-xs sm:text-sm font-bold shadow-2xs hover:shadow-xs transition disabled:opacity-50 cursor-pointer"
+                title="Xuất phụ lục hộ gia đình"
+              >
+                <Users className="w-4 h-4 text-indigo-700" />
+                <span>{isExportingHousehold ? 'Đang tạo phụ lục...' : 'Xuất phụ lục hộ gia đình'}</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Bảng cấu hình phân quyền theo từng tính năng / cột bằng Checkbox (Dành cho Admin) */}
+      {isRealAdmin && showPermissionPanel && (
+        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckSquare className="w-4 h-4 text-emerald-600" />
+              <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                Ma Trận Phân Quyền Truy Cập & Chỉnh Sửa Theo Tính Năng (Tích chọn ô để bật/tắt)
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setRolePermissions(DEFAULT_ROLE_PERMISSIONS);
+                notify('success', 'Đã khôi phục cấu hình phân quyền chuẩn mặc định.');
+              }}
+              className="text-xs text-slate-600 hover:text-slate-900 underline cursor-pointer"
+            >
+              Khôi phục mặc định
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse bg-white rounded-lg overflow-hidden border border-slate-200">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                  <th className="p-2.5 text-left">Vai trò người dùng</th>
+                  <th className="p-2.5 text-center">Xem Thông Tin Cơ Bản</th>
+                  <th className="p-2.5 text-center">Xem CCCD & Nhân Sự Nhạy Cảm</th>
+                  <th className="p-2.5 text-center">Xem Lương & Phụ Cấp</th>
+                  <th className="p-2.5 text-center">Xem Cột Y Tế (KSK)</th>
+                  <th className="p-2.5 text-center">Sửa Thông Tin Nhân Sự</th>
+                  <th className="p-2.5 text-center">Sửa Kết Quả & Ghi Chú Y Tế</th>
+                  <th className="p-2.5 text-center">Xóa Bản Ghi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                <tr>
+                  <td className="p-2.5 font-bold text-teal-800">
+                    Nhân viên Y tế (nhan_vien_y_te)
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_y_te.viewIdentity}
+                      onChange={() => togglePermission('nhan_vien_y_te', 'viewIdentity')}
+                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_y_te.viewSensitiveHR}
+                      onChange={() => togglePermission('nhan_vien_y_te', 'viewSensitiveHR')}
+                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_y_te.viewSalary}
+                      onChange={() => togglePermission('nhan_vien_y_te', 'viewSalary')}
+                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_y_te.viewMedical}
+                      onChange={() => togglePermission('nhan_vien_y_te', 'viewMedical')}
+                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_y_te.editIdentity}
+                      onChange={() => togglePermission('nhan_vien_y_te', 'editIdentity')}
+                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_y_te.editMedical}
+                      onChange={() => togglePermission('nhan_vien_y_te', 'editMedical')}
+                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_y_te.deleteMedicalRecord}
+                      onChange={() => togglePermission('nhan_vien_y_te', 'deleteMedicalRecord')}
+                      className="rounded border-slate-300 text-teal-600 focus:ring-teal-500 cursor-pointer"
+                    />
+                  </td>
+                </tr>
+                <tr>
+                  <td className="p-2.5 font-bold text-blue-800">
+                    Nhân viên Tuyển dụng (nhan_vien_tuyen_dung)
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_tuyen_dung.viewIdentity}
+                      onChange={() => togglePermission('nhan_vien_tuyen_dung', 'viewIdentity')}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_tuyen_dung.viewSensitiveHR}
+                      onChange={() => togglePermission('nhan_vien_tuyen_dung', 'viewSensitiveHR')}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_tuyen_dung.viewSalary}
+                      onChange={() => togglePermission('nhan_vien_tuyen_dung', 'viewSalary')}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_tuyen_dung.viewMedical}
+                      onChange={() => togglePermission('nhan_vien_tuyen_dung', 'viewMedical')}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_tuyen_dung.editIdentity}
+                      onChange={() => togglePermission('nhan_vien_tuyen_dung', 'editIdentity')}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_tuyen_dung.editMedical}
+                      onChange={() => togglePermission('nhan_vien_tuyen_dung', 'editMedical')}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </td>
+                  <td className="p-2.5 text-center">
+                    <input
+                      type="checkbox"
+                      checked={rolePermissions.nhan_vien_tuyen_dung.deleteMedicalRecord}
+                      onChange={() => togglePermission('nhan_vien_tuyen_dung', 'deleteMedicalRecord')}
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Role notice banner */}
-      {!isAdmin && (
-        <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-xs text-blue-800 flex items-center justify-between gap-3">
+      {isMedicalStaff && (
+        <div className="p-3 bg-teal-50/80 border border-teal-200 rounded-xl text-xs text-teal-900 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <User className="w-4 h-4 text-blue-600 shrink-0" />
+            <Stethoscope className="w-4 h-4 text-teal-600 shrink-0" />
             <span>
-              Bạn đang đăng nhập với vai trò <strong>Nhân viên</strong> ({currentUser.email}). Hệ thống áp dụng cơ chế phân quyền bảo mật tự động của Google Account.
+              <strong>Chế độ Nhân viên Y tế (nhan_vien_y_te):</strong> Bạn chỉ được xem và cập nhật các cột thông tin sức khỏe (Ngày khám, Kết quả khám, Ghi chú y tế). Các thông tin lương và nhân sự nhạy cảm đã được ẩn; các ô có biểu tượng <Lock className="w-3 h-3 inline text-slate-500" /> không có quyền chỉnh sửa.
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Action Bar khi tích chọn các dòng */}
+      {selectedRowIds.length > 0 && (
+        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="font-bold text-emerald-900 flex items-center gap-2">
+            <CheckSquare className="w-4 h-4 text-emerald-600" />
+            <span>Đã chọn {selectedRowIds.length} hồ sơ nhân sự</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {isRealAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleBulkGrantRowAccess('yTeEdit', true)}
+                  className="px-2.5 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold cursor-pointer transition"
+                >
+                  Mở quyền sửa Y tế ({selectedRowIds.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleBulkGrantRowAccess('yTeEdit', false)}
+                  className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold cursor-pointer transition flex items-center gap-1"
+                >
+                  <Lock className="w-3 h-3" />
+                  <span>Khóa quyền sửa Y tế</span>
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => setSelectedRowIds([])}
+              className="px-2.5 py-1.5 rounded-lg text-slate-600 hover:bg-slate-200/60 font-medium cursor-pointer"
+            >
+              Bỏ chọn
+            </button>
           </div>
         </div>
       )}
@@ -229,7 +745,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Tìm nhanh theo Tên hoặc Mã nhân viên / CCCD..."
+              placeholder="Tìm nhanh theo Tên hoặc Mã nhân viên..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-9 pr-8 py-2 text-xs border border-slate-300 rounded-lg focus:outline-blue-600 bg-slate-50/50"
@@ -298,19 +814,66 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                     aria-label="Chọn tất cả hồ sơ"
                     checked={selectedRowIds.length === filteredRecords.length && filteredRecords.length > 0}
                     onChange={(e) => {
-                      if (e.target.checked) setSelectedRowIds(filteredRecords.map(r => r.id));
+                      if (e.target.checked) setSelectedRowIds(filteredRecords.map((r) => r.id));
                       else setSelectedRowIds([]);
                     }}
                     className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                   />
                 </th>
-                <th className="p-3 whitespace-nowrap">Mã & Thời Gian</th>
-                <th className="p-3 whitespace-nowrap">Họ Và Tên</th>
-                <th className="p-3 whitespace-nowrap">Số CCCD</th>
-                <th className="p-3 whitespace-nowrap">Đơn Vị (Khối &gt; Ban &gt; Phòng)</th>
-                <th className="p-3 whitespace-nowrap">Chức Vụ</th>
+                <th className="p-3 whitespace-nowrap">
+                  <div className="inline-flex items-center gap-1">
+                    <span>Mã & Thời Gian</span>
+                    {!isAdmin && (
+                      <span title="Chỉ xem - Không có quyền chỉnh sửa">
+                        <Lock className="w-3 h-3 text-slate-400" />
+                      </span>
+                    )}
+                  </div>
+                </th>
+                <th className="p-3 whitespace-nowrap">
+                  <div className="inline-flex items-center gap-1">
+                    <span>Họ Và Tên</span>
+                    {!canEditIdentity && (
+                      <span title="Chỉ xem - Không có quyền chỉnh sửa">
+                        <Lock className="w-3 h-3 text-slate-400" />
+                      </span>
+                    )}
+                  </div>
+                </th>
+                {showSensitiveHRCol && (
+                  <th className="p-3 whitespace-nowrap">
+                    <div className="inline-flex items-center gap-1">
+                      <span>Số CCCD</span>
+                      {!canEditIdentity && (
+                        <span title="Chỉ xem - Không có quyền chỉnh sửa">
+                          <Lock className="w-3 h-3 text-slate-400" />
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                )}
+                <th className="p-3 whitespace-nowrap">
+                  <div className="inline-flex items-center gap-1">
+                    <span>Đơn Vị (Khối &gt; Ban &gt; Phòng)</span>
+                    {!canEditUnit && (
+                      <span title="Chỉ xem - Không có quyền chỉnh sửa">
+                        <Lock className="w-3 h-3 text-slate-400" />
+                      </span>
+                    )}
+                  </div>
+                </th>
+                <th className="p-3 whitespace-nowrap">
+                  <div className="inline-flex items-center gap-1">
+                    <span>Chức Vụ</span>
+                    {!canEditUnit && (
+                      <span title="Chỉ xem - Không có quyền chỉnh sửa">
+                        <Lock className="w-3 h-3 text-slate-400" />
+                      </span>
+                    )}
+                  </div>
+                </th>
                 {isAdmin && <th className="p-3 whitespace-nowrap">Email Người Gửi</th>}
-                {!isMedicalStaff && (
+                {showSalaryCols && (
                   <>
                     <th className="p-3 whitespace-nowrap text-right">Lương CB</th>
                     <th className="p-3 whitespace-nowrap text-right">Phụ Cấp</th>
@@ -318,11 +881,27 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                     <th className="p-3 whitespace-nowrap text-center">Email Xác Nhận</th>
                   </>
                 )}
-                {isMedicalStaff && (
+                {showMedicalCols && (
                   <>
-                    <th className="p-3 whitespace-nowrap">Ngày Khám (ngayKham)</th>
-                    <th className="p-3 whitespace-nowrap">Kết Quả Khám (ketQuaKham)</th>
-                    <th className="p-3 whitespace-nowrap">Ghi Chú Y Tế (ghiChuYTe)</th>
+                    <th className="p-3 whitespace-nowrap bg-teal-50/70 text-teal-900">
+                      <div className="inline-flex items-center gap-1">
+                        <Stethoscope className="w-3.5 h-3.5 text-teal-600" />
+                        <span>Ngày Khám (ngayKham)</span>
+                        {!canEditMedical && <Lock className="w-3 h-3 text-slate-400" />}
+                      </div>
+                    </th>
+                    <th className="p-3 whitespace-nowrap bg-teal-50/70 text-teal-900">
+                      <div className="inline-flex items-center gap-1">
+                        <span>Kết Quả Khám (ketQuaKham)</span>
+                        {!canEditMedical && <Lock className="w-3 h-3 text-slate-400" />}
+                      </div>
+                    </th>
+                    <th className="p-3 whitespace-nowrap bg-teal-50/70 text-teal-900">
+                      <div className="inline-flex items-center gap-1">
+                        <span>Ghi Chú Y Tế (ghiChuYTe)</span>
+                        {!canEditMedical && <Lock className="w-3 h-3 text-slate-400" />}
+                      </div>
+                    </th>
                   </>
                 )}
                 <th className="p-3 whitespace-nowrap text-center">Thao Tác</th>
@@ -331,7 +910,7 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
             <tbody className="divide-y divide-slate-200">
               {filteredRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={isMedicalStaff ? 10 : (isAdmin ? 12 : 11)} className="p-8 text-center text-slate-400 text-xs">
+                  <td colSpan={15} className="p-8 text-center text-slate-400 text-xs">
                     Không tìm thấy hồ sơ nhân sự nào phù hợp với bộ lọc hiện tại.
                   </td>
                 </tr>
@@ -343,6 +922,10 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                   const ketQuaKham = reg?.trangThai || 'Đã khám - Đạt';
                   const ghiChuYTe = reg?.ghiChu || item.ghiChu || 'Không có ghi chú y tế';
 
+                  const rowGrant = rowAccessGrants[item.id];
+                  const rowMedicalEditable =
+                    canEditMedical && (rowGrant?.yTeEdit !== undefined ? rowGrant.yTeEdit : true);
+
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/70 transition">
                       <td className="p-3 text-center">
@@ -351,76 +934,125 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                           aria-label={`Chọn hồ sơ ${item.hoVaTen}`}
                           checked={selectedRowIds.includes(item.id)}
                           onChange={(e) => {
-                            if (e.target.checked) setSelectedRowIds(prev => [...prev, item.id]);
-                            else setSelectedRowIds(prev => prev.filter(id => id !== item.id));
+                            if (e.target.checked) setSelectedRowIds((prev) => [...prev, item.id]);
+                            else setSelectedRowIds((prev) => prev.filter((id) => id !== item.id));
                           }}
                           className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                         />
                       </td>
 
+                      {/* Mã & Thời gian (Chỉ xem đối với NV Y tế) */}
                       <td className="p-3">
-                        <div className="font-mono font-semibold text-blue-900">{item.id}</div>
-                        <div className="text-[11px] text-slate-400">
-                          {new Date(item.timestamp).toLocaleString('vi-VN')}
-                        </div>
-                      </td>
-
-                      <td className="p-3 font-bold text-slate-900 uppercase">
-                        {item.hoVaTen}
-                        <div className="text-[11px] font-normal text-slate-500 normal-case">
-                          {item.ngaySinh} ({item.gioiTinh})
-                        </div>
-                      </td>
-
-                      <td className="p-3 font-mono font-medium text-slate-700">
-                        {item.soCCCD}
-                      </td>
-
-                      {/* Phân cấp cơ cấu tổ chức: Khối > Ban > Phòng */}
-                      <td className="p-3 min-w-[200px]">
-                        {item.khoi ? (
-                          <div className="space-y-0.5 text-[11px]">
-                            <div className="font-semibold text-emerald-900 flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                              <span>{item.khoi}</span>
-                            </div>
-                            <div className="text-slate-600 flex items-center gap-1 pl-2.5">
-                              <span className="text-slate-300">↳</span>
-                              <span className="text-indigo-900 font-medium">{item.ban}</span>
-                            </div>
-                            <div className="text-slate-600 flex items-center gap-1 pl-5">
-                              <span className="text-slate-300">↳</span>
-                              <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-medium">
-                                {item.phong}
-                              </span>
+                        <div className="flex items-center justify-between gap-1">
+                          <div>
+                            <div className="font-mono font-semibold text-blue-900">{item.id}</div>
+                            <div className="text-[11px] text-slate-400">
+                              {new Date(item.timestamp).toLocaleString('vi-VN')}
                             </div>
                           </div>
-                        ) : (
-                          <span className="text-slate-400 italic text-[11px]">Chưa phân bổ</span>
-                        )}
-                      </td>
-
-                      <td className="p-3">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-semibold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded text-[11px] inline-block border border-indigo-100">
-                            {item.chucVu}
-                          </span>
-                          {item.isManualSalary ? (
-                            <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded border border-amber-200">
-                              Thủ công
-                            </span>
-                          ) : (
-                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded border border-emerald-200">
-                              Tiêu chuẩn
+                          {!isAdmin && (
+                            <span title="Ô dữ liệu bị khóa - Bạn không có quyền chỉnh sửa mã hồ sơ" className="shrink-0">
+                              <Lock className="w-3 h-3 text-slate-300" />
                             </span>
                           )}
                         </div>
-                        {item.congViecDuKien && (
-                          <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
-                            <Briefcase className="w-3 h-3 text-slate-400" />
-                            <span>CV: {item.congViecDuKien}</span>
+                      </td>
+
+                      {/* Họ và tên */}
+                      <td className="p-3 font-bold text-slate-900 uppercase">
+                        <div className="flex items-center justify-between gap-1">
+                          <div>
+                            {item.hoVaTen}
+                            <div className="text-[11px] font-normal text-slate-500 normal-case">
+                              {item.ngaySinh} ({item.gioiTinh})
+                            </div>
                           </div>
-                        )}
+                          {!canEditIdentity && (
+                            <span title="Chỉ xem - Nhân viên y tế không có quyền sửa thông tin cá nhân" className="shrink-0">
+                              <Lock className="w-3 h-3 text-slate-300" />
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Số CCCD - Ẩn đối với nhân viên y tế */}
+                      {showSensitiveHRCol && (
+                        <td className="p-3 font-mono font-medium text-slate-700">
+                          <div className="flex items-center justify-between gap-1">
+                            <span>{item.soCCCD}</span>
+                            {!canEditIdentity && (
+                              <span title="Chỉ xem - Không có quyền chỉnh sửa" className="shrink-0">
+                                <Lock className="w-3 h-3 text-slate-300" />
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      )}
+
+                      {/* Phân cấp cơ cấu tổ chức: Khối > Ban > Phòng */}
+                      <td className="p-3 min-w-[200px]">
+                        <div className="flex items-center justify-between gap-1">
+                          {item.khoi ? (
+                            <div className="space-y-0.5 text-[11px]">
+                              <div className="font-semibold text-emerald-900 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span>{item.khoi}</span>
+                              </div>
+                              <div className="text-slate-600 flex items-center gap-1 pl-2.5">
+                                <span className="text-slate-300">↳</span>
+                                <span className="text-indigo-900 font-medium">{item.ban}</span>
+                              </div>
+                              <div className="text-slate-600 flex items-center gap-1 pl-5">
+                                <span className="text-slate-300">↳</span>
+                                <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                                  {item.phong}
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 italic text-[11px]">Chưa phân bổ</span>
+                          )}
+                          {!canEditUnit && (
+                            <span title="Chỉ xem - Không có quyền chỉnh sửa đơn vị" className="shrink-0">
+                              <Lock className="w-3 h-3 text-slate-300" />
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Chức vụ */}
+                      <td className="p-3">
+                        <div className="flex items-center justify-between gap-1">
+                          <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded text-[11px] inline-block border border-indigo-100">
+                                {item.chucVu}
+                              </span>
+                              {!isMedicalStaff && (
+                                item.isManualSalary ? (
+                                  <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded border border-amber-200">
+                                    Thủ công
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded border border-emerald-200">
+                                    Tiêu chuẩn
+                                  </span>
+                                )
+                              )}
+                            </div>
+                            {item.congViecDuKien && (
+                              <div className="text-[10px] text-slate-500 mt-1 flex items-center gap-1 font-medium">
+                                <Briefcase className="w-3 h-3 text-slate-400" />
+                                <span>CV: {item.congViecDuKien}</span>
+                              </div>
+                            )}
+                          </div>
+                          {!canEditUnit && (
+                            <span title="Chỉ xem - Không có quyền chỉnh sửa chức vụ" className="shrink-0">
+                              <Lock className="w-3 h-3 text-slate-300" />
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {isAdmin && (
@@ -429,14 +1061,20 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                         </td>
                       )}
 
-                      {!isMedicalStaff && (
+                      {showSalaryCols && (
                         <>
                           <td className="p-3 text-right font-mono text-slate-700">
                             {item.luongCoBan.toLocaleString('vi-VN')} đ
                           </td>
 
                           <td className="p-3 text-right font-mono text-slate-700">
-                            <div>{(item.tongPhuCap ?? (item.phuCapCoDinh + item.phuCapPhatSinh + (item.phuCapNangLuc || 0))).toLocaleString('vi-VN')} đ</div>
+                            <div>
+                              {(
+                                item.tongPhuCap ??
+                                item.phuCapCoDinh + item.phuCapPhatSinh + (item.phuCapNangLuc || 0)
+                              ).toLocaleString('vi-VN')}{' '}
+                              đ
+                            </div>
                             {item.phuCapPhatSinh > 0 && (
                               <div className="text-[10px] text-amber-700">
                                 (PS: +{item.phuCapPhatSinh.toLocaleString('vi-VN')})
@@ -449,26 +1087,84 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                           </td>
 
                           <td className="p-3 text-center">
-                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${item.trangThaiEmail === 'Đã gửi' ? 'bg-emerald-100 text-emerald-800' : item.trangThaiEmail === 'Lỗi' ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>
-                              {item.trangThaiEmail === 'Đã gửi' && <CheckCircle className="w-3 h-3 text-emerald-600" />}
+                            <span
+                              className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                item.trangThaiEmail === 'Đã gửi'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : item.trangThaiEmail === 'Lỗi'
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {item.trangThaiEmail === 'Đã gửi' && (
+                                <CheckCircle className="w-3 h-3 text-emerald-600" />
+                              )}
                               <span>{item.trangThaiEmail || 'Chờ gửi'}</span>
                             </span>
                           </td>
                         </>
                       )}
 
-                      {isMedicalStaff && (
+                      {showMedicalCols && (
                         <>
-                          <td className="p-3 text-slate-700 font-mono text-[11px]">
-                            {ngayKham}
+                          <td className="p-3 text-slate-700 font-mono text-[11px] bg-teal-50/20">
+                            <div className="flex items-center justify-between gap-1">
+                              <span>{ngayKham}</span>
+                              {!rowMedicalEditable && (
+                                <span title="Không có quyền chỉnh sửa ngày khám" className="shrink-0">
+                                  <Lock className="w-3 h-3 text-slate-400" />
+                                </span>
+                              )}
+                            </div>
                           </td>
-                          <td className="p-3">
-                            <span className="px-2 py-1 rounded bg-emerald-50 text-emerald-800 font-bold text-[10px] border border-emerald-200">
-                              {ketQuaKham}
-                            </span>
+                          <td className="p-3 bg-teal-50/20">
+                            <div className="flex items-center justify-between gap-1">
+                              <span
+                                className={`px-2 py-1 rounded font-bold text-[10px] border ${
+                                  ketQuaKham.includes('Không đạt') || ketQuaKham.includes('không đạt')
+                                    ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                    : ketQuaKham.includes('Chờ') || ketQuaKham.includes('Hoãn')
+                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                    : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                }`}
+                              >
+                                {ketQuaKham}
+                              </span>
+                              {!rowMedicalEditable && (
+                                <span title="Không có quyền chỉnh sửa kết quả khám" className="shrink-0">
+                                  <Lock className="w-3 h-3 text-slate-400" />
+                                </span>
+                              )}
+                            </div>
                           </td>
-                          <td className="p-3 text-slate-600 text-[11px] max-w-[160px] truncate" title={ghiChuYTe}>
-                            {ghiChuYTe}
+                          <td
+                            className="p-3 text-slate-600 text-[11px] max-w-[180px] bg-teal-50/20"
+                            title={ghiChuYTe}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="truncate">{ghiChuYTe}</span>
+                              {rowMedicalEditable ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setMedicalEditTarget({
+                                      record: item,
+                                      ngayKham: ngayKham === 'Chưa hẹn' ? new Date().toISOString().slice(0, 10) : ngayKham,
+                                      ketQuaKham,
+                                      ghiChuYTe: ghiChuYTe === 'Không có ghi chú y tế' ? '' : ghiChuYTe,
+                                    })
+                                  }
+                                  className="text-teal-600 hover:text-teal-800 p-0.5 rounded hover:bg-teal-100/60 shrink-0 cursor-pointer"
+                                  title="Cập nhật thông tin khám sức khỏe"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                              ) : (
+                                <span title="Không có quyền chỉnh sửa ghi chú y tế" className="shrink-0">
+                                  <Lock className="w-3 h-3 text-slate-400" />
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </>
                       )}
@@ -477,42 +1173,42 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                         <div className="inline-flex items-center gap-1">
                           <button
                             onClick={() => setSelectedRecord(item)}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
                             title="Xem chi tiết hồ sơ"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          {(isAdmin || isMedicalStaff) && (
+                          {rowMedicalEditable && (
                             <button
-                              onClick={() => {
-                                const newNote = prompt('Cập nhật ghi chú y tế / kết quả KSK:', ghiChuYTe);
-                                if (newNote !== null && onEditRecord) {
-                                  void onEditRecord({ ...item, ghiChu: newNote });
-                                }
-                              }}
-                              className="p-1.5 text-teal-600 hover:bg-teal-50 rounded-lg transition"
-                              title="Sửa thông tin y tế (Nhân viên y tế)"
+                              onClick={() =>
+                                setMedicalEditTarget({
+                                  record: item,
+                                  ngayKham: ngayKham === 'Chưa hẹn' ? new Date().toISOString().slice(0, 10) : ngayKham,
+                                  ketQuaKham,
+                                  ghiChuYTe: ghiChuYTe === 'Không có ghi chú y tế' ? '' : ghiChuYTe,
+                                })
+                              }
+                              className="p-1.5 text-teal-600 hover:bg-teal-50 rounded-lg transition cursor-pointer"
+                              title="Cập nhật Ngày khám / Kết quả KSK / Ghi chú y tế"
                             >
-                              <ShieldCheck className="w-4 h-4" />
+                              <Stethoscope className="w-4 h-4" />
                             </button>
                           )}
                           {isAdmin && (
                             <button
                               onClick={() => setRecordToEdit(item)}
-                              className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition"
+                              className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg transition cursor-pointer"
                               title="Chỉnh sửa toàn bộ hồ sơ (Quyền Admin)"
                             >
                               <Pencil className="w-4 h-4" />
                             </button>
                           )}
-                          {(isAdmin || isMedicalStaff) && onDeleteRecord && (
+                          {(isAdmin || (isMedicalStaff && activePerms.deleteMedicalRecord)) && onDeleteRecord && (
                             <button
                               onClick={() => {
-                                if (confirm(`Bạn có chắc chắn muốn xóa hồ sơ của ${item.hoVaTen}?`)) {
-                                  onDeleteRecord(item.id);
-                                }
+                                onDeleteRecord(item.id);
                               }}
-                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                              className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                               title="Xóa hồ sơ"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -529,6 +1225,113 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
         </div>
       </div>
 
+      {/* Modal cập nhật thông tin Y tế (Dành cho Nhân viên Y tế & Admin) */}
+      {medicalEditTarget && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setMedicalEditTarget(null)}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center">
+                  <Stethoscope className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Cập Nhật Hồ Sơ Khám Sức Khỏe
+                  </h3>
+                  <p className="text-[11px] text-slate-500">{medicalEditTarget.record.hoVaTen}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMedicalEditTarget(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Ngày khám (ngayKham)
+                </label>
+                <input
+                  type="date"
+                  value={medicalEditTarget.ngayKham}
+                  onChange={(e) =>
+                    setMedicalEditTarget((prev) =>
+                      prev ? { ...prev, ngayKham: e.target.value } : null
+                    )
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Kết quả khám (ketQuaKham)
+                </label>
+                <select
+                  value={medicalEditTarget.ketQuaKham}
+                  onChange={(e) =>
+                    setMedicalEditTarget((prev) =>
+                      prev ? { ...prev, ketQuaKham: e.target.value } : null
+                    )
+                  }
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 font-semibold"
+                >
+                  <option value="Chờ khám">Chờ khám</option>
+                  <option value="Đã khám - Đạt">Đã khám - Đạt</option>
+                  <option value="Đã khám - Không đạt">Đã khám - Không đạt</option>
+                  <option value="Hoãn">Hoãn / Khám bổ sung</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Ghi chú y tế (ghiChuYTe)
+                </label>
+                <textarea
+                  rows={3}
+                  value={medicalEditTarget.ghiChuYTe}
+                  onChange={(e) =>
+                    setMedicalEditTarget((prev) =>
+                      prev ? { ...prev, ghiChuYTe: e.target.value } : null
+                    )
+                  }
+                  placeholder="Nhập nhận xét chuyên môn y tế, tiền sử hoặc lưu ý sức khỏe..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setMedicalEditTarget(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveMedicalInfo}
+                className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Lưu Thông Tin Y Tế</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Chi Tiết Hồ Sơ Modal */}
       {selectedRecord && (
         <div
@@ -544,7 +1347,9 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
                 <h3 className="text-base font-bold text-slate-900">
                   HỒ SƠ NHÂN SỰ: {selectedRecord.hoVaTen}
                 </h3>
-                <p className="text-xs text-slate-500">Mã: {selectedRecord.id} | Nộp lúc: {new Date(selectedRecord.timestamp).toLocaleString('vi-VN')}</p>
+                <p className="text-xs text-slate-500">
+                  Mã: {selectedRecord.id} | Nộp lúc: {new Date(selectedRecord.timestamp).toLocaleString('vi-VN')}
+                </p>
               </div>
               <button
                 onClick={() => setSelectedRecord(null)}
@@ -556,14 +1361,37 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
 
             {/* Thông tin cơ bản */}
             <div className="grid grid-cols-2 gap-3 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <div><span className="text-slate-500">Họ và tên:</span> <strong className="text-slate-800">{selectedRecord.hoVaTen}</strong></div>
-              <div><span className="text-slate-500">Số CCCD:</span> <strong className="font-mono text-slate-800">{selectedRecord.soCCCD}</strong></div>
-              <div><span className="text-slate-500">Ngày sinh:</span> {selectedRecord.ngaySinh} ({selectedRecord.gioiTinh})</div>
-              <div><span className="text-slate-500">Số điện thoại:</span> {selectedRecord.soDienThoai || 'N/A'}</div>
-              <div><span className="text-slate-500">Ngày & Nơi cấp:</span> {selectedRecord.ngayCap} ({selectedRecord.noiCap})</div>
-              <div><span className="text-slate-500">Email người nộp:</span> <span className="text-blue-700 font-medium">{selectedRecord.userEmail}</span></div>
-              <div className="col-span-2"><span className="text-slate-500">Quê quán:</span> {selectedRecord.queQuan}</div>
-              <div className="col-span-2"><span className="text-slate-500">Thường trú:</span> {selectedRecord.diaChiThuongTru}</div>
+              <div>
+                <span className="text-slate-500">Họ và tên:</span>{' '}
+                <strong className="text-slate-800">{selectedRecord.hoVaTen}</strong>
+              </div>
+              <div>
+                <span className="text-slate-500">Ngày sinh:</span> {selectedRecord.ngaySinh} ({selectedRecord.gioiTinh})
+              </div>
+              {showSensitiveHRCol && (
+                <>
+                  <div>
+                    <span className="text-slate-500">Số CCCD:</span>{' '}
+                    <strong className="font-mono text-slate-800">{selectedRecord.soCCCD}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Số điện thoại:</span> {selectedRecord.soDienThoai || 'N/A'}
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Ngày & Nơi cấp:</span> {selectedRecord.ngayCap} ({selectedRecord.noiCap})
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Email người nộp:</span>{' '}
+                    <span className="text-blue-700 font-medium">{selectedRecord.userEmail}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-500">Quê quán:</span> {selectedRecord.queQuan}
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-500">Thường trú:</span> {selectedRecord.diaChiThuongTru}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Phân cấp cơ cấu tổ chức: Khối > Ban > Phòng */}
@@ -604,156 +1432,121 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
               </div>
             </div>
 
-            <section className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs">
-              <h4 className="mb-3 font-bold text-slate-800">Thông tin tiếp nhận bổ sung</h4>
-              <dl className="grid gap-3 sm:grid-cols-2">
-                {[
-                  ['Ngày vào làm việc', selectedRecord.ngayVaoLam?.split('-').reverse().join('/')],
-                  ['Tình trạng hôn nhân',selectedRecord.tinhTrangHonNhan],
-                  ['Ngày hết hạn CCCD',selectedRecord.ngayHetHanCCCD],
-                  ['Thẩm quyền',selectedRecord.thamQuyen],
-                  ['Phụ cấp năng lực',(selectedRecord.phuCapNangLuc || 0).toLocaleString('vi-VN') + ' đ'],
-                  ['Địa chỉ tạm trú hiện tại', selectedRecord.diaChiTamTru],
-                  ['Email cá nhân', selectedRecord.emailCaNhan],
-                  ['Tình trạng hồ sơ', selectedRecord.tinhTrangHoSo],
-                ].map(([label,value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words font-medium text-slate-800">{value || 'Chưa nhập'}</dd></div>)}
-              </dl>
-            </section>
-
-            {/* Bảng lương chi tiết */}
-            <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs space-y-2">
-              <div className="flex items-center justify-between">
-                <h4 className="font-bold text-emerald-900 uppercase">Cơ Cấu Thu Nhập Hàng Tháng ({selectedRecord.chucVu})</h4>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                  selectedRecord.isManualSalary
-                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                }`}>
-                  {selectedRecord.isManualSalary ? 'Chế độ: Nhập thủ công' : 'Chế độ: Tiêu chuẩn 22 vị trí'}
-                </span>
-              </div>
-
-              <div className="flex justify-between py-1 border-b border-emerald-200/50">
-                <span className="text-slate-600">Lương cơ bản:</span>
-                <span className="font-mono font-semibold">{selectedRecord.luongCoBan.toLocaleString('vi-VN')} VNĐ</span>
-              </div>
-
-              {/* Các khoản phụ cấp thành phần nếu là tiêu chuẩn */}
-              {!selectedRecord.isManualSalary && (
-                <div className="bg-white/60 p-2.5 rounded-lg border border-emerald-100 space-y-1 my-1">
-                  <div className="text-[10px] font-bold text-emerald-900 uppercase">Chi tiết phụ cấp tiêu chuẩn:</div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-600">
-                    <div className="flex justify-between">
-                      <span>• PC Chức vụ:</span>
-                      <span className="font-mono font-medium">{(selectedRecord.phuCapChucVu || 0).toLocaleString('vi-VN')} đ</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>• PC Điện thoại:</span>
-                      <span className="font-mono font-medium">{(selectedRecord.phuCapDienThoai || 0).toLocaleString('vi-VN')} đ</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>• TC Tay nghề:</span>
-                      <span className="font-mono font-medium">{(selectedRecord.troCapTayNghe || 0).toLocaleString('vi-VN')} đ</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>• TC Gia đình:</span>
-                      <span className="font-mono font-medium">{(selectedRecord.troCapGiaDinh || 0).toLocaleString('vi-VN')} đ</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>• Thưởng chuyên cần:</span>
-                      <span className="font-mono font-medium">{(selectedRecord.thuongChuyenCan || 0).toLocaleString('vi-VN')} đ</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>• Thưởng sáng kiến:</span>
-                      <span className="font-mono font-medium">{(selectedRecord.thuongSangKien || 0).toLocaleString('vi-VN')} đ</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-between py-1 border-b border-emerald-200/50">
-                <span className="text-slate-600">Tổng phụ cấp cố định:</span>
-                <span className="font-mono font-semibold">{selectedRecord.phuCapCoDinh.toLocaleString('vi-VN')} VNĐ</span>
-              </div>
-
-              {/* Phụ cấp thực tế làm việc nếu có */}
-              {((selectedRecord.phuCapMoiTruong || 0) > 0 ||
-                (selectedRecord.phuCapXangXe || 0) > 0 ||
-                (selectedRecord.anToanVeSinhVien || 0) > 0 ||
-                (selectedRecord.phuCapKinhDoanh || 0) > 0 ||
-                (selectedRecord.phuCapNangNhoc || 0) > 0) && (
-                <div className="bg-amber-50/60 p-2.5 rounded-lg border border-amber-200 space-y-1 my-1 text-[11px]">
-                  <div className="text-[10px] font-bold text-amber-900 uppercase">Phụ cấp thực tế làm việc:</div>
-                  {(selectedRecord.phuCapMoiTruong || 0) > 0 && (
-                    <div className="flex justify-between text-slate-700">
-                      <span>• PC Môi trường:</span>
-                      <span className="font-mono font-semibold text-amber-900">+{selectedRecord.phuCapMoiTruong?.toLocaleString('vi-VN')} đ</span>
-                    </div>
-                  )}
-                  {(selectedRecord.phuCapXangXe || 0) > 0 && (
-                    <div className="flex justify-between text-slate-700">
-                      <span>• PC Xăng xe:</span>
-                      <span className="font-mono font-semibold text-amber-900">+{selectedRecord.phuCapXangXe?.toLocaleString('vi-VN')} đ</span>
-                    </div>
-                  )}
-                  {(selectedRecord.anToanVeSinhVien || 0) > 0 && (
-                    <div className="flex justify-between text-slate-700">
-                      <span>• An toàn vệ sinh viên:</span>
-                      <span className="font-mono font-semibold text-amber-900">+{selectedRecord.anToanVeSinhVien?.toLocaleString('vi-VN')} đ</span>
-                    </div>
-                  )}
-                  {(selectedRecord.phuCapKinhDoanh || 0) > 0 && (
-                    <div className="flex justify-between text-slate-700">
-                      <span>• PC Kinh doanh:</span>
-                      <span className="font-mono font-semibold text-amber-900">+{selectedRecord.phuCapKinhDoanh?.toLocaleString('vi-VN')} đ</span>
-                    </div>
-                  )}
-                  {(selectedRecord.phuCapNangNhoc || 0) > 0 && (
-                    <div className="flex justify-between text-slate-700">
-                      <span>• PC Nặng nhọc:</span>
-                      <span className="font-mono font-semibold text-amber-900">+{selectedRecord.phuCapNangNhoc?.toLocaleString('vi-VN')} đ</span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {selectedRecord.phuCapPhatSinh > 0 && (
-                <div className="flex justify-between py-1 border-b border-emerald-200/50">
-                  <span className="text-slate-600">Phụ cấp phát sinh khác (điền tay):</span>
-                  <span className="font-mono font-semibold text-amber-800">+{selectedRecord.phuCapPhatSinh.toLocaleString('vi-VN')} VNĐ</span>
-                </div>
-              )}
-
-              <div className="flex justify-between pt-2 text-sm font-bold text-emerald-900">
-                <span>TỔNG THU NHẬP DỰ KIẾN:</span>
-                <span className="font-mono text-base text-emerald-700">{selectedRecord.tongThuNhapDuKien.toLocaleString('vi-VN')} VNĐ/tháng</span>
-              </div>
-            </div>
-
-            {/* Thành phần gia đình */}
-            <div className="space-y-2">
-              <h4 className="text-xs font-bold text-slate-700 uppercase">Thành Phần Gia Đình</h4>
-              {selectedRecord.thongTinGiaDinh && selectedRecord.thongTinGiaDinh.length > 0 ? (
-                <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg overflow-hidden text-xs">
-                  {selectedRecord.thongTinGiaDinh.map((f, i) => (
-                    <div key={i} className="p-2.5 flex justify-between bg-white hover:bg-slate-50">
-                      <div>
-                        <span className="font-bold text-indigo-900 mr-2">{f.quanHe}:</span>
-                        <span className="font-semibold uppercase text-slate-800">{f.hoTen}</span>
-                        {f.namSinh && <span className="text-slate-400 ml-1">({f.namSinh})</span>}
-                      </div>
-                      <span className="text-slate-500">{f.ngheNghiep || 'N/A'}</span>
+            {/* Chỉ hiển thị thông tin nhân sự & bảng lương khi KHÔNG phải là nhân viên y tế (hoặc được cấp quyền) */}
+            {showSensitiveHRCol && (
+              <section className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 text-xs">
+                <h4 className="mb-3 font-bold text-slate-800">Thông tin tiếp nhận bổ sung</h4>
+                <dl className="grid gap-3 sm:grid-cols-2">
+                  {[
+                    ['Ngày vào làm việc', selectedRecord.ngayVaoLam?.split('-').reverse().join('/')],
+                    ['Tình trạng hôn nhân', selectedRecord.tinhTrangHonNhan],
+                    ['Ngày hết hạn CCCD', selectedRecord.ngayHetHanCCCD],
+                    ['Thẩm quyền', selectedRecord.thamQuyen],
+                    ['Phụ cấp năng lực', (selectedRecord.phuCapNangLuc || 0).toLocaleString('vi-VN') + ' đ'],
+                    ['Địa chỉ tạm trú hiện tại', selectedRecord.diaChiTamTru],
+                    ['Email cá nhân', selectedRecord.emailCaNhan],
+                    ['Tình trạng hồ sơ', selectedRecord.tinhTrangHoSo],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="text-slate-500">{label}</dt>
+                      <dd className="mt-1 whitespace-pre-wrap break-words font-medium text-slate-800">
+                        {value || 'Chưa nhập'}
+                      </dd>
                     </div>
                   ))}
+                </dl>
+              </section>
+            )}
+
+            {showSalaryCols && (
+              <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-bold text-emerald-900 uppercase">
+                    Cơ Cấu Thu Nhập Hàng Tháng ({selectedRecord.chucVu})
+                  </h4>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                      selectedRecord.isManualSalary
+                        ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                        : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                    }`}
+                  >
+                    {selectedRecord.isManualSalary ? 'Chế độ: Nhập thủ công' : 'Chế độ: Tiêu chuẩn 22 vị trí'}
+                  </span>
                 </div>
-              ) : (
-                <p className="text-xs text-slate-400 italic">Không có thông tin gia đình.</p>
-              )}
-            </div>
+
+                <div className="flex justify-between py-1 border-b border-emerald-200/50">
+                  <span className="text-slate-600">Lương cơ bản:</span>
+                  <span className="font-mono font-semibold">
+                    {selectedRecord.luongCoBan.toLocaleString('vi-VN')} VNĐ
+                  </span>
+                </div>
+
+                {!selectedRecord.isManualSalary && (
+                  <div className="bg-white/60 p-2.5 rounded-lg border border-emerald-100 space-y-1 my-1">
+                    <div className="text-[10px] font-bold text-emerald-900 uppercase">
+                      Chi tiết phụ cấp tiêu chuẩn:
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-600">
+                      <div className="flex justify-between">
+                        <span>• PC Chức vụ:</span>
+                        <span className="font-mono font-medium">
+                          {(selectedRecord.phuCapChucVu || 0).toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>• PC Điện thoại:</span>
+                        <span className="font-mono font-medium">
+                          {(selectedRecord.phuCapDienThoai || 0).toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>• TC Tay nghề:</span>
+                        <span className="font-mono font-medium">
+                          {(selectedRecord.troCapTayNghe || 0).toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>• TC Gia đình:</span>
+                        <span className="font-mono font-medium">
+                          {(selectedRecord.troCapGiaDinh || 0).toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>• Thưởng chuyên cần:</span>
+                        <span className="font-mono font-medium">
+                          {(selectedRecord.thuongChuyenCan || 0).toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>• Thưởng sáng kiến:</span>
+                        <span className="font-mono font-medium">
+                          {(selectedRecord.thuongSangKien || 0).toLocaleString('vi-VN')} đ
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between py-1 border-b border-emerald-200/50">
+                  <span className="text-slate-600">Tổng phụ cấp cố định:</span>
+                  <span className="font-mono font-semibold">
+                    {selectedRecord.phuCapCoDinh.toLocaleString('vi-VN')} VNĐ
+                  </span>
+                </div>
+
+                <div className="flex justify-between pt-2 text-sm font-bold text-emerald-900">
+                  <span>TỔNG THU NHẬP DỰ KIẾN:</span>
+                  <span className="font-mono text-base text-emerald-700">
+                    {selectedRecord.tongThuNhapDuKien.toLocaleString('vi-VN')} VNĐ/tháng
+                  </span>
+                </div>
+              </div>
+            )}
 
             {selectedRecord.ghiChu && (
               <div className="text-xs p-3 bg-slate-50 rounded-lg">
-                <strong className="text-slate-600">Ghi chú:</strong> {selectedRecord.ghiChu}
+                <strong className="text-slate-600">Ghi chú / Y tế:</strong> {selectedRecord.ghiChu}
               </div>
             )}
 
@@ -808,3 +1601,4 @@ export const NhanSuTable: React.FC<NhanSuTableProps> = ({
     </div>
   );
 };
+
