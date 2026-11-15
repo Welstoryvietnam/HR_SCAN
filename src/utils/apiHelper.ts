@@ -10,14 +10,28 @@ export async function safeFetchJson<T = any>(
       return { ok: false, error: 'Tổng dung lượng tài liệu quá lớn cho một lần trích xuất. Vui lòng giảm dung lượng hoặc số trang PDF/ảnh của nhân viên này rồi thử lại.', status: 413 };
     }
     const headers = new Headers(init?.headers);
+    const isApiCall = typeof input === 'string' && input.startsWith('/api/');
+    const isPublicAuthCall =
+      isApiCall &&
+      (input.startsWith('/api/auth/login') ||
+        input.startsWith('/api/auth/forgot-password') ||
+        input.startsWith('/api/auth/reset-password'));
     // Attach the signed session only to this app's relative API URLs.
-    if (typeof input === 'string' && input.startsWith('/api/')) {
+    if (isApiCall) {
       try {
         const user = JSON.parse(localStorage.getItem('hr_current_user') || 'null');
-        if (user?.sessionToken) headers.set('Authorization',`Bearer ${user.sessionToken}`);
+        if (user?.sessionToken) {
+          headers.set('Authorization', `Bearer ${user.sessionToken}`);
+        }
+        if (user?.email && !headers.has('x-user-email')) {
+          headers.set('x-user-email', String(user.email));
+        }
       } catch { /* Login requests and tests may have no stored session. */ }
     }
-    const res = await fetch(input, {...init,headers});
+    const res = await fetch(input, { ...init, headers });
+    if (res.status === 401 && isApiCall && !isPublicAuthCall && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('hr-auth-session-expired'));
+    }
     const text = await res.text();
 
     if (!text || text.trim() === '') {

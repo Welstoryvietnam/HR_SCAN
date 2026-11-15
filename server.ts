@@ -1,5 +1,5 @@
 import express from "express";
-import {accountStore,verifyPassword,createAccountRouter,type Account} from './backend/accountStore.js';
+import {accountStore,permissionStore,verifyPassword,createAccountRouter,type Account} from './backend/accountStore.js';
 import { createHrmRouter } from './backend/hrm.js';
 import path from "path";
 import fs from "fs";
@@ -937,13 +937,21 @@ const requirePersonnelSession: express.RequestHandler = async (req,res,next) => 
   const user = readSession(token);
   if(!user){res.status(401).json({success:false,error:'Phiên đăng nhập hết hạn. Vui lòng đăng xuất và đăng nhập lại.'});return;}
   try {await syncAccounts();}catch(error){res.status(error instanceof StorageError?error.status:503).json({success:false,error:error instanceof StorageError?error.message:'Không thể xác thực tài khoản từ cloud. Vui lòng thử lại.'});return;}
-  const account = userAccounts.find(item => item.id === user?.id);
-  if (!user || !account || account.status !== 'active' || account.email.toLowerCase() !== user.email || account.role !== user.role) {
+  const account = userAccounts.find(
+    item =>
+      item.id === user?.id ||
+      item.email.toLowerCase() === String(user?.email || '').toLowerCase()
+  );
+  if (!user || !account || account.status !== 'active' || account.role !== user.role) {
     res.status(401).json({success:false,error:"Phiên đăng nhập hết hạn. Vui lòng đăng xuất và đăng nhập lại để truy cập hồ sơ."});
     return;
   }
-  res.locals.personnelUser = user;
-  req.headers['x-user-email'] = user.email;
+  res.locals.personnelUser = {
+    id: account.id,
+    email: account.email.toLowerCase(),
+    role: account.role,
+  };
+  req.headers['x-user-email'] = account.email.toLowerCase();
   next();
 };
 interface MemoryDraft {
@@ -1090,29 +1098,69 @@ app.use(['/api/admin','/api/settings'],requirePersonnelSession,(_req,res,next) =
 const cloudAccountRouter=createAccountRouter(()=>userAccounts);
 app.use('/api/admin/users',(req,res,next)=>cloudAccountsEnabled?cloudAccountRouter(req,res,next):next());
 
+app.get('/api/admin/permissions', async (_req, res) => {
+  try {
+    const result = await permissionStore.load();
+    res.json({ success: true, provider: result.provider, data: result.data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+app.put('/api/admin/permissions', async (req, res) => {
+  try {
+    const result = await permissionStore.save({
+      roleMatrix: req.body?.roleMatrix || {},
+      accountCustomPerms: req.body?.accountCustomPerms || {},
+    });
+    res.json({
+      success: true,
+      provider: result.provider,
+      data: result.data,
+      message:
+        result.provider === 'firestore'
+          ? 'Đã lưu và đồng bộ cấu hình phân quyền lên Cloud Firestore!'
+          : 'Đã lưu cấu hình phân quyền!',
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
 // Kiểm tra thông tin người dùng và phân quyền
 app.get("/api/auth/me", requirePersonnelSession, async (req, res) => {
   try {await syncAccounts();}catch{res.status(503).json({error:'Không tải được tài khoản.'});return;}
-  const clientEmail = ((req.headers["x-user-email"] as string) || "Happyendpu@gmail.com").toLowerCase().trim();
+  const sessionUser = res.locals.personnelUser;
+  const clientEmail = ((sessionUser?.email || req.headers["x-user-email"] as string) || "admin@hrm.local").toLowerCase().trim();
   const matchedUser = userAccounts.find(
-    (u) => u.email.toLowerCase() === clientEmail || u.username.toLowerCase() === clientEmail
+    (u) =>
+      (sessionUser?.id && u.id === sessionUser.id) ||
+      u.email.toLowerCase() === clientEmail ||
+      u.username.toLowerCase() === clientEmail
   );
 
   const isAdmin = matchedUser ? matchedUser.role === "admin" : adminEmails.has(clientEmail);
+  const resolvedRole: "admin" | "employee" = isAdmin ? "admin" : "employee";
   const resolvedHrmRole = matchedUser?.hrmRole || (isAdmin ? "admin" : "nhan_vien_tuyen_dung");
+  const resolvedId = matchedUser?.id || sessionUser?.id || "usr_default";
+  const resolvedEmail = matchedUser?.email || clientEmail;
 
   res.json({
-    id: matchedUser?.id || "usr_default",
+    id: resolvedId,
     username: matchedUser?.username || clientEmail.split("@")[0],
-    email: matchedUser?.email || clientEmail,
+    email: resolvedEmail,
     name: matchedUser?.fullName || clientEmail.split("@")[0].toUpperCase(),
-    role: isAdmin ? "admin" : "employee",
+    role: resolvedRole,
     hrmRole: resolvedHrmRole,
     displayName: isAdmin
       ? "Quản trị viên (Toàn quyền)"
       : resolvedHrmRole === "nhan_vien_y_te"
       ? "Nhân viên y tế"
       : "Nhân viên tuyển dụng",
+    employeeCode: matchedUser?.employeeCode || matchedUser?.username,
+    department: matchedUser?.department,
+    contactEmail: matchedUser?.contactEmail || resolvedEmail,
+    sessionToken: createSession({ id: resolvedId, email: resolvedEmail, role: resolvedRole }),
     isAdmin,
   });
 });
@@ -1131,11 +1179,13 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ error: "Vui lòng nhập Mật khẩu đã được cấp." });
     }
 
-    // Tra cứu tài khoản theo username hoặc email
+    // Tra cứu tài khoản theo username, mã nhân viên hoặc email
     const account = userAccounts.find(
       (u) =>
         u.username.toLowerCase() === loginIdentifier ||
-        u.email.toLowerCase() === loginIdentifier || u.contactEmail?.toLowerCase() === loginIdentifier
+        u.employeeCode?.toLowerCase() === loginIdentifier ||
+        u.email.toLowerCase() === loginIdentifier ||
+        u.contactEmail?.toLowerCase() === loginIdentifier
     );
 
     if (!account) {
@@ -1159,6 +1209,7 @@ app.post("/api/auth/login", async (req, res) => {
     // Đăng nhập thành công -> Cập nhật thời điểm đăng nhập gần nhất
     account.lastLogin = new Date().toISOString();
     const isAdmin = account.role === "admin" || adminEmails.has(account.email.toLowerCase());
+    const resolvedRole: "admin" | "employee" = isAdmin ? "admin" : "employee";
     const resolvedHrmRole = account.hrmRole || (isAdmin ? "admin" : "nhan_vien_tuyen_dung");
 
     const user = {
@@ -1166,17 +1217,17 @@ app.post("/api/auth/login", async (req, res) => {
       username: account.username,
       email: account.email,
       name: account.fullName,
-      role: account.role,
+      role: resolvedRole,
       displayName: isAdmin
         ? "Quản trị viên (Toàn quyền)"
         : resolvedHrmRole === "nhan_vien_y_te"
         ? "Nhân viên y tế"
         : "Nhân viên tuyển dụng",
-      employeeCode:account.employeeCode,
+      employeeCode:account.employeeCode || account.username,
       department:account.department,
       hrmRole:resolvedHrmRole,
-      contactEmail:account.contactEmail,
-      sessionToken: createSession({id:account.id,email:account.email,role:account.role}),
+      contactEmail:account.contactEmail || account.email,
+      sessionToken: createSession({id:account.id,email:account.email,role:resolvedRole}),
     };
 
     res.json({
@@ -1328,6 +1379,33 @@ app.get("/api/admin/users", (req, res) => {
     }));
 
     res.json({ success: true, users: safeAccounts });
+  } catch (error) {
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
+// Đặt lại danh sách tài khoản: xóa toàn bộ tài khoản phụ và chỉ giữ lại tài khoản admin (admin123)
+app.post("/api/admin/users/reset-to-admin", async (req, res) => {
+  try {
+    const defaultAdmin: SystemAccount = {
+      id: "usr_admin_01",
+      username: "admin",
+      password: "admin123",
+      email: "Happyendpu@gmail.com".toLowerCase(),
+      contactEmail: "Happyendpu@gmail.com".toLowerCase(),
+      fullName: "Quản Trị Viên Hệ Thống",
+      role: "admin",
+      hrmRole: "admin",
+      status: "active",
+      createdAt: "2026-09-01T08:00:00.000Z",
+    };
+    await accountStore.resetToAdminOnly(defaultAdmin);
+    userAccounts = [defaultAdmin];
+    adminEmails.add(defaultAdmin.email);
+    res.json({
+      success: true,
+      message: "Đã xóa toàn bộ tài khoản phụ và chỉ giữ lại tài khoản admin (mật khẩu admin123)!",
+    });
   } catch (error) {
     res.status(500).json({ error: (error as Error).message });
   }

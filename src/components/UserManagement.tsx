@@ -222,6 +222,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   const [permissionViewMode, setPermissionViewMode] = useState<'by_role' | 'by_account'>('by_role');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
   const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
+  const [storageProvider, setStorageProvider] = useState<'firestore' | 'local'>('local');
+  const [isSavingPerms, setIsSavingPerms] = useState(false);
 
   // Modal tạo tài khoản mới
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -289,9 +291,39 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     }
   };
 
+  const loadPermissions = async () => {
+    try {
+      const res = await safeFetchJson<{
+        success: boolean;
+        provider?: 'firestore' | 'local';
+        data?: { roleMatrix?: RolePermissionMatrix; accountCustomPerms?: AccountCustomPermissionMap };
+      }>('/api/admin/permissions', {
+        headers: { 'x-user-email': currentUser.email },
+      });
+      if (res.ok && res.data?.success) {
+        if (res.data.provider) setStorageProvider(res.data.provider);
+        if (res.data.data?.roleMatrix && Object.keys(res.data.data.roleMatrix).length > 0) {
+          const merged = { ...DEFAULT_ROLE_MATRIX, ...res.data.data.roleMatrix };
+          setRoleMatrix(merged);
+          localStorage.setItem(ROLE_MATRIX_STORAGE_KEY, JSON.stringify(merged));
+        }
+        if (res.data.data?.accountCustomPerms) {
+          setAccountCustomPerms(res.data.data.accountCustomPerms);
+          localStorage.setItem(
+            ACCOUNT_CUSTOM_PERM_STORAGE_KEY,
+            JSON.stringify(res.data.data.accountCustomPerms)
+          );
+        }
+      }
+    } catch {
+      // fallback to localStorage
+    }
+  };
+
   useEffect(() => {
     localStorage.removeItem('hr_user_accounts');
     loadUsers();
+    loadPermissions();
   }, [currentUser.email]);
 
   // Đồng bộ hoàn toàn danh sách tài khoản trên bảng phân quyền và bảng danh sách bên dưới
@@ -459,18 +491,65 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   };
 
   // Khôi phục toàn bộ bảng phân quyền về mặc định
-  const handleResetAllPermissions = () => {
+  const handleResetAllPermissions = async () => {
     setRoleMatrix(DEFAULT_ROLE_MATRIX);
     setAccountCustomPerms({});
     localStorage.setItem(ROLE_MATRIX_STORAGE_KEY, JSON.stringify(DEFAULT_ROLE_MATRIX));
     localStorage.removeItem(ACCOUNT_CUSTOM_PERM_STORAGE_KEY);
-    showNotify('success', 'Đã khôi phục ma trận phân quyền về cấu hình chuẩn mặc định.');
+    setIsSavingPerms(true);
+    try {
+      const res = await safeFetchJson<{ success: boolean; provider?: 'firestore' | 'local' }>(
+        '/api/admin/permissions',
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-email': currentUser.email,
+          },
+          body: JSON.stringify({ roleMatrix: DEFAULT_ROLE_MATRIX, accountCustomPerms: {} }),
+        }
+      );
+      if (res.data?.provider) setStorageProvider(res.data.provider);
+    } catch {
+      // ignore
+    } finally {
+      setIsSavingPerms(false);
+    }
+    showNotify('success', 'Đã khôi phục ma trận phân quyền về cấu hình chuẩn mặc định và đồng bộ máy chủ.');
   };
 
-  const handleSavePermissionsConfiguration = () => {
+  const handleSavePermissionsConfiguration = async () => {
     localStorage.setItem(ROLE_MATRIX_STORAGE_KEY, JSON.stringify(roleMatrix));
     localStorage.setItem(ACCOUNT_CUSTOM_PERM_STORAGE_KEY, JSON.stringify(accountCustomPerms));
     window.dispatchEvent(new Event('storage'));
+    setIsSavingPerms(true);
+    try {
+      const res = await safeFetchJson<{
+        success: boolean;
+        provider?: 'firestore' | 'local';
+        message?: string;
+      }>('/api/admin/permissions', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-email': currentUser.email,
+        },
+        body: JSON.stringify({ roleMatrix, accountCustomPerms }),
+      });
+      if (res.ok && res.data?.success) {
+        if (res.data.provider) setStorageProvider(res.data.provider);
+        showNotify(
+          'success',
+          res.data.message ||
+            'Đã lưu và đồng bộ cấu hình phân quyền Xem / Sửa / Xóa lên hệ thống!'
+        );
+        return;
+      }
+    } catch {
+      // fallback notification below
+    } finally {
+      setIsSavingPerms(false);
+    }
     showNotify('success', 'Đã lưu và áp dụng cấu hình phân quyền Xem / Sửa / Xóa cho toàn hệ thống!');
   };
 
@@ -645,6 +724,32 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     }
   };
 
+  // Xóa toàn bộ tài khoản phụ trên Cloud/Server và chỉ giữ lại tài khoản admin (admin123)
+  const handleResetAccountsToAdminOnly = async () => {
+    setIsLoading(true);
+    try {
+      const response = await safeFetchJson<{ success: boolean; message?: string; error?: string }>(
+        '/api/admin/users/reset-to-admin',
+        {
+          method: 'POST',
+          headers: { 'x-user-email': currentUser.email },
+        }
+      );
+      if (!response.ok || !response.data?.success) {
+        throw new Error(response.error || 'Không thể đặt lại danh sách tài khoản.');
+      }
+      await loadUsers();
+      showNotify(
+        'success',
+        response.data.message || 'Đã xóa toàn bộ tài khoản phụ và chỉ giữ lại duy nhất tài khoản admin (admin123)!'
+      );
+    } catch (err) {
+      showNotify('error', (err as Error).message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Lọc tài khoản theo từ khóa tìm kiếm
   const filteredUsers = users.filter((u) => {
     const term = searchTerm.toLowerCase().trim();
@@ -789,7 +894,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={loadUsers}
@@ -799,6 +904,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
+
+          {users.length > 1 && (
+            <button
+              type="button"
+              onClick={handleResetAccountsToAdminOnly}
+              disabled={isLoading}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition cursor-pointer"
+              title="Xóa toàn bộ tài khoản phụ trên Cloud/Server và chỉ giữ lại admin (admin123)"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Xóa TK phụ (Chỉ giữ Admin)</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -879,7 +997,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
             <button
               type="button"
               onClick={handleResetAllPermissions}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] font-semibold transition cursor-pointer"
+              disabled={isSavingPerms}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] font-semibold transition cursor-pointer disabled:opacity-50"
               title="Khôi phục về phân quyền mặc định"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -889,10 +1008,17 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
             <button
               type="button"
               onClick={handleSavePermissionsConfiguration}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold shadow-2xs transition cursor-pointer"
+              disabled={isSavingPerms}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold shadow-2xs transition cursor-pointer disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Lưu Phân Quyền</span>
+              <span>
+                {isSavingPerms
+                  ? 'Đang đồng bộ...'
+                  : storageProvider === 'firestore'
+                  ? 'Lưu & Đồng bộ Cloud Firestore'
+                  : 'Lưu Phân Quyền'}
+              </span>
             </button>
           </div>
         </div>

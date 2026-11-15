@@ -28,6 +28,14 @@ import { HealthCheckStandardsManager, HealthSubTab } from './components/HealthCh
 import { UserManagement } from './components/UserManagement';
 import { SopProgressHeader } from './components/SopProgressHeader';
 import { safeFetchJson } from './utils/apiHelper';
+import {
+  AUTH_USER_STORAGE_KEY,
+  AUTH_SESSION_EXPIRED_EVENT,
+  getStoredSessionUser,
+  saveStoredSessionUser,
+  clearStoredSessionUser,
+  verifyCurrentSession,
+} from './utils/authStore';
 import { saveOfflineBackup, loadOfflineBackup, clearOfflineBackup, type OfflineBackupData } from './utils/offlineStorage';
 import {
   Sparkles,
@@ -42,27 +50,12 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  // Trạng thái phiên đăng nhập & thông tin người dùng
-  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
-    try {
-      const saved = localStorage.getItem('hr_current_user');
-      if (saved) {
-        const user = JSON.parse(saved);
-        return user?.sessionToken ? user : null;
-      }
-    } catch {
-      // ignore
-    }
-    return null;
-  });
+  // Trạng thái phiên đăng nhập & thông tin người dùng (thống nhất qua key hr_current_user)
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => getStoredSessionUser());
 
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    try {
-      return Boolean(JSON.parse(localStorage.getItem('hr_current_user') || 'null')?.sessionToken);
-    } catch {
-      return false;
-    }
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() =>
+    Boolean(getStoredSessionUser()?.sessionToken)
+  );
 
   const [activeTab, setActiveTab] = useState<AppTab>('health');
   const [healthSubTab, setHealthSubTab] = useState<HealthSubTab>(() => {
@@ -414,17 +407,20 @@ export default function App() {
   // Xử lý khi đăng nhập thành công
   const handleLoginSuccess = (user: UserProfile) => {
     localStorage.removeItem('hr_user_accounts');
-    localStorage.removeItem('hr_reset_tokens');
-    setCurrentUser(user);
+    const unifiedUser = saveStoredSessionUser(user);
+    setCurrentUser(unifiedUser);
     setIsAuthenticated(true);
-    localStorage.setItem('hr_current_user', JSON.stringify(user));
     setActiveTab('health');
-    const isMedical = user.role !== 'admin' && user.hrmRole === 'nhan_vien_y_te';
+    const isMedical = unifiedUser.role !== 'admin' && unifiedUser.hrmRole === 'nhan_vien_y_te';
     setHealthSubTab(isMedical ? 'tuyen_dung_theo_doi' : 'tuyen_dung_dang_ky');
     showNotification(
       'success',
-      `Đăng nhập thành công: ${user.name} (${
-        user.role === 'admin' ? 'Quản trị viên' : (user.hrmRole === 'nhan_vien_y_te' ? 'Nhân viên y tế' : 'Nhân viên tuyển dụng')
+      `Đăng nhập thành công: ${unifiedUser.name} (${
+        unifiedUser.role === 'admin'
+          ? 'Quản trị viên'
+          : unifiedUser.hrmRole === 'nhan_vien_y_te'
+          ? 'Nhân viên y tế'
+          : 'Nhân viên tuyển dụng'
       })`
     );
   };
@@ -432,8 +428,7 @@ export default function App() {
   // Xử lý khi đăng xuất
   const handleLogout = () => {
     localStorage.removeItem('hr_user_accounts');
-    localStorage.removeItem('hr_reset_tokens');
-    localStorage.removeItem('hr_current_user');
+    clearStoredSessionUser();
     setCurrentUser(null);
     setIsAuthenticated(false);
     setImages([]);
@@ -446,6 +441,58 @@ export default function App() {
     setDraftFormState(undefined);
     showNotification('success', 'Đã đăng xuất khỏi hệ thống thành công.');
   };
+
+  // Đồng bộ phiên đăng nhập với máy chủ (/api/auth/me) và lắng nghe sự kiện hết hạn token hoặc thay đổi tab trình duyệt
+  useEffect(() => {
+    let cancelled = false;
+
+    if (isAuthenticated && currentUser?.sessionToken) {
+      void verifyCurrentSession().then((res) => {
+        if (cancelled) return;
+        if (!res.valid && res.unauthorized) {
+          clearStoredSessionUser();
+          setCurrentUser(null);
+          setIsAuthenticated(false);
+        } else if (res.valid && res.user) {
+          setCurrentUser((prev) => {
+            if (
+              prev &&
+              prev.id === res.user!.id &&
+              prev.role === res.user!.role &&
+              prev.hrmRole === res.user!.hrmRole &&
+              prev.sessionToken === res.user!.sessionToken
+            ) {
+              return prev;
+            }
+            return res.user!;
+          });
+        }
+      });
+    }
+
+    const onSessionExpired = () => {
+      clearStoredSessionUser();
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+    };
+
+    const onStorageSync = (e: StorageEvent) => {
+      if (e.key === AUTH_USER_STORAGE_KEY) {
+        const synced = getStoredSessionUser();
+        setCurrentUser(synced);
+        setIsAuthenticated(Boolean(synced?.sessionToken));
+      }
+    };
+
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, onSessionExpired);
+    window.addEventListener('storage', onStorageSync);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, onSessionExpired);
+      window.removeEventListener('storage', onStorageSync);
+    };
+  }, [isAuthenticated, currentUser?.sessionToken]);
 
   // Bảo vệ tab theo phân quyền: Nhân viên tuyển dụng được truy cập upload/records/health; Nhân viên y tế được truy cập health
   useEffect(() => {

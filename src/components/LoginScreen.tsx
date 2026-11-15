@@ -1,6 +1,11 @@
 import React, { useState } from 'react';
 import { UserProfile } from '../types';
-import { authenticateUser, requestPasswordReset, confirmPasswordReset } from '../utils/authStore';
+import {
+  authenticateUser,
+  requestPasswordReset,
+  confirmPasswordReset,
+  saveStoredSessionUser,
+} from '../utils/authStore';
 import {
   ShieldCheck,
   UserCheck,
@@ -46,7 +51,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) {
-      setErrorMessage('Vui lòng nhập Tên đăng nhập hoặc Email đã được cấp.');
+      setErrorMessage('Vui lòng nhập Tên đăng nhập, Mã nhân viên hoặc Email đã được cấp.');
       return;
     }
     if (!password) {
@@ -61,8 +66,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
     try {
       const res = await authenticateUser(username.trim(), password);
 
-      if (res.success && res.user) {
-        onLoginSuccess(res.user);
+      if (res.success && res.user && res.user.sessionToken) {
+        const unifiedUser = saveStoredSessionUser(res.user);
+        onLoginSuccess(unifiedUser);
       } else {
         setErrorMessage(
           res.error ||
@@ -163,18 +169,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         {/* Brand Header */}
         <div className="text-center space-y-3">
           <div className="flex flex-col items-center justify-center space-y-2">
-            {/* Logo Welstory SVG */}
-            <div className="bg-white/5 backdrop-blur-md rounded-2xl px-8 py-5 border border-white/10 shadow-xl transition-all duration-300 hover:bg-white/10">
-              <svg viewBox="0 0 500 110" className="w-56 sm:w-64 h-auto" fill="none" xmlns="http://www.w3.org/2000/svg">
-                {/* Left accent */}
-                <path d="M44 38H10C10 48 18 60 30 60C38 60 44 52 44 38Z" fill="#ff5419" />
-                
-                {/* Right accent */}
-                <path d="M456 38H490C490 48 482 60 470 60C462 60 456 52 456 38Z" fill="#ff5419" />
-
-                {/* Lowercase typography "welstory" with matching style */}
-                <text x="250" y="76" textAnchor="middle" fill="#ff5419" fontSize="76" fontWeight="900" fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" letterSpacing="-0.04em">welstory</text>
-              </svg>
+            {/* Logo Welstory Vietnam */}
+            <div className="bg-white rounded-2xl px-8 py-5 border border-white/20 shadow-xl transition-all duration-300">
+              <img
+                src="/assets/aistudio/______________Vietnam_CMYK__439d9ecc.png"
+                alt="Samsung Welstory Vietnam"
+                className="w-56 sm:w-64 h-auto object-contain"
+              />
             </div>
             
             <h1 className="text-[11px] font-bold tracking-[0.35em] uppercase text-slate-400">
