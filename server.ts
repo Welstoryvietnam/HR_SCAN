@@ -1,5 +1,5 @@
 import express from "express";
-import {accountStore,permissionStore,verifyPassword,createAccountRouter,type Account} from './backend/accountStore.js';
+import {accountStore,permissionStore,healthNotificationStore,verifyPassword,createAccountRouter,type Account} from './backend/accountStore.js';
 import { createHrmRouter } from './backend/hrm.js';
 import path from "path";
 import fs from "fs";
@@ -1121,6 +1121,145 @@ app.put('/api/admin/permissions', async (req, res) => {
         result.provider === 'firestore'
           ? 'Đã lưu và đồng bộ cấu hình phân quyền lên Cloud Firestore!'
           : 'Đã lưu cấu hình phân quyền!',
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+// Đồng bộ thông báo khám sức khỏe & danh sách đăng ký KSK trên Cloud Firestore
+app.get('/api/health-check/notifications', requirePersonnelSession, async (_req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const [notifRes, regRes] = await Promise.all([
+      healthNotificationStore.loadNotifications(),
+      healthNotificationStore.loadRegistrations(),
+    ]);
+    res.json({
+      success: true,
+      provider: notifRes.provider,
+      notifications: notifRes.notifications,
+      updatedAt: notifRes.updatedAt,
+      registrationsUpdatedAt: regRes.updatedAt,
+      registrationsCount: Array.isArray(regRes.registrations) ? regRes.registrations.length : null,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+app.post('/api/health-check/notifications', requirePersonnelSession, async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const sessionUser = res.locals.personnelUser;
+    const body = req.body || {};
+    const candidateNames: string[] = Array.isArray(body.candidateNames)
+      ? body.candidateNames.map((n: any) => String(n || '').trim()).filter(Boolean)
+      : [];
+    const candidateCount = Number(body.candidateCount) || candidateNames.length || 1;
+    const createdBy = String(body.createdBy || sessionUser?.email || 'Nhân sự Tuyển dụng').trim();
+    const createdByEmail = String(body.createdByEmail || sessionUser?.email || '').trim().toLowerCase();
+    const phong = body.phong ? String(body.phong).trim() : undefined;
+    const nhaCungCap = body.nhaCungCap ? String(body.nhaCungCap).trim() : undefined;
+    const ngayHenKham = body.ngayHenKham ? String(body.ngayHenKham).trim() : undefined;
+
+    const notification = {
+      id: body.id ? String(body.id) : `notif_ksk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      title:
+        body.title ||
+        (candidateCount === 1 && candidateNames[0]
+          ? `Ứng viên mới đăng ký KSK: ${candidateNames[0]}`
+          : `Có ${candidateCount} ứng viên mới đăng ký KSK tuyển dụng`),
+      message:
+        body.message ||
+        `${createdBy} vừa đăng ký khám sức khỏe cho ${
+          candidateNames.length > 0 ? candidateNames.slice(0, 3).join(', ') + (candidateNames.length > 3 ? ` (+${candidateNames.length - 3})` : '') : `${candidateCount} ứng viên`
+        }${phong ? ` — Bộ phận: ${phong}` : ''}${ngayHenKham ? ` — Ngày hẹn khám: ${ngayHenKham}` : ''}.`,
+      candidateNames,
+      candidateCount,
+      phong,
+      nhaCungCap,
+      ngayHenKham,
+      createdBy,
+      createdByEmail,
+      createdAt: new Date().toISOString(),
+      readBy: [],
+      targetRole: 'nhan_vien_y_te' as const,
+    };
+
+    const result = await healthNotificationStore.addNotification(notification);
+    if (Array.isArray(body.registrations)) {
+      await healthNotificationStore.saveRegistrations(body.registrations);
+    }
+
+    res.json({
+      success: true,
+      provider: result.provider,
+      notification,
+      notifications: result.notifications,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+app.post('/api/health-check/notifications/read', requirePersonnelSession, async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const sessionUser = res.locals.personnelUser;
+    const userKey = String(req.body?.userKey || sessionUser?.email || sessionUser?.id || '').toLowerCase();
+    const idOrAll = String(req.body?.id || 'ALL');
+    const result = await healthNotificationStore.markAsRead(idOrAll, userKey);
+    res.json({
+      success: true,
+      provider: result.provider,
+      notifications: result.notifications,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+app.delete('/api/health-check/notifications', requirePersonnelSession, async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const idOrAll = req.query.id ? String(req.query.id) : 'ALL';
+    const result = await healthNotificationStore.clearNotifications(idOrAll);
+    res.json({
+      success: true,
+      provider: result.provider,
+      notifications: result.notifications,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+app.get('/api/health-check/registrations', requirePersonnelSession, async (_req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const result = await healthNotificationStore.loadRegistrations();
+    res.json({
+      success: true,
+      provider: result.provider,
+      registrations: result.registrations,
+      updatedAt: result.updatedAt,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+app.put('/api/health-check/registrations', requirePersonnelSession, async (req, res) => {
+  try {
+    res.setHeader('Cache-Control', 'no-store');
+    const items = Array.isArray(req.body?.registrations) ? req.body.registrations : [];
+    const result = await healthNotificationStore.saveRegistrations(items);
+    res.json({
+      success: true,
+      provider: result.provider,
+      registrations: result.registrations,
+      updatedAt: result.updatedAt,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: (error as Error).message });

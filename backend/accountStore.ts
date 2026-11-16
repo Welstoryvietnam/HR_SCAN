@@ -157,6 +157,181 @@ export class PermissionStore {
 }
 export const permissionStore=new PermissionStore();
 
+export interface HealthNotificationRecord {
+  id: string;
+  title: string;
+  message: string;
+  candidateNames: string[];
+  candidateCount: number;
+  phong?: string;
+  nhaCungCap?: string;
+  ngayHenKham?: string;
+  createdBy: string;
+  createdByEmail?: string;
+  createdAt: string;
+  readBy: string[];
+  targetRole: 'nhan_vien_y_te' | 'all';
+}
+
+export class HealthNotificationStore {
+  private notifStore = new FirestoreRecordStore('hrm_health_notifications', v => v);
+  private regStore = new FirestoreRecordStore('hrm_health_registrations', v => v);
+  private memoryNotifs: HealthNotificationRecord[] = [];
+  private memoryRegs: any[] | null = null;
+  private memoryRegsUpdatedAt = '';
+
+  async loadNotifications(): Promise<{
+    provider: 'firestore' | 'local';
+    notifications: HealthNotificationRecord[];
+    updatedAt: string;
+  }> {
+    if (!firestoreConfigured()) {
+      return {
+        provider: 'local',
+        notifications: this.memoryNotifs,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    try {
+      const doc = await this.notifStore.get('default');
+      const list = Array.isArray(doc.record?.items) ? (doc.record.items as HealthNotificationRecord[]) : [];
+      this.memoryNotifs = list;
+      return {
+        provider: 'firestore',
+        notifications: list,
+        updatedAt: String(doc.record?.updatedAt || doc.version || new Date().toISOString()),
+      };
+    } catch (e) {
+      if (e instanceof StorageError && e.status === 404) {
+        return {
+          provider: 'firestore',
+          notifications: this.memoryNotifs,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      throw e;
+    }
+  }
+
+  private async persistNotifications(items: HealthNotificationRecord[]) {
+    const trimmed = items.slice(0, 60);
+    this.memoryNotifs = trimmed;
+    const record = {
+      id: 'default',
+      items: trimmed,
+      updatedAt: new Date().toISOString(),
+    };
+    if (!firestoreConfigured()) {
+      return { provider: 'local' as const, notifications: trimmed, updatedAt: record.updatedAt };
+    }
+    try {
+      const existing = await this.notifStore.get('default');
+      await this.notifStore.update('default', record, existing.version);
+    } catch (e) {
+      if (e instanceof StorageError && e.status === 404) {
+        await this.notifStore.create([record]);
+      } else {
+        throw e;
+      }
+    }
+    return { provider: 'firestore' as const, notifications: trimmed, updatedAt: record.updatedAt };
+  }
+
+  async addNotification(item: HealthNotificationRecord) {
+    const current = await this.loadNotifications();
+    const next = [item, ...current.notifications.filter(n => n.id !== item.id)];
+    return this.persistNotifications(next);
+  }
+
+  async markAsRead(idOrAll: string, userKey: string) {
+    const cleanKey = userKey.trim().toLowerCase();
+    const current = await this.loadNotifications();
+    const next = current.notifications.map(n => {
+      if (idOrAll === 'ALL' || n.id === idOrAll) {
+        const readBy = Array.isArray(n.readBy) ? [...n.readBy] : [];
+        if (cleanKey && !readBy.includes(cleanKey)) {
+          readBy.push(cleanKey);
+        }
+        return { ...n, readBy };
+      }
+      return n;
+    });
+    return this.persistNotifications(next);
+  }
+
+  async clearNotifications(idOrAll?: string) {
+    if (!idOrAll || idOrAll === 'ALL') {
+      return this.persistNotifications([]);
+    }
+    const current = await this.loadNotifications();
+    const next = current.notifications.filter(n => n.id !== idOrAll);
+    return this.persistNotifications(next);
+  }
+
+  async loadRegistrations(): Promise<{
+    provider: 'firestore' | 'local';
+    registrations: any[] | null;
+    updatedAt: string;
+  }> {
+    if (!firestoreConfigured()) {
+      return {
+        provider: 'local',
+        registrations: this.memoryRegs,
+        updatedAt: this.memoryRegsUpdatedAt,
+      };
+    }
+    try {
+      const doc = await this.regStore.get('default');
+      const items = Array.isArray(doc.record?.items) ? doc.record.items : null;
+      this.memoryRegs = items;
+      this.memoryRegsUpdatedAt = String(doc.record?.updatedAt || doc.version || '');
+      return {
+        provider: 'firestore',
+        registrations: items,
+        updatedAt: this.memoryRegsUpdatedAt,
+      };
+    } catch (e) {
+      if (e instanceof StorageError && e.status === 404) {
+        return {
+          provider: 'firestore',
+          registrations: this.memoryRegs,
+          updatedAt: this.memoryRegsUpdatedAt,
+        };
+      }
+      throw e;
+    }
+  }
+
+  async saveRegistrations(items: any[]) {
+    const safeItems = Array.isArray(items) ? items.slice(0, 500) : [];
+    const updatedAt = new Date().toISOString();
+    this.memoryRegs = safeItems;
+    this.memoryRegsUpdatedAt = updatedAt;
+    const record = {
+      id: 'default',
+      items: safeItems,
+      updatedAt,
+    };
+    if (!firestoreConfigured()) {
+      return { provider: 'local' as const, registrations: safeItems, updatedAt };
+    }
+    try {
+      const existing = await this.regStore.get('default');
+      await this.regStore.update('default', record, existing.version);
+    } catch (e) {
+      if (e instanceof StorageError && e.status === 404) {
+        await this.regStore.create([record]);
+      } else {
+        throw e;
+      }
+    }
+    return { provider: 'firestore' as const, registrations: safeItems, updatedAt };
+  }
+}
+
+export const healthNotificationStore = new HealthNotificationStore();
+
+
 export function createAccountRouter(accounts:()=>Account[]){
   const router=Router();
   const route=(fn:(req:any,res:any)=>Promise<any>)=>async(req:any,res:any)=>{
@@ -186,7 +361,7 @@ export function createAccountRouter(accounts:()=>Account[]){
     if(accounts().some(a=>a.username===username||(contactEmail&&a.contactEmail===contactEmail)))throw new StorageError('Mã đăng nhập hoặc email đã được sử dụng.',409);
     const id='usr_'+randomUUID();
     const role=req.body.role==='admin'?'admin':'employee';
-    const validSubRoles: HrmSubRole[]=['admin','quan_ly_nhan_su','nhan_vien_nhan_su','nhan_vien_tuyen_dung','nhan_vien_y_te'];
+    const validSubRoles: HrmSubRole[]=['admin','nhan_vien_tuyen_dung','nhan_vien_y_te','nhan_vien_quan_ly_ho_so','truong_nhom_cnb','truong_nhom_tuyen_dung','quan_ly_nhan_su','nhan_vien_nhan_su'];
     const hrmRole: HrmSubRole=role==='admin'?'admin':(validSubRoles.includes(req.body.hrmRole)?req.body.hrmRole:'nhan_vien_tuyen_dung');
     const user=await accountStore.save({id,username,email:`${id}@hrm-accounts.invalid`,contactEmail,fullName:String(req.body.fullName).trim(),role,hrmRole,status:'active',password:req.body.password,createdAt:new Date().toISOString()},true);
     return {user:publicAccount(user),message:'Đã tạo tài khoản.'};
@@ -201,7 +376,7 @@ export function createAccountRouter(accounts:()=>Account[]){
       user.contactEmail=email;
     }
     if(input.password){if(typeof input.password!=='string'||input.password.length<6||input.password.length>1000)throw new StorageError('Mật khẩu phải từ 6 đến 1000 ký tự.',400);user.password=input.password;}
-    const validSubRoles: HrmSubRole[]=['admin','quan_ly_nhan_su','nhan_vien_nhan_su','nhan_vien_tuyen_dung','nhan_vien_y_te'];
+    const validSubRoles: HrmSubRole[]=['admin','nhan_vien_tuyen_dung','nhan_vien_y_te','nhan_vien_quan_ly_ho_so','truong_nhom_cnb','truong_nhom_tuyen_dung','quan_ly_nhan_su','nhan_vien_nhan_su'];
     if(['admin','employee'].includes(input.role)&&input.role!==user.role){user.role=input.role;user.hrmRole=input.role==='admin'?'admin':'nhan_vien_tuyen_dung';}
     if(validSubRoles.includes(input.hrmRole)){user.hrmRole=input.hrmRole;if(input.hrmRole==='admin')user.role='admin';else if(user.role!=='admin'||input.role==='employee')user.role='employee';}
     if(['active','locked'].includes(input.status))user.status=input.status;

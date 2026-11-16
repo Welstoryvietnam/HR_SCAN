@@ -16,159 +16,442 @@ import {
   RefreshCw,
   X,
   CheckCircle2,
-  ShieldAlert,
   RotateCcw,
   Save,
   UserCog,
-  Layers
+  Layers,
+  Copy,
+  Check,
+  FileSpreadsheet,
+  PlusCircle,
+  BookOpen,
+  CheckSquare
 } from 'lucide-react';
 
 export interface CrudPermission {
-  view: boolean;
-  edit: boolean;
-  delete: boolean;
+  view: boolean;   // Đọc (Xem)
+  create: boolean; // Thêm (Tạo mới)
+  edit: boolean;   // Sửa (Cập nhật)
+  delete: boolean; // Xóa
 }
+
+export type RoleMatrixKey =
+  | 'nhan_vien_tuyen_dung'
+  | 'nhan_vien_y_te'
+  | 'nhan_vien_quan_ly_ho_so'
+  | 'truong_nhom_cnb'
+  | 'truong_nhom_tuyen_dung'
+  | 'admin';
+
+export interface RoleColumnDefinition {
+  key: RoleMatrixKey;
+  index: number;
+  label: string;
+  shortLabel: string;
+  description: string;
+  accent: 'sky' | 'teal' | 'amber' | 'emerald' | 'indigo' | 'purple';
+  headerBg: string;
+  cellBg: string;
+  badgeCls: string;
+  activeTabCls: string;
+}
+
+export const ROLE_DEFINITIONS: RoleColumnDefinition[] = [
+  {
+    key: 'nhan_vien_tuyen_dung',
+    index: 1,
+    label: '1. Nhân viên tuyển dụng',
+    shortLabel: 'Tuyển dụng',
+    description: 'Tiếp nhận ứng viên, quét CCCD, đăng ký KSK tuyển dụng',
+    accent: 'sky',
+    headerBg: 'bg-sky-50/70',
+    cellBg: 'bg-sky-50/15',
+    badgeCls: 'bg-sky-100 text-sky-800 border-sky-200',
+    activeTabCls: 'bg-sky-600 text-white border-sky-600 shadow-sm',
+  },
+  {
+    key: 'nhan_vien_y_te',
+    index: 2,
+    label: '2. Nhân viên y tế',
+    shortLabel: 'Y tế',
+    description: 'Theo dõi lịch khám, cập nhật kết quả KSK & thống kê Y tế',
+    accent: 'teal',
+    headerBg: 'bg-teal-50/70',
+    cellBg: 'bg-teal-50/15',
+    badgeCls: 'bg-teal-100 text-teal-800 border-teal-200',
+    activeTabCls: 'bg-teal-600 text-white border-teal-600 shadow-sm',
+  },
+  {
+    key: 'nhan_vien_quan_ly_ho_so',
+    index: 3,
+    label: '3. Nhân viên quản lý hồ sơ',
+    shortLabel: 'Quản lý hồ sơ',
+    description: 'Rà soát, lưu trữ, cập nhật hồ sơ nhân sự & thông tin hộ gia đình',
+    accent: 'amber',
+    headerBg: 'bg-amber-50/70',
+    cellBg: 'bg-amber-50/15',
+    badgeCls: 'bg-amber-100 text-amber-800 border-amber-200',
+    activeTabCls: 'bg-amber-600 text-white border-amber-600 shadow-sm',
+  },
+  {
+    key: 'truong_nhom_cnb',
+    index: 4,
+    label: '4. Trưởng nhóm C&B',
+    shortLabel: 'Trưởng nhóm C&B',
+    description: 'Quản lý tiêu chuẩn lương, phụ cấp, BHXH & phê duyệt chế độ',
+    accent: 'emerald',
+    headerBg: 'bg-emerald-50/70',
+    cellBg: 'bg-emerald-50/15',
+    badgeCls: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    activeTabCls: 'bg-emerald-600 text-white border-emerald-600 shadow-sm',
+  },
+  {
+    key: 'truong_nhom_tuyen_dung',
+    index: 5,
+    label: '5. Trưởng nhóm tuyển dụng',
+    shortLabel: 'Tuyển dụng nhóm',
+    description: 'Giám sát toàn bộ quy trình tuyển dụng, KSK, điều phối phòng ban',
+    accent: 'indigo',
+    headerBg: 'bg-indigo-50/70',
+    cellBg: 'bg-indigo-50/15',
+    badgeCls: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+    activeTabCls: 'bg-indigo-600 text-white border-indigo-600 shadow-sm',
+  },
+  {
+    key: 'admin',
+    index: 6,
+    label: '6. Admin (Full quyền)',
+    shortLabel: 'Admin',
+    description: 'Toàn quyền quản trị hệ thống, cấu hình & cấp phát tài khoản',
+    accent: 'purple',
+    headerBg: 'bg-purple-50/70',
+    cellBg: 'bg-purple-50/15',
+    badgeCls: 'bg-purple-100 text-purple-800 border-purple-200',
+    activeTabCls: 'bg-purple-600 text-white border-purple-600 shadow-sm',
+  },
+];
 
 export interface ModulePermissionItem {
   id: string;
+  code: string;
   stt: number;
+  groupName: string;
   name: string;
   description: string;
-  category: 'intake' | 'health' | 'records' | 'admin';
+  category: 'intake' | 'health' | 'records' | 'cnb' | 'admin';
 }
 
 export type RolePermissionMatrix = Record<
   string,
-  {
-    nhan_vien_tuyen_dung: CrudPermission;
-    nhan_vien_y_te: CrudPermission;
-    admin: CrudPermission;
-  }
+  Record<RoleMatrixKey, CrudPermission>
 >;
 
 export type AccountCustomPermissionMap = Record<string, Record<string, CrudPermission>>;
 
-const SYSTEM_MODULES: ModulePermissionItem[] = [
+export const SYSTEM_MODULES: ModulePermissionItem[] = [
   {
     id: 'sop_intake',
+    code: 'A1',
     stt: 1,
-    name: 'Đăng ký nhân viên mới (SOP 4 bước & AI OCR)',
-    description: 'Quét CCCD bằng AI OCR, trích xuất dữ liệu & tạo hồ sơ nhân sự mới.',
+    groupName: 'Nhóm A — Tiếp nhận Nhân viên mới (SOP 4 bước)',
+    name: 'Bước 1 & 2: Quét CCCD/VNeID bằng AI OCR & Đối chiếu thông tin cá nhân',
+    description: 'Tải ảnh CCCD/VNeID, trích xuất AI OCR, kiểm tra nhân thân và lưu bản nháp tiếp nhận.',
+    category: 'intake',
+  },
+  {
+    id: 'sop_org_assign',
+    code: 'A2',
+    stt: 2,
+    groupName: 'Nhóm A — Tiếp nhận Nhân viên mới (SOP 4 bước)',
+    name: 'Bước 3: Phân bổ Khối / Ban / Phòng, Điểm làm việc & Loại hợp đồng',
+    description: 'Gán cơ cấu tổ chức (Khối > Ban > Phòng), vị trí công việc và chức vụ cho nhân viên mới.',
+    category: 'intake',
+  },
+  {
+    id: 'sop_salary_assign',
+    code: 'A3',
+    stt: 3,
+    groupName: 'Nhóm A — Tiếp nhận Nhân viên mới (SOP 4 bước)',
+    name: 'Bước 4: Áp khung Lương cơ bản, Phụ cấp, BHXH & Hoàn tất lưu hồ sơ',
+    description: 'Tự động áp tiêu chuẩn lương hoặc nhập lương/phụ cấp thủ công trước khi ghi vào hệ thống.',
     category: 'intake',
   },
   {
     id: 'ksk_dang_ky',
-    stt: 2,
-    name: '1. Đăng ký KSK tuyển dụng',
-    description: 'Tải ảnh CCCD nhiều ứng viên, quét AI OCR và chỉnh sửa trực tiếp bảng đăng ký KSK.',
+    code: 'B1',
+    stt: 4,
+    groupName: 'Nhóm B — Quản lý Khám sức khỏe (KSK) Tuyển dụng',
+    name: '1. Đăng ký KSK tuyển dụng & Gửi thông báo đẩy cho Y tế',
+    description: 'Quét CCCD hàng loạt ứng viên, lập danh sách hẹn khám và bắn thông báo đẩy sang bộ phận Y tế.',
     category: 'health',
   },
   {
     id: 'ksk_theo_doi',
-    stt: 3,
-    name: '2. Theo dõi KSK tuyển dụng',
-    description: 'Theo dõi lịch hẹn khám, lọc thời gian và cập nhật trạng thái kết quả KSK ứng viên.',
+    code: 'B2',
+    stt: 5,
+    groupName: 'Nhóm B — Quản lý Khám sức khỏe (KSK) Tuyển dụng',
+    name: '2. Theo dõi KSK tuyển dụng, Ngày khám & Ghi chú (Hạng mục khám không đạt)',
+    description: 'Cập nhật ngày khám sức khỏe, trạng thái Đạt / Không đạt / Hoãn và ghi chú hạng mục khám không đạt.',
+    category: 'health',
+  },
+  {
+    id: 'ksk_tiep_nhan_sau_kham',
+    code: 'B3',
+    stt: 6,
+    groupName: 'Nhóm B — Quản lý Khám sức khỏe (KSK) Tuyển dụng',
+    name: '3. Tiếp nhận sau KSK (Chuyển nhân viên mới / Không nhận việc / Chuyển địa điểm)',
+    description: 'Danh sách ứng viên đã thực hiện KSK (Đạt & Không đạt) từ Bước 2 chuyển sang để tích chọn phương án tiếp nhận.',
     category: 'health',
   },
   {
     id: 'ksk_tieu_chuan',
-    stt: 4,
-    name: '3. Tiêu chuẩn KSK tuyển dụng',
-    description: 'Tra cứu và cấu hình bảng ma trận 15 hạng mục tiêu chuẩn KSK tuyển dụng.',
+    code: 'B4',
+    stt: 7,
+    groupName: 'Nhóm B — Quản lý Khám sức khỏe (KSK) Tuyển dụng',
+    name: '4. Tiêu chuẩn KSK tuyển dụng & Danh mục Phòng khám / Nhà cung cấp',
+    description: 'Tra cứu và thiết lập ma trận 15 hạng mục khám theo từng Phòng/Bếp và quản lý đơn vị khám.',
     category: 'health',
   },
   {
     id: 'ksk_dashboard',
-    stt: 5,
-    name: '6. Dashboard khám sức khỏe tuyển dụng',
-    description: 'Biểu đồ thống kê số lượng ứng viên theo trạng thái khám và phân loại Phòng/Ban.',
+    code: 'B5',
+    stt: 8,
+    groupName: 'Nhóm B — Quản lý Khám sức khỏe (KSK) Tuyển dụng',
+    name: '7. Dashboard thống kê KSK tuyển dụng & Xuất báo cáo Excel KSK',
+    description: 'Xem biểu đồ tỷ lệ Đạt/Không đạt theo Phòng/Ban và xuất file Excel báo cáo KSK nhiều sheet.',
     category: 'health',
   },
   {
     id: 'ho_so_nhan_su',
-    stt: 6,
-    name: 'Bảng hồ sơ nhân sự (Sheet DanhSachNhanSu)',
-    description: 'Quản lý danh sách hồ sơ nhân sự đã tiếp nhận toàn công ty (Xem/Sửa/Xóa).',
+    code: 'C1',
+    stt: 9,
+    groupName: 'Nhóm C — Quản lý Hồ sơ Nhân sự & Dữ liệu C&B',
+    name: 'Bảng Hồ sơ Nhân sự — Thông tin hành chính, Liên hệ & Hộ gia đình',
+    description: 'Xem, thêm mới, chỉnh sửa, xóa và xuất Excel danh sách nhân sự (CCCD, địa chỉ, học vấn, hộ gia đình).',
     category: 'records',
   },
   {
+    id: 'ho_so_luong_cnb',
+    code: 'C2',
+    stt: 10,
+    groupName: 'Nhóm C — Quản lý Hồ sơ Nhân sự & Dữ liệu C&B',
+    name: 'Bảng Hồ sơ Nhân sự — Cột dữ liệu nhạy cảm (Lương, Phụ cấp, Thưởng, BHXH)',
+    description: 'Quyền đọc, thêm, sửa, xóa các cột thu nhập, lương cơ bản, phụ cấp cố định/phát sinh trong bảng nhân sự.',
+    category: 'cnb',
+  },
+  {
+    id: 'quan_tri_tieu_chuan_luong',
+    code: 'D1',
+    stt: 11,
+    groupName: 'Nhóm D — Danh mục Hệ thống, Khung Lương & Quản trị Tài khoản',
+    name: 'Quản lý Bảng tiêu chuẩn lương (Sheet TieuChuanLuong)',
+    description: 'Thiết lập định mức lương cơ bản, bậc lương và phụ cấp theo chức vụ trên Sheet TieuChuanLuong.',
+    category: 'cnb',
+  },
+  {
+    id: 'quan_tri_co_cau_to_chuc',
+    code: 'D2',
+    stt: 12,
+    groupName: 'Nhóm D — Danh mục Hệ thống, Khung Lương & Quản trị Tài khoản',
+    name: 'Quản lý cơ cấu tổ chức',
+    description: 'Thiết lập và cập nhật sơ đồ cơ cấu tổ chức Khối > Ban > Phòng toàn công ty.',
+    category: 'cnb',
+  },
+  {
     id: 'quan_tri_he_thong',
-    stt: 7,
-    name: 'Tiêu chuẩn lương, Cơ cấu tổ chức & Tài khoản',
-    description: 'Quản trị bảng lương, cơ cấu tổ chức và cấp phát tài khoản.',
+    code: 'D3',
+    stt: 13,
+    groupName: 'Nhóm D — Danh mục Hệ thống, Khung Lương & Quản trị Tài khoản',
+    name: 'Quản lý Tài khoản người dùng & Cấu hình Ma trận Phân quyền (RBAC)',
+    description: 'Tạo/sửa/xóa tài khoản, đặt lại mật khẩu và phân quyền Đọc/Thêm/Sửa/Xóa cho các vai trò.',
     category: 'admin',
   },
 ];
 
-const DEFAULT_ROLE_MATRIX: RolePermissionMatrix = {
+export const DEFAULT_ROLE_MATRIX: RolePermissionMatrix = {
   sop_intake: {
-    nhan_vien_tuyen_dung: { view: true, edit: true, delete: false },
-    nhan_vien_y_te: { view: false, edit: false, delete: false },
-    admin: { view: true, edit: true, delete: true },
+    nhan_vien_tuyen_dung: { view: true, create: true, edit: true, delete: false },
+    nhan_vien_y_te: { view: false, create: false, edit: false, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: true, edit: true, delete: false },
+    truong_nhom_cnb: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_tuyen_dung: { view: true, create: true, edit: true, delete: true },
+    admin: { view: true, create: true, edit: true, delete: true },
+  },
+  sop_org_assign: {
+    nhan_vien_tuyen_dung: { view: true, create: true, edit: true, delete: false },
+    nhan_vien_y_te: { view: false, create: false, edit: false, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: true, edit: true, delete: false },
+    truong_nhom_cnb: { view: true, create: false, edit: true, delete: false },
+    truong_nhom_tuyen_dung: { view: true, create: true, edit: true, delete: true },
+    admin: { view: true, create: true, edit: true, delete: true },
+  },
+  sop_salary_assign: {
+    nhan_vien_tuyen_dung: { view: true, create: true, edit: true, delete: false },
+    nhan_vien_y_te: { view: false, create: false, edit: false, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_cnb: { view: true, create: true, edit: true, delete: true },
+    truong_nhom_tuyen_dung: { view: true, create: true, edit: true, delete: false },
+    admin: { view: true, create: true, edit: true, delete: true },
   },
   ksk_dang_ky: {
-    nhan_vien_tuyen_dung: { view: true, edit: true, delete: false },
-    nhan_vien_y_te: { view: false, edit: false, delete: false },
-    admin: { view: true, edit: true, delete: true },
+    nhan_vien_tuyen_dung: { view: true, create: true, edit: true, delete: false },
+    nhan_vien_y_te: { view: true, create: false, edit: false, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_cnb: { view: false, create: false, edit: false, delete: false },
+    truong_nhom_tuyen_dung: { view: true, create: true, edit: true, delete: true },
+    admin: { view: true, create: true, edit: true, delete: true },
   },
   ksk_theo_doi: {
-    nhan_vien_tuyen_dung: { view: false, edit: false, delete: false },
-    nhan_vien_y_te: { view: true, edit: true, delete: false },
-    admin: { view: true, edit: true, delete: true },
+    nhan_vien_tuyen_dung: { view: true, create: false, edit: false, delete: false },
+    nhan_vien_y_te: { view: true, create: true, edit: true, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_cnb: { view: false, create: false, edit: false, delete: false },
+    truong_nhom_tuyen_dung: { view: true, create: true, edit: true, delete: true },
+    admin: { view: true, create: true, edit: true, delete: true },
+  },
+  ksk_tiep_nhan_sau_kham: {
+    nhan_vien_tuyen_dung: { view: true, create: true, edit: true, delete: false },
+    nhan_vien_y_te: { view: true, create: false, edit: false, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: true, edit: true, delete: false },
+    truong_nhom_cnb: { view: false, create: false, edit: false, delete: false },
+    truong_nhom_tuyen_dung: { view: true, create: true, edit: true, delete: true },
+    admin: { view: true, create: true, edit: true, delete: true },
   },
   ksk_tieu_chuan: {
-    nhan_vien_tuyen_dung: { view: true, edit: false, delete: false },
-    nhan_vien_y_te: { view: true, edit: false, delete: false },
-    admin: { view: true, edit: true, delete: true },
+    nhan_vien_tuyen_dung: { view: true, create: false, edit: false, delete: false },
+    nhan_vien_y_te: { view: true, create: true, edit: true, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_cnb: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_tuyen_dung: { view: true, create: false, edit: true, delete: false },
+    admin: { view: true, create: true, edit: true, delete: true },
   },
   ksk_dashboard: {
-    nhan_vien_tuyen_dung: { view: false, edit: false, delete: false },
-    nhan_vien_y_te: { view: true, edit: false, delete: false },
-    admin: { view: true, edit: true, delete: true },
+    nhan_vien_tuyen_dung: { view: true, create: false, edit: false, delete: false },
+    nhan_vien_y_te: { view: true, create: true, edit: true, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_cnb: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_tuyen_dung: { view: true, create: true, edit: true, delete: false },
+    admin: { view: true, create: true, edit: true, delete: true },
   },
   ho_so_nhan_su: {
-    nhan_vien_tuyen_dung: { view: true, edit: false, delete: false },
-    nhan_vien_y_te: { view: true, edit: true, delete: false },
-    admin: { view: true, edit: true, delete: true },
+    nhan_vien_tuyen_dung: { view: true, create: false, edit: false, delete: false },
+    nhan_vien_y_te: { view: true, create: false, edit: false, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: true, edit: true, delete: true },
+    truong_nhom_cnb: { view: true, create: false, edit: true, delete: false },
+    truong_nhom_tuyen_dung: { view: true, create: true, edit: true, delete: false },
+    admin: { view: true, create: true, edit: true, delete: true },
+  },
+  ho_so_luong_cnb: {
+    nhan_vien_tuyen_dung: { view: false, create: false, edit: false, delete: false },
+    nhan_vien_y_te: { view: false, create: false, edit: false, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_cnb: { view: true, create: true, edit: true, delete: true },
+    truong_nhom_tuyen_dung: { view: true, create: false, edit: false, delete: false },
+    admin: { view: true, create: true, edit: true, delete: true },
+  },
+  quan_tri_tieu_chuan_luong: {
+    nhan_vien_tuyen_dung: { view: false, create: false, edit: false, delete: false },
+    nhan_vien_y_te: { view: false, create: false, edit: false, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_cnb: { view: true, create: true, edit: true, delete: true },
+    truong_nhom_tuyen_dung: { view: true, create: false, edit: false, delete: false },
+    admin: { view: true, create: true, edit: true, delete: true },
+  },
+  quan_tri_co_cau_to_chuc: {
+    nhan_vien_tuyen_dung: { view: true, create: false, edit: false, delete: false },
+    nhan_vien_y_te: { view: false, create: false, edit: false, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: true, create: false, edit: false, delete: false },
+    truong_nhom_cnb: { view: true, create: true, edit: true, delete: true },
+    truong_nhom_tuyen_dung: { view: true, create: false, edit: false, delete: false },
+    admin: { view: true, create: true, edit: true, delete: true },
   },
   quan_tri_he_thong: {
-    nhan_vien_tuyen_dung: { view: false, edit: false, delete: false },
-    nhan_vien_y_te: { view: false, edit: false, delete: false },
-    admin: { view: true, edit: true, delete: true },
+    nhan_vien_tuyen_dung: { view: false, create: false, edit: false, delete: false },
+    nhan_vien_y_te: { view: false, create: false, edit: false, delete: false },
+    nhan_vien_quan_ly_ho_so: { view: false, create: false, edit: false, delete: false },
+    truong_nhom_cnb: { view: false, create: false, edit: false, delete: false },
+    truong_nhom_tuyen_dung: { view: false, create: false, edit: false, delete: false },
+    admin: { view: true, create: true, edit: true, delete: true },
   },
 };
 
 const ROLE_MATRIX_STORAGE_KEY = 'hr_module_role_permissions_v1';
 const ACCOUNT_CUSTOM_PERM_STORAGE_KEY = 'hr_account_custom_permissions_v1';
 
+function normalizeCrudPerm(raw: any, fallback: CrudPermission): CrudPermission {
+  if (!raw || typeof raw !== 'object') return { ...fallback };
+  const view = raw.view !== undefined ? Boolean(raw.view) : fallback.view;
+  const edit = raw.edit !== undefined ? Boolean(raw.edit) : fallback.edit;
+  const create = raw.create !== undefined ? Boolean(raw.create) : edit;
+  const del = raw.delete !== undefined ? Boolean(raw.delete) : fallback.delete;
+  return {
+    view: view || create || edit || del,
+    create,
+    edit,
+    delete: del,
+  };
+}
+
+function normalizeLoadedRoleMatrix(raw?: Record<string, any>): RolePermissionMatrix {
+  const result: RolePermissionMatrix = { ...DEFAULT_ROLE_MATRIX };
+  for (const mod of SYSTEM_MODULES) {
+    const defRow = DEFAULT_ROLE_MATRIX[mod.id];
+    const fallbackLegacyRow =
+      mod.id === 'quan_tri_tieu_chuan_luong' || mod.id === 'quan_tri_co_cau_to_chuc'
+        ? raw?.quan_tri_cnb_org
+        : undefined;
+    const rawRow = raw?.[mod.id] || fallbackLegacyRow || {};
+    result[mod.id] = {
+      nhan_vien_tuyen_dung: normalizeCrudPerm(rawRow.nhan_vien_tuyen_dung, defRow.nhan_vien_tuyen_dung),
+      nhan_vien_y_te: normalizeCrudPerm(rawRow.nhan_vien_y_te, defRow.nhan_vien_y_te),
+      nhan_vien_quan_ly_ho_so: normalizeCrudPerm(rawRow.nhan_vien_quan_ly_ho_so, defRow.nhan_vien_quan_ly_ho_so),
+      truong_nhom_cnb: normalizeCrudPerm(rawRow.truong_nhom_cnb, defRow.truong_nhom_cnb),
+      truong_nhom_tuyen_dung: normalizeCrudPerm(rawRow.truong_nhom_tuyen_dung, defRow.truong_nhom_tuyen_dung),
+      admin: normalizeCrudPerm(rawRow.admin, defRow.admin),
+    };
+  }
+  return result;
+}
+
 const getPermissionSummaryBadge = (perm: CrudPermission) => {
-  if (perm.view && perm.edit && perm.delete) {
+  const count =
+    (perm.view ? 1 : 0) +
+    (perm.create ? 1 : 0) +
+    (perm.edit ? 1 : 0) +
+    (perm.delete ? 1 : 0);
+
+  if (count === 4) {
     return {
-      label: 'Toàn quyền (Xem/Sửa/Xóa)',
+      label: 'Toàn quyền (4/4)',
+      shortLabel: 'Đọc/Thêm/Sửa/Xóa',
       className: 'bg-purple-100 text-purple-800 border-purple-200',
     };
   }
-  if (perm.view && perm.edit && !perm.delete) {
+  if (!perm.view && !perm.create && !perm.edit && !perm.delete) {
     return {
-      label: 'Xem & Sửa',
+      label: 'Không có quyền (0/4)',
+      shortLabel: 'Không có quyền',
+      className: 'bg-slate-100 text-slate-500 border-slate-200',
+    };
+  }
+  const activeParts: string[] = [];
+  if (perm.view) activeParts.push('Đọc');
+  if (perm.create) activeParts.push('Thêm');
+  if (perm.edit) activeParts.push('Sửa');
+  if (perm.delete) activeParts.push('Xóa');
+  const joined = activeParts.join(' · ');
+
+  if (perm.create || perm.edit) {
+    return {
+      label: `${joined} (${count}/4)`,
+      shortLabel: joined,
       className: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     };
   }
-  if (perm.view && !perm.edit && perm.delete) {
-    return {
-      label: 'Xem & Xóa',
-      className: 'bg-rose-100 text-rose-800 border-rose-200',
-    };
-  }
-  if (perm.view && !perm.edit && !perm.delete) {
-    return {
-      label: 'Chỉ xem',
-      className: 'bg-amber-100 text-amber-800 border-amber-200',
-    };
-  }
   return {
-    label: 'Không có quyền',
-    className: 'bg-slate-100 text-slate-500 border-slate-200',
+    label: `${joined} (${count}/4)`,
+    shortLabel: joined,
+    className: 'bg-amber-100 text-amber-800 border-amber-200',
   };
 };
 
@@ -193,13 +476,25 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   const [isLoading, setIsLoading] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [pendingDeleteUser, setPendingDeleteUser] = useState<SystemUserAccount | null>(null);
+  const [copiedSummary, setCopiedSummary] = useState(false);
 
-  // State cho Bảng Phân Quyền Truy Cập Module & Nội Dung Hệ Thống
   const [roleMatrix, setRoleMatrix] = useState<RolePermissionMatrix>(() => {
     try {
       const saved = localStorage.getItem(ROLE_MATRIX_STORAGE_KEY);
       if (saved) {
-        return { ...DEFAULT_ROLE_MATRIX, ...JSON.parse(saved) };
+        return normalizeLoadedRoleMatrix(JSON.parse(saved));
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_ROLE_MATRIX;
+  });
+
+  const [savedRoleMatrix, setSavedRoleMatrix] = useState<RolePermissionMatrix>(() => {
+    try {
+      const saved = localStorage.getItem(ROLE_MATRIX_STORAGE_KEY);
+      if (saved) {
+        return normalizeLoadedRoleMatrix(JSON.parse(saved));
       }
     } catch {
       // ignore
@@ -219,7 +514,27 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     return {};
   });
 
-  const [permissionViewMode, setPermissionViewMode] = useState<'by_role' | 'by_account'>('by_role');
+  const [savedAccountCustomPerms, setSavedAccountCustomPerms] = useState<AccountCustomPermissionMap>(() => {
+    try {
+      const saved = localStorage.getItem(ACCOUNT_CUSTOM_PERM_STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // ignore
+    }
+    return {};
+  });
+
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+
+  // 3 chế độ hiển thị:
+  // 'role_form': Form phân quyền chi tiết từng vai trò (Bảng có Cột = Nghiệp vụ Đọc/Thêm/Sửa/Xóa, Hàng = Danh sách tính năng)
+  // 'by_role': Bảng ma trận tổng hợp 6 vai trò trên cùng 1 bảng
+  // 'by_account': Bảng phân quyền theo từng tài khoản cụ thể
+  const [permissionViewMode, setPermissionViewMode] = useState<'role_form' | 'by_role' | 'by_account'>('role_form');
+  const [activeFormRoleKey, setActiveFormRoleKey] = useState<RoleMatrixKey>('nhan_vien_tuyen_dung');
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
   const [selectedModuleIds, setSelectedModuleIds] = useState<string[]>([]);
   const [storageProvider, setStorageProvider] = useState<'firestore' | 'local'>('local');
@@ -260,7 +575,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         }
       );
 
-      // Nếu phiên cũ trước khi khởi động lại server bị hết hạn (401), tự động đồng bộ lại phiên admin
       if (res.status === 401 && currentUser.role === 'admin') {
         const reAuth = await safeFetchJson<{ success: boolean; user?: UserProfile }>('/api/auth/login', {
           method: 'POST',
@@ -296,24 +610,27 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       const res = await safeFetchJson<{
         success: boolean;
         provider?: 'firestore' | 'local';
-        data?: { roleMatrix?: RolePermissionMatrix; accountCustomPerms?: AccountCustomPermissionMap };
+        data?: { roleMatrix?: Record<string, any>; accountCustomPerms?: AccountCustomPermissionMap };
       }>('/api/admin/permissions', {
         headers: { 'x-user-email': currentUser.email },
       });
       if (res.ok && res.data?.success) {
         if (res.data.provider) setStorageProvider(res.data.provider);
         if (res.data.data?.roleMatrix && Object.keys(res.data.data.roleMatrix).length > 0) {
-          const merged = { ...DEFAULT_ROLE_MATRIX, ...res.data.data.roleMatrix };
+          const merged = normalizeLoadedRoleMatrix(res.data.data.roleMatrix);
           setRoleMatrix(merged);
+          setSavedRoleMatrix(merged);
           localStorage.setItem(ROLE_MATRIX_STORAGE_KEY, JSON.stringify(merged));
         }
         if (res.data.data?.accountCustomPerms) {
           setAccountCustomPerms(res.data.data.accountCustomPerms);
+          setSavedAccountCustomPerms(res.data.data.accountCustomPerms);
           localStorage.setItem(
             ACCOUNT_CUSTOM_PERM_STORAGE_KEY,
             JSON.stringify(res.data.data.accountCustomPerms)
           );
         }
+        setHasUnsavedChanges(false);
       }
     } catch {
       // fallback to localStorage
@@ -326,84 +643,110 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     loadPermissions();
   }, [currentUser.email]);
 
-  // Đồng bộ hoàn toàn danh sách tài khoản trên bảng phân quyền và bảng danh sách bên dưới
   const displayAccounts = users;
 
-  const resolveAccountRoleKey = (acc: SystemUserAccount): 'admin' | 'nhan_vien_y_te' | 'nhan_vien_tuyen_dung' => {
+  const resolveAccountRoleKey = (acc: SystemUserAccount): RoleMatrixKey => {
     if (acc.role === 'admin' || acc.hrmRole === 'admin') return 'admin';
     if (acc.hrmRole === 'nhan_vien_y_te') return 'nhan_vien_y_te';
+    if (acc.hrmRole === 'nhan_vien_quan_ly_ho_so' || acc.hrmRole === 'nhan_vien_nhan_su') {
+      return 'nhan_vien_quan_ly_ho_so';
+    }
+    if (acc.hrmRole === 'truong_nhom_cnb' || acc.hrmRole === 'quan_ly_nhan_su') {
+      return 'truong_nhom_cnb';
+    }
+    if (acc.hrmRole === 'truong_nhom_tuyen_dung') return 'truong_nhom_tuyen_dung';
     return 'nhan_vien_tuyen_dung';
   };
 
-  // Lấy quyền thực tế của 1 tài khoản trên 1 module (ưu tiên quyền tùy chỉnh riêng nếu có, nếu không lấy theo vai trò)
-  const getEffectiveAccountPermission = (acc: SystemUserAccount, moduleId: string): CrudPermission => {
-    const customForAcc = accountCustomPerms[acc.id]?.[moduleId];
-    if (customForAcc) return customForAcc;
-    const roleKey = resolveAccountRoleKey(acc);
-    return roleMatrix[moduleId]?.[roleKey] || { view: false, edit: false, delete: false };
+  const getRoleDefinition = (roleKey: RoleMatrixKey): RoleColumnDefinition => {
+    return ROLE_DEFINITIONS.find((r) => r.key === roleKey) || ROLE_DEFINITIONS[0];
   };
 
-  // Cập nhật quyền theo Vai trò
+  const getEffectiveAccountPermission = (acc: SystemUserAccount, moduleId: string): CrudPermission => {
+    const customForAcc = accountCustomPerms[acc.id]?.[moduleId];
+    const roleKey = resolveAccountRoleKey(acc);
+    const fallback = roleMatrix[moduleId]?.[roleKey] || {
+      view: false,
+      create: false,
+      edit: false,
+      delete: false,
+    };
+    if (customForAcc) return normalizeCrudPerm(customForAcc, fallback);
+    return fallback;
+  };
+
+  const applyCrudLogic = (current: CrudPermission, action: keyof CrudPermission): CrudPermission => {
+    const nextVal = !current[action];
+    const updated: CrudPermission = { ...current, [action]: nextVal };
+
+    // Nếu bật Thêm, Sửa hoặc Xóa -> Tự động bật Đọc (Xem)
+    if ((action === 'create' || action === 'edit' || action === 'delete') && nextVal) {
+      updated.view = true;
+    }
+    // Nếu tắt Đọc (Xem) -> Tự động tắt Thêm, Sửa và Xóa
+    if (action === 'view' && !nextVal) {
+      updated.create = false;
+      updated.edit = false;
+      updated.delete = false;
+    }
+    return updated;
+  };
+
   const handleToggleRolePermission = (
     moduleId: string,
-    roleKey: 'nhan_vien_tuyen_dung' | 'nhan_vien_y_te' | 'admin',
+    roleKey: RoleMatrixKey,
     action: keyof CrudPermission
   ) => {
     setRoleMatrix((prev) => {
-      const current = prev[moduleId]?.[roleKey] || { view: false, edit: false, delete: false };
-      const nextVal = !current[action];
-      const updated: CrudPermission = { ...current, [action]: nextVal };
+      const current = prev[moduleId]?.[roleKey] || {
+        view: false,
+        create: false,
+        edit: false,
+        delete: false,
+      };
+      const updated = applyCrudLogic(current, action);
 
-      // Nếu bật Sửa hoặc Xóa thì tự động bật Xem
-      if ((action === 'edit' || action === 'delete') && nextVal) {
-        updated.view = true;
-      }
-      // Nếu tắt Xem thì tự động tắt Sửa và Xóa
-      if (action === 'view' && !nextVal) {
-        updated.edit = false;
-        updated.delete = false;
-      }
-
-      const nextMatrix = {
+      const nextMatrix: RolePermissionMatrix = {
         ...prev,
         [moduleId]: {
           ...prev[moduleId],
           [roleKey]: updated,
         },
       };
-      localStorage.setItem(ROLE_MATRIX_STORAGE_KEY, JSON.stringify(nextMatrix));
       return nextMatrix;
     });
+    setHasUnsavedChanges(true);
   };
 
-  // Tích chọn / Bỏ chọn tất cả Xem/Sửa/Xóa cho 1 ô (Module + Vai trò)
-  const handleToggleAllInRoleCell = (
-    moduleId: string,
-    roleKey: 'nhan_vien_tuyen_dung' | 'nhan_vien_y_te' | 'admin'
-  ) => {
+  const handleToggleAllInRoleCell = (moduleId: string, roleKey: RoleMatrixKey) => {
     setRoleMatrix((prev) => {
-      const current = prev[moduleId]?.[roleKey] || { view: false, edit: false, delete: false };
-      const isAllChecked = current.view && current.edit && current.delete;
+      const current = prev[moduleId]?.[roleKey] || {
+        view: false,
+        create: false,
+        edit: false,
+        delete: false,
+      };
+      const isAllChecked = current.view && current.create && current.edit && current.delete;
       const updated: CrudPermission = {
         view: !isAllChecked,
+        create: !isAllChecked,
         edit: !isAllChecked,
         delete: !isAllChecked,
       };
-      const nextMatrix = {
+      const nextMatrix: RolePermissionMatrix = {
         ...prev,
         [moduleId]: {
           ...prev[moduleId],
           [roleKey]: updated,
         },
       };
-      localStorage.setItem(ROLE_MATRIX_STORAGE_KEY, JSON.stringify(nextMatrix));
       return nextMatrix;
     });
+    setHasUnsavedChanges(true);
   };
 
-  // Tích chọn / Bỏ chọn toàn bộ 1 cột Vai trò
   const handleToggleEntireRoleColumn = (
-    roleKey: 'nhan_vien_tuyen_dung' | 'nhan_vien_y_te' | 'admin',
+    roleKey: RoleMatrixKey,
     action: 'all' | keyof CrudPermission
   ) => {
     setRoleMatrix((prev) => {
@@ -415,21 +758,29 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       const allEnabled = targetModules.every((m) => {
         const p = prev[m.id]?.[roleKey];
         if (!p) return false;
-        return action === 'all' ? p.view && p.edit && p.delete : p[action];
+        return action === 'all' ? p.view && p.create && p.edit && p.delete : p[action];
       });
 
       const nextVal = !allEnabled;
       const nextMatrix = { ...prev };
 
       targetModules.forEach((m) => {
-        const cur = nextMatrix[m.id]?.[roleKey] || { view: false, edit: false, delete: false };
+        const cur = nextMatrix[m.id]?.[roleKey] || {
+          view: false,
+          create: false,
+          edit: false,
+          delete: false,
+        };
         let updated: CrudPermission;
         if (action === 'all') {
-          updated = { view: nextVal, edit: nextVal, delete: nextVal };
+          updated = { view: nextVal, create: nextVal, edit: nextVal, delete: nextVal };
         } else {
           updated = { ...cur, [action]: nextVal };
-          if ((action === 'edit' || action === 'delete') && nextVal) updated.view = true;
+          if ((action === 'create' || action === 'edit' || action === 'delete') && nextVal) {
+            updated.view = true;
+          }
           if (action === 'view' && !nextVal) {
+            updated.create = false;
             updated.edit = false;
             updated.delete = false;
           }
@@ -440,12 +791,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         };
       });
 
-      localStorage.setItem(ROLE_MATRIX_STORAGE_KEY, JSON.stringify(nextMatrix));
       return nextMatrix;
     });
+    setHasUnsavedChanges(true);
   };
 
-  // Cập nhật quyền riêng cho từng Tài khoản cụ thể
   const handleToggleAccountPermission = (
     acc: SystemUserAccount,
     moduleId: string,
@@ -455,16 +805,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       const current = getEffectiveAccountPermission(acc, moduleId);
       let updated: CrudPermission;
       if (action === 'all') {
-        const isFull = current.view && current.edit && current.delete;
-        updated = { view: !isFull, edit: !isFull, delete: !isFull };
+        const isFull = current.view && current.create && current.edit && current.delete;
+        updated = { view: !isFull, create: !isFull, edit: !isFull, delete: !isFull };
       } else {
-        const nextVal = !current[action];
-        updated = { ...current, [action]: nextVal };
-        if ((action === 'edit' || action === 'delete') && nextVal) updated.view = true;
-        if (action === 'view' && !nextVal) {
-          updated.edit = false;
-          updated.delete = false;
-        }
+        updated = applyCrudLogic(current, action);
       }
 
       const nextMap: AccountCustomPermissionMap = {
@@ -474,53 +818,53 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
           [moduleId]: updated,
         },
       };
-      localStorage.setItem(ACCOUNT_CUSTOM_PERM_STORAGE_KEY, JSON.stringify(nextMap));
       return nextMap;
     });
+    setHasUnsavedChanges(true);
   };
 
-  // Xóa quyền tùy chỉnh của 1 tài khoản để quay về quyền chuẩn theo vai trò
   const handleResetAccountCustomPerm = (accountId: string) => {
     setAccountCustomPerms((prev) => {
       const next = { ...prev };
       delete next[accountId];
-      localStorage.setItem(ACCOUNT_CUSTOM_PERM_STORAGE_KEY, JSON.stringify(next));
       return next;
     });
-    showNotify('success', 'Đã đồng bộ quyền của tài khoản về mặc định theo nhóm vai trò.');
+    setHasUnsavedChanges(true);
+    showNotify(
+      'success',
+      'Đã đặt lại quyền của tài khoản trên bản nháp. Nhấn "Lưu Phân Quyền" để chính thức áp dụng.'
+    );
   };
 
-  // Khôi phục toàn bộ bảng phân quyền về mặc định
-  const handleResetAllPermissions = async () => {
+  const handleDiscardUnsavedPermissions = () => {
+    setRoleMatrix(savedRoleMatrix);
+    setAccountCustomPerms(savedAccountCustomPerms);
+    setHasUnsavedChanges(false);
+    showNotify('success', 'Đã hủy các thay đổi chưa lưu và quay về cấu hình phân quyền đang áp dụng.');
+  };
+
+  const handleResetAllPermissions = () => {
     setRoleMatrix(DEFAULT_ROLE_MATRIX);
     setAccountCustomPerms({});
-    localStorage.setItem(ROLE_MATRIX_STORAGE_KEY, JSON.stringify(DEFAULT_ROLE_MATRIX));
-    localStorage.removeItem(ACCOUNT_CUSTOM_PERM_STORAGE_KEY);
-    setIsSavingPerms(true);
-    try {
-      const res = await safeFetchJson<{ success: boolean; provider?: 'firestore' | 'local' }>(
-        '/api/admin/permissions',
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-user-email': currentUser.email,
-          },
-          body: JSON.stringify({ roleMatrix: DEFAULT_ROLE_MATRIX, accountCustomPerms: {} }),
-        }
-      );
-      if (res.data?.provider) setStorageProvider(res.data.provider);
-    } catch {
-      // ignore
-    } finally {
-      setIsSavingPerms(false);
-    }
-    showNotify('success', 'Đã khôi phục ma trận phân quyền về cấu hình chuẩn mặc định và đồng bộ máy chủ.');
+    setHasUnsavedChanges(true);
+    showNotify(
+      'success',
+      'Đã tải cấu hình mặc định 6 vai trò lên bảng. Nhấn nút "Lưu Phân Quyền" để chính thức áp dụng!'
+    );
   };
 
   const handleSavePermissionsConfiguration = async () => {
     localStorage.setItem(ROLE_MATRIX_STORAGE_KEY, JSON.stringify(roleMatrix));
     localStorage.setItem(ACCOUNT_CUSTOM_PERM_STORAGE_KEY, JSON.stringify(accountCustomPerms));
+    setSavedRoleMatrix(roleMatrix);
+    setSavedAccountCustomPerms(accountCustomPerms);
+    setHasUnsavedChanges(false);
+    const nowStr = new Date().toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    setLastSavedAt(nowStr);
     window.dispatchEvent(new Event('storage'));
     setIsSavingPerms(true);
     try {
@@ -541,7 +885,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         showNotify(
           'success',
           res.data.message ||
-            'Đã lưu và đồng bộ cấu hình phân quyền Xem / Sửa / Xóa lên hệ thống!'
+            'Đã lưu và chính thức áp dụng cấu hình phân quyền mới cho 6 vai trò lên hệ thống & Cloud Firestore!'
         );
         return;
       }
@@ -550,7 +894,41 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     } finally {
       setIsSavingPerms(false);
     }
-    showNotify('success', 'Đã lưu và áp dụng cấu hình phân quyền Xem / Sửa / Xóa cho toàn hệ thống!');
+    showNotify('success', 'Đã lưu và chính thức áp dụng cấu hình phân quyền mới cho 6 vai trò!');
+  };
+
+  const handleCopyPermissionMarkdown = async () => {
+    const formatPermCode = (p?: CrudPermission) => {
+      if (!p || (!p.view && !p.create && !p.edit && !p.delete)) return 'Không';
+      const parts: string[] = [];
+      if (p.view) parts.push('Đọc');
+      if (p.create) parts.push('Thêm');
+      if (p.edit) parts.push('Sửa');
+      if (p.delete) parts.push('Xóa');
+      return parts.join('/');
+    };
+
+    const header =
+      '| Mã | Tính năng / Nghiệp vụ | 1. Tuyển dụng | 2. Y tế | 3. Quản lý hồ sơ | 4. C&B | 5. Tuyển dụng nhóm | 6. Admin |';
+    const sep = '|---|---|---|---|---|---|---|---|';
+    const rows = SYSTEM_MODULES.map((m) => {
+      const r = roleMatrix[m.id];
+      return `| ${m.code} | ${m.name} | ${formatPermCode(r?.nhan_vien_tuyen_dung)} | ${formatPermCode(
+        r?.nhan_vien_y_te
+      )} | ${formatPermCode(r?.nhan_vien_quan_ly_ho_so)} | ${formatPermCode(
+        r?.truong_nhom_cnb
+      )} | ${formatPermCode(r?.truong_nhom_tuyen_dung)} | ${formatPermCode(r?.admin)} |`;
+    });
+
+    const text = [header, sep, ...rows].join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedSummary(true);
+      setTimeout(() => setCopiedSummary(false), 3000);
+      showNotify('success', 'Đã sao chép bảng phân quyền 6 vai trò (Đọc/Thêm/Sửa/Xóa) vào bộ nhớ tạm!');
+    } catch {
+      showNotify('error', 'Không thể sao chép tự động. Vui lòng thử lại.');
+    }
   };
 
   const toggleSelectModuleRow = (moduleId: string) => {
@@ -567,7 +945,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     }
   };
 
-  // Xử lý tạo tài khoản mới
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUsername.trim() || !newPassword.trim() || !newFullName.trim()) {
@@ -578,7 +955,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     const cleanUsername = newUsername.trim().toLowerCase();
     const cleanEmail = newEmail.trim().toLowerCase();
 
-    // Kiểm tra trùng lặp trên local
     const currentList = users;
     if (currentList.some((u) => u.username.toLowerCase() === cleanUsername)) {
       showNotify('error', `Tên đăng nhập "${cleanUsername}" đã được sử dụng.`);
@@ -588,17 +964,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       showNotify('error', `Email "${cleanEmail}" đã được liên kết với một tài khoản khác.`);
       return;
     }
-
-    const newAcc: SystemUserAccount = {
-      id: `usr_${Date.now()}`,
-      username: cleanUsername,
-      password: newPassword.trim(),
-      email: cleanEmail,
-      fullName: newFullName.trim(),
-      role: newRole,
-      status: 'active',
-      createdAt: new Date().toISOString(),
-    };
 
     setIsSubmitting(true);
     try {
@@ -621,10 +986,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         }
       );
 
-      if (!response.ok || !response.data?.success) throw new Error(response.error || 'Chưa lưu được thay đổi lên máy chủ.');
+      if (!response.ok || !response.data?.success) {
+        throw new Error(response.error || 'Chưa lưu được thay đổi lên máy chủ.');
+      }
       await loadUsers();
 
-      showNotify('success', `Đã tạo và cấp tài khoản thành công cho nhân viên ${newAcc.fullName}!`);
+      showNotify('success', `Đã tạo và cấp tài khoản thành công cho nhân viên ${newFullName.trim()}!`);
       setShowCreateModal(false);
       setNewUsername('');
       setNewPassword('');
@@ -639,18 +1006,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     }
   };
 
-  // Mở modal sửa tài khoản
   const handleOpenEdit = (user: SystemUserAccount) => {
     setEditingUser(user);
     setEditFullName(user.fullName);
     setEditEmail(user.contactEmail ?? user.email);
     setEditPassword('');
     setEditRole(user.role);
-    setEditHrmRole(user.hrmRole || (user.role === 'admin' ? 'admin' : 'nhan_vien_tuyen_dung'));
+    setEditHrmRole(resolveAccountRoleKey(user));
     setEditStatus(user.status);
   };
 
-  // Lưu chỉnh sửa tài khoản
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
@@ -680,7 +1045,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         }
       );
 
-      if (!response.ok || !response.data?.success) throw new Error(response.error || 'Chưa lưu được thay đổi lên máy chủ.');
+      if (!response.ok || !response.data?.success) {
+        throw new Error(response.error || 'Chưa lưu được thay đổi lên máy chủ.');
+      }
       await loadUsers();
 
       showNotify('success', 'Cập nhật tài khoản thành công!');
@@ -692,7 +1059,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     }
   };
 
-  // Xóa tài khoản
   const handleDeleteUser = async (user: SystemUserAccount) => {
     if (user.email.toLowerCase() === currentUser.email.toLowerCase()) {
       showNotify('error', 'Bạn không thể tự xóa tài khoản của chính mình.');
@@ -715,7 +1081,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         }
       );
 
-      if (!response.ok || !response.data?.success) throw new Error(response.error || 'Chưa lưu được thay đổi lên máy chủ.');
+      if (!response.ok || !response.data?.success) {
+        throw new Error(response.error || 'Chưa lưu được thay đổi lên máy chủ.');
+      }
       await loadUsers();
 
       showNotify('success', `Đã xóa tài khoản "${user.username}".`);
@@ -724,7 +1092,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     }
   };
 
-  // Xóa toàn bộ tài khoản phụ trên Cloud/Server và chỉ giữ lại tài khoản admin (admin123)
   const handleResetAccountsToAdminOnly = async () => {
     setIsLoading(true);
     try {
@@ -750,29 +1117,33 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     }
   };
 
-  // Lọc tài khoản theo từ khóa tìm kiếm
   const filteredUsers = users.filter((u) => {
     const term = searchTerm.toLowerCase().trim();
     if (!term) return true;
+    const roleDef = getRoleDefinition(resolveAccountRoleKey(u));
     return (
       u.username.toLowerCase().includes(term) ||
       u.fullName.toLowerCase().includes(term) ||
       u.email.toLowerCase().includes(term) ||
-      (u.role === 'admin'
-        ? 'quản trị viên admin'
-        : u.hrmRole === 'nhan_vien_y_te'
-        ? 'nhân viên y tế'
-        : 'nhân viên tuyển dụng').includes(term)
+      roleDef.label.toLowerCase().includes(term) ||
+      roleDef.shortLabel.toLowerCase().includes(term)
     );
   });
 
-  // Phân nhóm tài khoản theo vai trò để hiển thị trực tiếp trong bảng phân quyền
   const accountsByRole = useMemo(() => {
-    return {
-      nhan_vien_tuyen_dung: displayAccounts.filter((u) => resolveAccountRoleKey(u) === 'nhan_vien_tuyen_dung'),
-      nhan_vien_y_te: displayAccounts.filter((u) => resolveAccountRoleKey(u) === 'nhan_vien_y_te'),
-      admin: displayAccounts.filter((u) => resolveAccountRoleKey(u) === 'admin'),
+    const map: Record<RoleMatrixKey, SystemUserAccount[]> = {
+      nhan_vien_tuyen_dung: [],
+      nhan_vien_y_te: [],
+      nhan_vien_quan_ly_ho_so: [],
+      truong_nhom_cnb: [],
+      truong_nhom_tuyen_dung: [],
+      admin: [],
     };
+    for (const acc of displayAccounts) {
+      const rk = resolveAccountRoleKey(acc);
+      map[rk].push(acc);
+    }
+    return map;
   }, [displayAccounts]);
 
   const focusedAccount = useMemo(
@@ -780,52 +1151,73 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     [displayAccounts, selectedAccountId]
   );
 
+  const activeRoleDef = getRoleDefinition(activeFormRoleKey);
+
   const renderPermissionCheckboxes = (
     perm: CrudPermission,
     onToggle: (action: keyof CrudPermission) => void,
     onToggleAll: () => void,
-    accentColor: 'sky' | 'teal' | 'purple' | 'indigo' = 'purple'
+    accentColor: 'sky' | 'teal' | 'amber' | 'emerald' | 'indigo' | 'purple' = 'purple'
   ) => {
     const badge = getPermissionSummaryBadge(perm);
-    const isAll = perm.view && perm.edit && perm.delete;
+    const isAll = perm.view && perm.create && perm.edit && perm.delete;
 
     const accentMap = {
       sky: 'accent-sky-600 focus:ring-sky-500',
       teal: 'accent-teal-600 focus:ring-teal-500',
-      purple: 'accent-purple-600 focus:ring-purple-500',
+      amber: 'accent-amber-600 focus:ring-amber-500',
+      emerald: 'accent-emerald-600 focus:ring-emerald-500',
       indigo: 'accent-indigo-600 focus:ring-indigo-500',
+      purple: 'accent-purple-600 focus:ring-purple-500',
     };
 
     return (
       <div className="flex flex-col items-center gap-1.5 py-1">
-        <div className="flex items-center gap-1.5">
-          <label className="inline-flex items-center gap-1 cursor-pointer select-none" title="Tích chọn/Bỏ chọn toàn quyền (Xem, Sửa, Xóa)">
+        <div className="flex items-center gap-1">
+          <label
+            className="inline-flex items-center gap-1 cursor-pointer select-none"
+            title="Tích chọn/Bỏ chọn toàn quyền (Đọc, Thêm, Sửa, Xóa)"
+          >
             <input
               type="checkbox"
               checked={isAll}
               onChange={onToggleAll}
               className={`w-3.5 h-3.5 rounded border-slate-300 cursor-pointer ${accentMap[accentColor]}`}
             />
-            <span className={`px-2 py-0.5 rounded border font-bold text-[10px] leading-tight transition ${badge.className}`}>
-              {badge.label}
+            <span
+              className={`px-1.5 py-0.5 rounded border font-bold text-[10px] leading-tight transition ${badge.className}`}
+            >
+              {badge.shortLabel}
             </span>
           </label>
         </div>
 
-        <div className="inline-flex items-center gap-2 bg-slate-50/90 px-2.5 py-1 rounded-lg border border-slate-200/80">
-          <label className="inline-flex items-center gap-1 cursor-pointer select-none text-[11px] font-semibold text-slate-700 hover:text-blue-700">
+        <div className="inline-flex items-center gap-1 bg-slate-50/95 px-2 py-1 rounded-lg border border-slate-200/80">
+          <label className="inline-flex items-center gap-0.5 cursor-pointer select-none text-[10px] font-semibold text-slate-700 hover:text-blue-700">
             <input
               type="checkbox"
               checked={perm.view}
               onChange={() => onToggle('view')}
               className="w-3.5 h-3.5 rounded border-slate-300 accent-blue-600 cursor-pointer"
             />
-            <span>Xem</span>
+            <span>Đọc</span>
           </label>
 
-          <span className="text-slate-300">|</span>
+          <span className="text-slate-300">·</span>
 
-          <label className="inline-flex items-center gap-1 cursor-pointer select-none text-[11px] font-semibold text-slate-700 hover:text-amber-700">
+          <label className="inline-flex items-center gap-0.5 cursor-pointer select-none text-[10px] font-semibold text-slate-700 hover:text-emerald-700">
+            <input
+              type="checkbox"
+              checked={perm.create}
+              onChange={() => onToggle('create')}
+              className="w-3.5 h-3.5 rounded border-slate-300 accent-emerald-600 cursor-pointer"
+            />
+            <span>Thêm</span>
+          </label>
+
+          <span className="text-slate-300">·</span>
+
+          <label className="inline-flex items-center gap-0.5 cursor-pointer select-none text-[10px] font-semibold text-slate-700 hover:text-amber-700">
             <input
               type="checkbox"
               checked={perm.edit}
@@ -835,9 +1227,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
             <span>Sửa</span>
           </label>
 
-          <span className="text-slate-300">|</span>
+          <span className="text-slate-300">·</span>
 
-          <label className="inline-flex items-center gap-1 cursor-pointer select-none text-[11px] font-semibold text-slate-700 hover:text-rose-700">
+          <label className="inline-flex items-center gap-0.5 cursor-pointer select-none text-[10px] font-semibold text-slate-700 hover:text-rose-700">
             <input
               type="checkbox"
               checked={perm.delete}
@@ -881,14 +1273,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-slate-900">
-                  Quản Lý & Cấp Phát Tài Khoản Nhân Sự
+                  Form Phân Quyền Chi Tiết 6 Vai Trò &amp; Quản Lý Tài Khoản
                 </h2>
                 <span className="bg-purple-100 text-purple-800 text-xs font-bold px-2 py-0.5 rounded-full">
-                  Admin Only
+                  RBAC 6 Vai Trò
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-0.5">
-                Tạo tài khoản đăng nhập (Tên đăng nhập, Mật khẩu, Email) và phân quyền nghiệp vụ cho từng nhân viên
+                Thiết lập quyền nghiệp vụ (<strong>Đọc / Thêm / Sửa / Xóa</strong>) cho 6 vai trò: Tuyển dụng, Y tế, Quản lý hồ sơ, C&amp;B, Tuyển dụng nhóm và Admin
               </p>
             </div>
           </div>
@@ -929,45 +1321,39 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
         </div>
       </div>
 
-      {/* Policy Notice Box */}
-      <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 space-y-2">
-        <div className="flex items-center gap-2 font-bold text-slate-800">
-          <ShieldAlert className="w-4 h-4 text-purple-600" />
-          <span>Nguyên tắc cấp phát tài khoản & phục hồi mật khẩu:</span>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-slate-600 text-[11px]">
-          <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-            <strong className="text-slate-900 block mb-1">1. Đăng nhập theo định danh:</strong>
-            Nhân viên sử dụng <strong>Tên đăng nhập (username)</strong> hoặc <strong>Email</strong> cùng <strong>Mật khẩu</strong> đã được Quản trị viên cấp/phê duyệt để đăng nhập.
-          </div>
-          <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-            <strong className="text-slate-900 block mb-1">2. Đổi mật khẩu qua Email:</strong>
-            Nếu nhân viên quên mật khẩu, họ sử dụng tính năng <em>"Quên mật khẩu"</em> trên màn hình đăng nhập để nhận mã xác nhận gửi tới Email đã đăng ký để tạo mật khẩu mới.
-          </div>
-        </div>
-      </div>
-
-      {/* Bảng Phân Quyền Truy Cập Module & Nội Dung Hệ Thống */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs space-y-4 p-4 sm:p-5">
-        {/* Header của bảng phân quyền */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+      {/* KHỐI FORM PHÂN QUYỀN CHI TIẾT 6 VAI TRÒ */}
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-2xs space-y-4 p-4 sm:p-5">
+        {/* Thanh tiêu đề & nút Lưu / Chế độ xem */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-100 pb-4">
           <div className="flex items-start sm:items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
               <ShieldCheck className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900">
-                Bảng Phân Quyền Truy Cập Module &amp; Nội Dung Hệ Thống
+              <h3 className="text-sm sm:text-base font-bold text-slate-900">
+                Form Phân Quyền Nghiệp Vụ Chi Tiết (Cột: Đọc / Thêm / Sửa / Xóa — Hàng: Danh sách tính năng)
               </h3>
               <p className="text-[11px] text-slate-500">
-                Hiển thị trực quan từng tài khoản đang có quyền gì và tích chọn Checkbox (<strong>Xem / Sửa / Xóa</strong>) cho từng tính năng
+                Chọn 1 trong 6 vai trò bên dưới để tích chọn quyền <strong>Đọc / Thêm / Sửa / Xóa</strong> cho từng tính năng hoặc chuyển sang xem Ma trận 6 vai trò
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Chuyển chế độ hiển thị: Theo Vai trò vs Theo Từng Tài khoản */}
+            {/* Chuyển đổi giữa Form từng vai trò, Ma trận 6 vai trò, và Theo tài khoản */}
             <div className="inline-flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-[11px] font-bold">
+              <button
+                type="button"
+                onClick={() => setPermissionViewMode('role_form')}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition cursor-pointer ${
+                  permissionViewMode === 'role_form'
+                    ? 'bg-white text-purple-700 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <CheckSquare className="w-3.5 h-3.5" />
+                <span>Form theo Vai trò (Đọc/Thêm/Sửa/Xóa)</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setPermissionViewMode('by_role')}
@@ -978,7 +1364,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                 }`}
               >
                 <Layers className="w-3.5 h-3.5" />
-                <span>Ma trận Vai trò &amp; Tài khoản</span>
+                <span>Ma trận 6 Vai trò</span>
               </button>
               <button
                 type="button"
@@ -990,476 +1376,723 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                 }`}
               >
                 <UserCog className="w-3.5 h-3.5" />
-                <span>Chi tiết từng Tài khoản ({displayAccounts.length})</span>
+                <span>Theo Tài khoản ({displayAccounts.length})</span>
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => void handleCopyPermissionMarkdown()}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-[11px] font-semibold transition cursor-pointer"
+              title="Sao chép bảng phân quyền dạng Markdown"
+            >
+              {copiedSummary ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedSummary ? 'Đã sao chép' : 'Sao chép Form'}</span>
+            </button>
 
             <button
               type="button"
               onClick={handleResetAllPermissions}
               disabled={isSavingPerms}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-[11px] font-semibold transition cursor-pointer disabled:opacity-50"
-              title="Khôi phục về phân quyền mặc định"
+              title="Đặt về cấu hình mặc định (cần nhấn Lưu Phân Quyền để áp dụng)"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Mặc định</span>
             </button>
 
+            {hasUnsavedChanges && (
+              <button
+                type="button"
+                onClick={handleDiscardUnsavedPermissions}
+                disabled={isSavingPerms}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-[11px] font-bold transition cursor-pointer disabled:opacity-50"
+                title="Hủy các thay đổi chưa lưu và quay về phân quyền đang áp dụng"
+              >
+                <span>Hủy thay đổi</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleSavePermissionsConfiguration}
               disabled={isSavingPerms}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold shadow-2xs transition cursor-pointer disabled:opacity-50"
+              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-extrabold shadow-sm transition cursor-pointer disabled:opacity-50 ${
+                hasUnsavedChanges
+                  ? 'bg-emerald-600 hover:bg-emerald-700 ring-2 ring-emerald-300'
+                  : 'bg-purple-600 hover:bg-purple-700'
+              }`}
             >
-              <Save className="w-3.5 h-3.5" />
+              <Save className="w-4 h-4" />
               <span>
                 {isSavingPerms
-                  ? 'Đang đồng bộ...'
-                  : storageProvider === 'firestore'
-                  ? 'Lưu & Đồng bộ Cloud Firestore'
+                  ? 'Đang lưu & áp dụng...'
+                  : hasUnsavedChanges
+                  ? 'Lưu Phân Quyền (Áp dụng thay đổi)'
                   : 'Lưu Phân Quyền'}
               </span>
             </button>
           </div>
         </div>
 
-        {/* Khối Tổng hợp Tài khoản đang có quyền như thế nào (Click để chọn tài khoản phân quyền riêng) */}
-        <div className="bg-slate-50/80 border border-slate-200/90 rounded-xl p-3 space-y-2.5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-              <UserCheck className="w-4 h-4 text-purple-600" />
-              <span>Danh sách tài khoản &amp; trạng thái phân quyền hiện tại (Bấm chọn tài khoản để tích quyền riêng):</span>
+        {/* Thanh cảnh báo khi có thay đổi phân quyền chưa được Admin nhấn Lưu */}
+        {hasUnsavedChanges && (
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-2.5 text-amber-900 text-xs">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+              <div>
+                <span className="font-extrabold">Bạn có thay đổi phân quyền chưa lưu!</span>{' '}
+                <span>
+                  Các thay đổi tích chọn trên bảng chỉ đang ở trạng thái nháp và{' '}
+                  <strong>chưa được áp dụng</strong> cho tới khi Admin nhấn nút{' '}
+                  <strong>&quot;Lưu Phân Quyền&quot;</strong>.
+                </span>
+              </div>
             </div>
-            {selectedAccountId !== 'ALL' && (
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => setSelectedAccountId('ALL')}
-                className="text-[11px] text-purple-700 hover:text-purple-900 font-bold underline cursor-pointer self-start sm:self-auto"
+                onClick={handleDiscardUnsavedPermissions}
+                disabled={isSavingPerms}
+                className="px-3 py-1.5 rounded-lg border border-amber-300 bg-white hover:bg-amber-100 text-amber-900 text-xs font-bold transition cursor-pointer"
               >
-                Hiển thị tất cả nhóm vai trò
+                Hủy thay đổi
               </button>
-            )}
+              <button
+                type="button"
+                onClick={handleSavePermissionsConfiguration}
+                disabled={isSavingPerms}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-2xs transition cursor-pointer"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Lưu Phân Quyền ngay</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Bộ chọn 6 Vai trò (Role Selector Tabs) */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-slate-700">
+              Chọn 1 trong 6 Vai trò để cấu hình quyền trên bảng:
+            </span>
+            <span className="text-[11px] text-slate-500">
+              Đang cấu hình: <strong className="text-slate-900">{activeRoleDef.label}</strong>
+            </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-            {displayAccounts.map((acc) => {
-              const roleKey = resolveAccountRoleKey(acc);
-              const isSelected = selectedAccountId === acc.id;
-              const hasCustom = Boolean(accountCustomPerms[acc.id] && Object.keys(accountCustomPerms[acc.id]).length > 0);
-
-              // Đếm số module có quyền Xem / Sửa / Xóa của tài khoản này
-              let viewCount = 0;
-              let editCount = 0;
-              let deleteCount = 0;
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5">
+            {ROLE_DEFINITIONS.map((roleDef) => {
+              const isRoleActive = activeFormRoleKey === roleDef.key;
+              const countAcc = accountsByRole[roleDef.key]?.length || 0;
+              let viewMods = 0;
+              let createMods = 0;
+              let editMods = 0;
+              let deleteMods = 0;
               SYSTEM_MODULES.forEach((m) => {
-                const p = getEffectiveAccountPermission(acc, m.id);
-                if (p.view) viewCount++;
-                if (p.edit) editCount++;
-                if (p.delete) deleteCount++;
+                const p = roleMatrix[m.id]?.[roleDef.key];
+                if (p?.view) viewMods++;
+                if (p?.create) createMods++;
+                if (p?.edit) editMods++;
+                if (p?.delete) deleteMods++;
               });
 
-              const roleBadge =
-                roleKey === 'admin'
-                  ? { text: 'Quản trị viên (Admin)', cls: 'bg-purple-100 text-purple-800 border-purple-200' }
-                  : roleKey === 'nhan_vien_y_te'
-                  ? { text: 'Nhân viên y tế', cls: 'bg-teal-100 text-teal-800 border-teal-200' }
-                  : { text: 'Nhân viên tuyển dụng', cls: 'bg-sky-100 text-sky-800 border-sky-200' };
-
               return (
-                <div
-                  key={acc.id}
-                  onClick={() => setSelectedAccountId(isSelected ? 'ALL' : acc.id)}
-                  className={`p-2.5 rounded-xl border transition cursor-pointer flex flex-col justify-between gap-2 ${
-                    isSelected
-                      ? 'bg-purple-50/90 border-purple-500 ring-2 ring-purple-200 shadow-xs'
-                      : 'bg-white border-slate-200 hover:border-purple-300 hover:bg-slate-50/60'
+                <button
+                  key={roleDef.key}
+                  type="button"
+                  onClick={() => {
+                    setActiveFormRoleKey(roleDef.key);
+                    if (permissionViewMode === 'by_account') {
+                      setPermissionViewMode('role_form');
+                    }
+                  }}
+                  className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between gap-2 ${
+                    isRoleActive
+                      ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-purple-300 shadow-sm'
+                      : 'bg-slate-50/70 hover:bg-slate-100/80 border-slate-200 text-slate-800'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-bold text-xs text-slate-900 truncate">
-                          {acc.username}
-                        </span>
-                        {acc.status === 'locked' && (
-                          <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 rounded text-[9px] font-bold">
-                            Khóa
-                          </span>
-                        )}
-                        {hasCustom && (
-                          <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 rounded text-[9px] font-bold">
-                            Quyền riêng
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-slate-600 font-medium truncate">{acc.fullName}</p>
+                  <div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span
+                        className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${
+                          isRoleActive ? 'bg-white/15 text-white border-white/25' : roleDef.badgeCls
+                        }`}
+                      >
+                        Vai trò #{roleDef.index}
+                      </span>
+                      <span
+                        className={`text-[10px] font-semibold ${
+                          isRoleActive ? 'text-slate-300' : 'text-slate-500'
+                        }`}
+                      >
+                        {countAcc} TK
+                      </span>
                     </div>
-                    <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold shrink-0 ${roleBadge.cls}`}>
-                      {roleBadge.text}
-                    </span>
+                    <div className="text-xs font-bold mt-1.5 leading-snug">{roleDef.label}</div>
+                    <p
+                      className={`text-[10px] mt-0.5 leading-snug ${
+                        isRoleActive ? 'text-slate-300' : 'text-slate-500'
+                      }`}
+                    >
+                      {roleDef.description}
+                    </p>
                   </div>
 
-                  <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-[10px]">
-                    <div className="flex items-center gap-1.5 font-semibold">
-                      <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                        Xem: {viewCount}/{SYSTEM_MODULES.length}
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200">
-                        Sửa: {editCount}/{SYSTEM_MODULES.length}
-                      </span>
-                      <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
-                        Xóa: {deleteCount}/{SYSTEM_MODULES.length}
-                      </span>
-                    </div>
-                    <span className="text-purple-600 font-bold">
-                      {isSelected ? 'Đang chọn' : 'Tùy chỉnh →'}
-                    </span>
+                  <div
+                    className={`grid grid-cols-2 gap-1 pt-1.5 border-t text-[10px] font-semibold ${
+                      isRoleActive ? 'border-white/15 text-slate-200' : 'border-slate-200/80 text-slate-600'
+                    }`}
+                  >
+                    <span>Đọc: {viewMods}/{SYSTEM_MODULES.length}</span>
+                    <span>Thêm: {createMods}/{SYSTEM_MODULES.length}</span>
+                    <span>Sửa: {editMods}/{SYSTEM_MODULES.length}</span>
+                    <span>Xóa: {deleteMods}/{SYSTEM_MODULES.length}</span>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         </div>
 
-        {/* CHẾ ĐỘ 1: BẢNG MA TRẬN THEO VAI TRÒ & TÀI KHOẢN ĐANG CHỌN */}
-        {permissionViewMode === 'by_role' ? (
+        {/* CHẾ ĐỘ 1 (MẶC ĐỊNH): GIAO DIỆN FORM PHÂN QUYỀN CHI TIẾT
+            Hàng = Danh sách tính năng | Cột = Nghiệp vụ (Đọc / Thêm / Sửa / Xóa / Tất cả) */}
+        {permissionViewMode === 'role_form' && (
+          <div className="space-y-3">
+            {/* Banner thông tin vai trò đang chọn */}
+            <div className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${activeRoleDef.headerBg} border-slate-200`}>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className={`px-2.5 py-0.5 rounded-full border text-xs font-extrabold ${activeRoleDef.badgeCls}`}>
+                    {activeRoleDef.label}
+                  </span>
+                  <span className="text-xs text-slate-600 font-medium">
+                    — {activeRoleDef.description}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Tích chọn các ô Checkbox ở các cột <strong>Đọc</strong>, <strong>Thêm</strong>, <strong>Sửa</strong>, <strong>Xóa</strong> tương ứng với từng hàng tính năng bên dưới.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => handleToggleEntireRoleColumn(activeFormRoleKey, 'view')}
+                  className="px-2.5 py-1.5 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                >
+                  Chọn/Bỏ cột Đọc
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleEntireRoleColumn(activeFormRoleKey, 'create')}
+                  className="px-2.5 py-1.5 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                >
+                  Chọn/Bỏ cột Thêm
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleEntireRoleColumn(activeFormRoleKey, 'edit')}
+                  className="px-2.5 py-1.5 bg-white hover:bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                >
+                  Chọn/Bỏ cột Sửa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleEntireRoleColumn(activeFormRoleKey, 'delete')}
+                  className="px-2.5 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                >
+                  Chọn/Bỏ cột Xóa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleToggleEntireRoleColumn(activeFormRoleKey, 'all')}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-[11px] font-bold transition cursor-pointer"
+                >
+                  Full quyền cả {SYSTEM_MODULES.length} tính năng
+                </button>
+              </div>
+            </div>
+
+            {/* BẢNG FORM PHÂN QUYỀN: HÀNG = TÍNH NĂNG, CỘT = NGHIỆP VỤ (ĐỌC / THÊM / SỬA / XÓA) */}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl shadow-2xs">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200 text-[11px]">
+                    <th className="p-3 text-center w-14">Mã</th>
+                    <th className="p-3 min-w-[290px]">
+                      <div>Danh sách Tính năng / Nghiệp vụ ứng dụng</div>
+                      <div className="text-[10px] font-normal text-slate-500 mt-0.5">
+                        Vai trò đang cấu hình: <strong className="text-purple-700">{activeRoleDef.label}</strong>
+                      </div>
+                    </th>
+
+                    {/* Cột 1: Nghiệp vụ ĐỌC (XEM) */}
+                    <th className="p-3 text-center w-28 border-l border-slate-200 bg-blue-50/60">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="inline-flex items-center gap-1 text-blue-900 font-extrabold text-xs">
+                          <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Đọc (Xem)</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleEntireRoleColumn(activeFormRoleKey, 'view')}
+                          className="text-[10px] font-semibold text-blue-700 hover:underline cursor-pointer"
+                        >
+                          Tích cả cột
+                        </button>
+                      </div>
+                    </th>
+
+                    {/* Cột 2: Nghiệp vụ THÊM (TẠO MỚI) */}
+                    <th className="p-3 text-center w-28 border-l border-slate-200 bg-emerald-50/60">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="inline-flex items-center gap-1 text-emerald-900 font-extrabold text-xs">
+                          <PlusCircle className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Thêm</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleEntireRoleColumn(activeFormRoleKey, 'create')}
+                          className="text-[10px] font-semibold text-emerald-700 hover:underline cursor-pointer"
+                        >
+                          Tích cả cột
+                        </button>
+                      </div>
+                    </th>
+
+                    {/* Cột 3: Nghiệp vụ SỬA (CẬP NHẬT) */}
+                    <th className="p-3 text-center w-28 border-l border-slate-200 bg-amber-50/60">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="inline-flex items-center gap-1 text-amber-900 font-extrabold text-xs">
+                          <Edit2 className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Sửa</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleEntireRoleColumn(activeFormRoleKey, 'edit')}
+                          className="text-[10px] font-semibold text-amber-700 hover:underline cursor-pointer"
+                        >
+                          Tích cả cột
+                        </button>
+                      </div>
+                    </th>
+
+                    {/* Cột 4: Nghiệp vụ XÓA */}
+                    <th className="p-3 text-center w-28 border-l border-slate-200 bg-rose-50/60">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="inline-flex items-center gap-1 text-rose-900 font-extrabold text-xs">
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Xóa</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleEntireRoleColumn(activeFormRoleKey, 'delete')}
+                          className="text-[10px] font-semibold text-rose-700 hover:underline cursor-pointer"
+                        >
+                          Tích cả cột
+                        </button>
+                      </div>
+                    </th>
+
+                    {/* Cột 5: Chọn tất cả 4 quyền trên dòng + Trạng thái */}
+                    <th className="p-3 text-center w-44 border-l border-slate-200 bg-purple-50/60">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-purple-950 font-extrabold text-xs">
+                          Tất cả (Đọc/Thêm/Sửa/Xóa)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleEntireRoleColumn(activeFormRoleKey, 'all')}
+                          className="text-[10px] font-semibold text-purple-700 hover:underline cursor-pointer"
+                        >
+                          Chọn tất cả dòng
+                        </button>
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {SYSTEM_MODULES.map((mod, idx) => {
+                    const prevGroup = idx > 0 ? SYSTEM_MODULES[idx - 1].groupName : '';
+                    const showGroupBanner = mod.groupName !== prevGroup;
+                    const perm = roleMatrix[mod.id]?.[activeFormRoleKey] || {
+                      view: false,
+                      create: false,
+                      edit: false,
+                      delete: false,
+                    };
+                    const isRowFull = perm.view && perm.create && perm.edit && perm.delete;
+                    const summaryBadge = getPermissionSummaryBadge(perm);
+
+                    return (
+                      <React.Fragment key={mod.id}>
+                        {showGroupBanner && (
+                          <tr className="bg-slate-100/90 border-y border-slate-200">
+                            <td
+                              colSpan={7}
+                              className="px-3.5 py-2 text-[11px] font-extrabold text-slate-800 uppercase tracking-wide"
+                            >
+                              {mod.groupName}
+                            </td>
+                          </tr>
+                        )}
+
+                        <tr className="hover:bg-slate-50/90 transition">
+                          <td className="p-3 text-center font-mono font-bold text-slate-600">
+                            <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-[11px]">
+                              {mod.code}
+                            </span>
+                          </td>
+
+                          <td className="p-3">
+                            <div className="font-bold text-slate-900 text-xs sm:text-sm leading-snug">
+                              {mod.name}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                              {mod.description}
+                            </div>
+                          </td>
+
+                          {/* Checkbox ĐỌC */}
+                          <td className="p-3 text-center border-l border-slate-100 bg-blue-50/15">
+                            <label className="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={perm.view}
+                                onChange={() =>
+                                  handleToggleRolePermission(mod.id, activeFormRoleKey, 'view')
+                                }
+                                className="w-4 h-4 rounded border-slate-300 accent-blue-600 cursor-pointer"
+                              />
+                              <span
+                                className={`text-[10px] font-bold ${
+                                  perm.view ? 'text-blue-700' : 'text-slate-400'
+                                }`}
+                              >
+                                {perm.view ? 'Được đọc' : 'Khóa'}
+                              </span>
+                            </label>
+                          </td>
+
+                          {/* Checkbox THÊM */}
+                          <td className="p-3 text-center border-l border-slate-100 bg-emerald-50/15">
+                            <label className="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={perm.create}
+                                onChange={() =>
+                                  handleToggleRolePermission(mod.id, activeFormRoleKey, 'create')
+                                }
+                                className="w-4 h-4 rounded border-slate-300 accent-emerald-600 cursor-pointer"
+                              />
+                              <span
+                                className={`text-[10px] font-bold ${
+                                  perm.create ? 'text-emerald-700' : 'text-slate-400'
+                                }`}
+                              >
+                                {perm.create ? 'Được thêm' : 'Khóa'}
+                              </span>
+                            </label>
+                          </td>
+
+                          {/* Checkbox SỬA */}
+                          <td className="p-3 text-center border-l border-slate-100 bg-amber-50/15">
+                            <label className="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={perm.edit}
+                                onChange={() =>
+                                  handleToggleRolePermission(mod.id, activeFormRoleKey, 'edit')
+                                }
+                                className="w-4 h-4 rounded border-slate-300 accent-amber-600 cursor-pointer"
+                              />
+                              <span
+                                className={`text-[10px] font-bold ${
+                                  perm.edit ? 'text-amber-700' : 'text-slate-400'
+                                }`}
+                              >
+                                {perm.edit ? 'Được sửa' : 'Khóa'}
+                              </span>
+                            </label>
+                          </td>
+
+                          {/* Checkbox XÓA */}
+                          <td className="p-3 text-center border-l border-slate-100 bg-rose-50/15">
+                            <label className="inline-flex flex-col items-center gap-1 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={perm.delete}
+                                onChange={() =>
+                                  handleToggleRolePermission(mod.id, activeFormRoleKey, 'delete')
+                                }
+                                className="w-4 h-4 rounded border-slate-300 accent-rose-600 cursor-pointer"
+                              />
+                              <span
+                                className={`text-[10px] font-bold ${
+                                  perm.delete ? 'text-rose-700' : 'text-slate-400'
+                                }`}
+                              >
+                                {perm.delete ? 'Được xóa' : 'Khóa'}
+                              </span>
+                            </label>
+                          </td>
+
+                          {/* Checkbox TẤT CẢ (Đọc/Thêm/Sửa/Xóa) */}
+                          <td className="p-3 text-center border-l border-slate-100 bg-purple-50/15">
+                            <label className="inline-flex flex-col items-center gap-1.5 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={isRowFull}
+                                onChange={() => handleToggleAllInRoleCell(mod.id, activeFormRoleKey)}
+                                className="w-4 h-4 rounded border-slate-300 accent-purple-600 cursor-pointer"
+                              />
+                              <span
+                                className={`px-2 py-0.5 rounded border text-[10px] font-bold ${summaryBadge.className}`}
+                              >
+                                {summaryBadge.label}
+                              </span>
+                            </label>
+                          </td>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* CHẾ ĐỘ 2: BẢNG MA TRẬN TỔNG HỢP CẢ 6 VAI TRÒ TRÊN CÙNG MỘT BẢNG */}
+        {permissionViewMode === 'by_role' && (
           <div className="overflow-x-auto border border-slate-200 rounded-xl">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px] align-top">
-                  <th className="p-2.5 text-center w-10">
+                  <th className="p-2.5 text-center w-9">
                     <input
                       type="checkbox"
-                      checked={selectedModuleIds.length === SYSTEM_MODULES.length && SYSTEM_MODULES.length > 0}
+                      checked={
+                        selectedModuleIds.length === SYSTEM_MODULES.length &&
+                        SYSTEM_MODULES.length > 0
+                      }
                       onChange={toggleSelectAllModuleRows}
                       title="Chọn tất cả các dòng tính năng"
                       className="w-3.5 h-3.5 rounded border-slate-300 accent-purple-600 cursor-pointer"
                     />
                   </th>
-                  <th className="p-2.5 text-center w-10">STT</th>
-                  <th className="p-2.5 min-w-[220px]">
-                    <div>Module / Tính năng hệ thống</div>
+                  <th className="p-2.5 text-center w-12">Mã</th>
+                  <th className="p-2.5 min-w-[230px]">
+                    <div>Danh sách Tính năng / Nghiệp vụ</div>
                     <div className="text-[10px] font-normal text-slate-500 mt-0.5">
-                      {selectedModuleIds.length > 0
-                        ? `Đang chọn ${selectedModuleIds.length}/${SYSTEM_MODULES.length} tính năng`
-                        : 'Tích chọn dòng hoặc tích trực tiếp Xem / Sửa / Xóa'}
+                      Tích chọn Đọc / Thêm / Sửa / Xóa cho cả 6 vai trò
                     </div>
                   </th>
 
-                  {/* Cột Nhân viên tuyển dụng + Danh sách tài khoản thuộc vai trò */}
-                  <th className="p-2.5 text-center min-w-[215px] bg-sky-50/50 border-l border-slate-200">
-                    <div className="text-sky-900 font-bold text-xs">Nhân viên tuyển dụng</div>
-                    <div className="flex flex-wrap items-center justify-center gap-1 my-1.5">
-                      {accountsByRole.nhan_vien_tuyen_dung.length === 0 ? (
-                        <span className="text-[10px] font-normal text-slate-400">Chưa có tài khoản</span>
-                      ) : (
-                        accountsByRole.nhan_vien_tuyen_dung.map((acc) => (
+                  {ROLE_DEFINITIONS.map((roleDef) => {
+                    const roleAccounts = accountsByRole[roleDef.key] || [];
+                    return (
+                      <th
+                        key={roleDef.key}
+                        className={`p-2 text-center min-w-[215px] border-l border-slate-200 ${roleDef.headerBg}`}
+                      >
+                        <div className="font-bold text-slate-900 text-[11px] leading-snug">
+                          {roleDef.label}
+                        </div>
+                        <div className="flex flex-wrap items-center justify-center gap-1 my-1">
+                          {roleAccounts.length === 0 ? (
+                            <span className="text-[10px] font-normal text-slate-400">
+                              0 tài khoản
+                            </span>
+                          ) : (
+                            roleAccounts.map((acc) => (
+                              <button
+                                key={acc.id}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedAccountId(selectedAccountId === acc.id ? 'ALL' : acc.id)
+                                }
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold border transition cursor-pointer ${
+                                  selectedAccountId === acc.id
+                                    ? 'bg-slate-900 text-white border-slate-900'
+                                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                                }`}
+                                title={`${acc.fullName} (${acc.username})`}
+                              >
+                                @{acc.username}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                        <div className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-700 bg-white px-1.5 py-0.5 rounded border border-slate-200">
                           <button
-                            key={acc.id}
                             type="button"
-                            onClick={() => setSelectedAccountId(selectedAccountId === acc.id ? 'ALL' : acc.id)}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold border transition cursor-pointer ${
-                              selectedAccountId === acc.id
-                                ? 'bg-sky-600 text-white border-sky-700'
-                                : 'bg-white text-sky-800 border-sky-200 hover:bg-sky-100'
-                            }`}
-                            title={`${acc.fullName} (${acc.username}) - Bấm để phân quyền riêng`}
+                            onClick={() => handleToggleEntireRoleColumn(roleDef.key, 'view')}
+                            className="hover:underline cursor-pointer text-blue-700"
                           >
-                            @{acc.username}
+                            Đọc
                           </button>
-                        ))
-                      )}
-                    </div>
-                    <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-sky-800 bg-white px-2 py-0.5 rounded border border-sky-200">
-                      <span>Cột:</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('nhan_vien_tuyen_dung', 'view')}
-                        className="hover:underline cursor-pointer text-blue-700"
-                      >
-                        Xem
-                      </button>
-                      <span>·</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('nhan_vien_tuyen_dung', 'edit')}
-                        className="hover:underline cursor-pointer text-amber-700"
-                      >
-                        Sửa
-                      </button>
-                      <span>·</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('nhan_vien_tuyen_dung', 'delete')}
-                        className="hover:underline cursor-pointer text-rose-700"
-                      >
-                        Xóa
-                      </button>
-                      <span>·</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('nhan_vien_tuyen_dung', 'all')}
-                        className="hover:underline cursor-pointer font-bold text-sky-900"
-                      >
-                        Tất cả
-                      </button>
-                    </div>
-                  </th>
-
-                  {/* Cột Nhân viên y tế + Danh sách tài khoản thuộc vai trò */}
-                  <th className="p-2.5 text-center min-w-[215px] bg-teal-50/50 border-l border-slate-200">
-                    <div className="text-teal-900 font-bold text-xs">Nhân viên y tế</div>
-                    <div className="flex flex-wrap items-center justify-center gap-1 my-1.5">
-                      {accountsByRole.nhan_vien_y_te.length === 0 ? (
-                        <span className="text-[10px] font-normal text-slate-400">Chưa có tài khoản</span>
-                      ) : (
-                        accountsByRole.nhan_vien_y_te.map((acc) => (
+                          <span>·</span>
                           <button
-                            key={acc.id}
                             type="button"
-                            onClick={() => setSelectedAccountId(selectedAccountId === acc.id ? 'ALL' : acc.id)}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold border transition cursor-pointer ${
-                              selectedAccountId === acc.id
-                                ? 'bg-teal-600 text-white border-teal-700'
-                                : 'bg-white text-teal-800 border-teal-200 hover:bg-teal-100'
-                            }`}
-                            title={`${acc.fullName} (${acc.username}) - Bấm để phân quyền riêng`}
+                            onClick={() => handleToggleEntireRoleColumn(roleDef.key, 'create')}
+                            className="hover:underline cursor-pointer text-emerald-700"
                           >
-                            @{acc.username}
+                            Thêm
                           </button>
-                        ))
-                      )}
-                    </div>
-                    <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-teal-800 bg-white px-2 py-0.5 rounded border border-teal-200">
-                      <span>Cột:</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('nhan_vien_y_te', 'view')}
-                        className="hover:underline cursor-pointer text-blue-700"
-                      >
-                        Xem
-                      </button>
-                      <span>·</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('nhan_vien_y_te', 'edit')}
-                        className="hover:underline cursor-pointer text-amber-700"
-                      >
-                        Sửa
-                      </button>
-                      <span>·</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('nhan_vien_y_te', 'delete')}
-                        className="hover:underline cursor-pointer text-rose-700"
-                      >
-                        Xóa
-                      </button>
-                      <span>·</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('nhan_vien_y_te', 'all')}
-                        className="hover:underline cursor-pointer font-bold text-teal-900"
-                      >
-                        Tất cả
-                      </button>
-                    </div>
-                  </th>
-
-                  {/* Cột Quản trị viên (Admin) + Danh sách tài khoản thuộc vai trò */}
-                  <th className="p-2.5 text-center min-w-[215px] bg-purple-50/50 border-l border-slate-200">
-                    <div className="text-purple-900 font-bold text-xs">Quản trị viên (Admin)</div>
-                    <div className="flex flex-wrap items-center justify-center gap-1 my-1.5">
-                      {accountsByRole.admin.length === 0 ? (
-                        <span className="text-[10px] font-normal text-slate-400">Chưa có tài khoản</span>
-                      ) : (
-                        accountsByRole.admin.map((acc) => (
+                          <span>·</span>
                           <button
-                            key={acc.id}
                             type="button"
-                            onClick={() => setSelectedAccountId(selectedAccountId === acc.id ? 'ALL' : acc.id)}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold border transition cursor-pointer ${
-                              selectedAccountId === acc.id
-                                ? 'bg-purple-600 text-white border-purple-700'
-                                : 'bg-white text-purple-800 border-purple-200 hover:bg-purple-100'
-                            }`}
-                            title={`${acc.fullName} (${acc.username}) - Bấm để phân quyền riêng`}
+                            onClick={() => handleToggleEntireRoleColumn(roleDef.key, 'edit')}
+                            className="hover:underline cursor-pointer text-amber-700"
                           >
-                            @{acc.username}
+                            Sửa
                           </button>
-                        ))
-                      )}
-                    </div>
-                    <div className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-purple-800 bg-white px-2 py-0.5 rounded border border-purple-200">
-                      <span>Cột:</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('admin', 'view')}
-                        className="hover:underline cursor-pointer text-blue-700"
-                      >
-                        Xem
-                      </button>
-                      <span>·</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('admin', 'edit')}
-                        className="hover:underline cursor-pointer text-amber-700"
-                      >
-                        Sửa
-                      </button>
-                      <span>·</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('admin', 'delete')}
-                        className="hover:underline cursor-pointer text-rose-700"
-                      >
-                        Xóa
-                      </button>
-                      <span>·</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleEntireRoleColumn('admin', 'all')}
-                        className="hover:underline cursor-pointer font-bold text-purple-900"
-                      >
-                        Tất cả
-                      </button>
-                    </div>
-                  </th>
+                          <span>·</span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEntireRoleColumn(roleDef.key, 'delete')}
+                            className="hover:underline cursor-pointer text-rose-700"
+                          >
+                            Xóa
+                          </button>
+                          <span>·</span>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleEntireRoleColumn(roleDef.key, 'all')}
+                            className="hover:underline cursor-pointer font-bold text-slate-900"
+                          >
+                            Full
+                          </button>
+                        </div>
+                      </th>
+                    );
+                  })}
 
-                  {/* Cột Phân quyền riêng cho Tài khoản đang chọn (nếu có) */}
                   {focusedAccount && (
-                    <th className="p-2.5 text-center min-w-[230px] bg-indigo-50/90 border-l-2 border-indigo-400">
+                    <th className="p-2.5 text-center min-w-[215px] bg-indigo-50/90 border-l-2 border-indigo-400">
                       <div className="flex items-center justify-center gap-1 text-indigo-950 font-bold text-xs">
                         <UserCog className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Tài khoản: @{focusedAccount.username}</span>
+                        <span>TK: @{focusedAccount.username}</span>
                       </div>
                       <div className="text-[10px] text-indigo-700 font-medium my-1">
                         {focusedAccount.fullName}
                       </div>
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleResetAccountCustomPerm(focusedAccount.id)}
-                          className="text-[10px] bg-white px-2 py-0.5 rounded border border-indigo-200 text-indigo-700 hover:bg-indigo-100 font-semibold cursor-pointer"
-                        >
-                          Đồng bộ theo vai trò
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleResetAccountCustomPerm(focusedAccount.id)}
+                        className="text-[10px] bg-white px-2 py-0.5 rounded border border-indigo-200 text-indigo-700 hover:bg-indigo-100 font-semibold cursor-pointer"
+                      >
+                        Đồng bộ theo vai trò
+                      </button>
                     </th>
                   )}
-
-                  <th className="p-2.5 min-w-[200px] border-l border-slate-200">Mô tả quyền hạn chi tiết</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {SYSTEM_MODULES.map((mod) => {
+                {SYSTEM_MODULES.map((mod, idx) => {
                   const isRowSelected = selectedModuleIds.includes(mod.id);
-                  const tdPerm = roleMatrix[mod.id]?.nhan_vien_tuyen_dung || {
-                    view: false,
-                    edit: false,
-                    delete: false,
-                  };
-                  const ytPerm = roleMatrix[mod.id]?.nhan_vien_y_te || {
-                    view: false,
-                    edit: false,
-                    delete: false,
-                  };
-                  const adPerm = roleMatrix[mod.id]?.admin || {
-                    view: true,
-                    edit: true,
-                    delete: true,
-                  };
+                  const prevGroup = idx > 0 ? SYSTEM_MODULES[idx - 1].groupName : '';
+                  const showGroupBanner = mod.groupName !== prevGroup;
 
                   return (
-                    <tr
-                      key={mod.id}
-                      className={`transition ${
-                        isRowSelected ? 'bg-purple-50/40' : 'hover:bg-slate-50/80'
-                      }`}
-                    >
-                      <td className="p-2.5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={isRowSelected}
-                          onChange={() => toggleSelectModuleRow(mod.id)}
-                          className="w-3.5 h-3.5 rounded border-slate-300 accent-purple-600 cursor-pointer"
-                        />
-                      </td>
-                      <td className="p-2.5 font-mono text-center font-bold text-slate-500">
-                        {mod.stt}
-                      </td>
-                      <td className="p-2.5">
-                        <div className="font-bold text-slate-900">{mod.name}</div>
-                      </td>
-
-                      {/* Ô Checkbox Nhân viên tuyển dụng */}
-                      <td className="p-2 text-center border-l border-slate-100 bg-sky-50/15">
-                        {renderPermissionCheckboxes(
-                          tdPerm,
-                          (action) => handleToggleRolePermission(mod.id, 'nhan_vien_tuyen_dung', action),
-                          () => handleToggleAllInRoleCell(mod.id, 'nhan_vien_tuyen_dung'),
-                          'sky'
-                        )}
-                      </td>
-
-                      {/* Ô Checkbox Nhân viên y tế */}
-                      <td className="p-2 text-center border-l border-slate-100 bg-teal-50/15">
-                        {renderPermissionCheckboxes(
-                          ytPerm,
-                          (action) => handleToggleRolePermission(mod.id, 'nhan_vien_y_te', action),
-                          () => handleToggleAllInRoleCell(mod.id, 'nhan_vien_y_te'),
-                          'teal'
-                        )}
-                      </td>
-
-                      {/* Ô Checkbox Quản trị viên (Admin) */}
-                      <td className="p-2 text-center border-l border-slate-100 bg-purple-50/15">
-                        {renderPermissionCheckboxes(
-                          adPerm,
-                          (action) => handleToggleRolePermission(mod.id, 'admin', action),
-                          () => handleToggleAllInRoleCell(mod.id, 'admin'),
-                          'purple'
-                        )}
-                      </td>
-
-                      {/* Ô Checkbox riêng cho Tài khoản đang chọn (nếu có) */}
-                      {focusedAccount && (
-                        <td className="p-2 text-center border-l-2 border-indigo-300 bg-indigo-50/35">
-                          {renderPermissionCheckboxes(
-                            getEffectiveAccountPermission(focusedAccount, mod.id),
-                            (action) => handleToggleAccountPermission(focusedAccount, mod.id, action),
-                            () => handleToggleAccountPermission(focusedAccount, mod.id, 'all'),
-                            'indigo'
-                          )}
-                        </td>
+                    <React.Fragment key={mod.id}>
+                      {showGroupBanner && (
+                        <tr className="bg-slate-100/90 border-y border-slate-200">
+                          <td
+                            colSpan={3 + ROLE_DEFINITIONS.length + (focusedAccount ? 1 : 0)}
+                            className="px-3 py-1.5 text-[11px] font-extrabold text-slate-800 uppercase tracking-wide"
+                          >
+                            {mod.groupName}
+                          </td>
+                        </tr>
                       )}
+                      <tr
+                        className={`transition ${
+                          isRowSelected ? 'bg-purple-50/40' : 'hover:bg-slate-50/80'
+                        }`}
+                      >
+                        <td className="p-2 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isRowSelected}
+                            onChange={() => toggleSelectModuleRow(mod.id)}
+                            className="w-3.5 h-3.5 rounded border-slate-300 accent-purple-600 cursor-pointer"
+                          />
+                        </td>
+                        <td className="p-2 font-mono text-center font-bold text-slate-600">
+                          {mod.code}
+                        </td>
+                        <td className="p-2.5">
+                          <div className="font-bold text-slate-900 leading-snug">{mod.name}</div>
+                          <div className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">
+                            {mod.description}
+                          </div>
+                        </td>
 
-                      <td className="p-2.5 text-slate-500 text-[11px] border-l border-slate-100">
-                        {mod.description}
-                      </td>
-                    </tr>
+                        {ROLE_DEFINITIONS.map((roleDef) => {
+                          const perm = roleMatrix[mod.id]?.[roleDef.key] || {
+                            view: false,
+                            create: false,
+                            edit: false,
+                            delete: false,
+                          };
+                          return (
+                            <td
+                              key={roleDef.key}
+                              className={`p-1.5 text-center border-l border-slate-100 ${roleDef.cellBg}`}
+                            >
+                              {renderPermissionCheckboxes(
+                                perm,
+                                (action) => handleToggleRolePermission(mod.id, roleDef.key, action),
+                                () => handleToggleAllInRoleCell(mod.id, roleDef.key),
+                                roleDef.accent
+                              )}
+                            </td>
+                          );
+                        })}
+
+                        {focusedAccount && (
+                          <td className="p-1.5 text-center border-l-2 border-indigo-300 bg-indigo-50/35">
+                            {renderPermissionCheckboxes(
+                              getEffectiveAccountPermission(focusedAccount, mod.id),
+                              (action) => handleToggleAccountPermission(focusedAccount, mod.id, action),
+                              () => handleToggleAccountPermission(focusedAccount, mod.id, 'all'),
+                              'indigo'
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    </React.Fragment>
                   );
                 })}
               </tbody>
             </table>
           </div>
-        ) : (
-          /* CHẾ ĐỘ 2: BẢNG PHÂN QUYỀN CHI TIẾT THEO TỪNG TÀI KHOẢN CỤ THỂ */
+        )}
+
+        {/* CHẾ ĐỘ 3: BẢNG PHÂN QUYỀN CHI TIẾT THEO TỪNG TÀI KHOẢN CỤ THỂ */}
+        {permissionViewMode === 'by_account' && (
           <div className="overflow-x-auto border border-slate-200 rounded-xl">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 text-[11px] align-top">
-                  <th className="p-2.5 text-center w-10">STT</th>
-                  <th className="p-2.5 min-w-[220px]">Module / Tính năng hệ thống</th>
+                  <th className="p-2.5 text-center w-12">Mã</th>
+                  <th className="p-2.5 min-w-[230px]">Danh sách Tính năng / Nghiệp vụ</th>
                   {displayAccounts.map((acc) => {
                     const roleKey = resolveAccountRoleKey(acc);
+                    const roleDef = getRoleDefinition(roleKey);
                     const hasCustom = Boolean(
                       accountCustomPerms[acc.id] && Object.keys(accountCustomPerms[acc.id]).length > 0
                     );
                     return (
                       <th
                         key={acc.id}
-                        className="p-2.5 text-center min-w-[210px] border-l border-slate-200 bg-slate-50/80"
+                        className="p-2.5 text-center min-w-[215px] border-l border-slate-200 bg-slate-50/80"
                       >
                         <div className="font-mono font-bold text-slate-900 text-xs">
                           @{acc.username}
@@ -1469,19 +2102,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                         </div>
                         <div className="flex items-center justify-center gap-1 mt-1">
                           <span
-                            className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
-                              roleKey === 'admin'
-                                ? 'bg-purple-100 text-purple-800'
-                                : roleKey === 'nhan_vien_y_te'
-                                ? 'bg-teal-100 text-teal-800'
-                                : 'bg-sky-100 text-sky-800'
-                            }`}
+                            className={`px-2 py-0.5 rounded-full border text-[9px] font-bold ${roleDef.badgeCls}`}
                           >
-                            {roleKey === 'admin'
-                              ? 'Admin'
-                              : roleKey === 'nhan_vien_y_te'
-                              ? 'NV Y tế'
-                              : 'NV Tuyển dụng'}
+                            {roleDef.shortLabel}
                           </span>
                           {hasCustom && (
                             <button
@@ -1503,7 +2126,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                 {SYSTEM_MODULES.map((mod) => (
                   <tr key={mod.id} className="hover:bg-slate-50/80 transition">
                     <td className="p-2.5 font-mono text-center font-bold text-slate-500">
-                      {mod.stt}
+                      {mod.code}
                     </td>
                     <td className="p-2.5">
                       <div className="font-bold text-slate-900">{mod.name}</div>
@@ -1511,14 +2134,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                     </td>
                     {displayAccounts.map((acc) => {
                       const effPerm = getEffectiveAccountPermission(acc, mod.id);
-                      const roleKey = resolveAccountRoleKey(acc);
+                      const roleDef = getRoleDefinition(resolveAccountRoleKey(acc));
                       return (
                         <td key={acc.id} className="p-2 text-center border-l border-slate-100">
                           {renderPermissionCheckboxes(
                             effPerm,
                             (action) => handleToggleAccountPermission(acc, mod.id, action),
                             () => handleToggleAccountPermission(acc, mod.id, 'all'),
-                            roleKey === 'admin' ? 'purple' : roleKey === 'nhan_vien_y_te' ? 'teal' : 'sky'
+                            roleDef.accent
                           )}
                         </td>
                       );
@@ -1529,6 +2152,62 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
             </table>
           </div>
         )}
+
+        {/* Thanh hành động Lưu Phân Quyền ở cuối Form để Admin thuận tiện bấm Lưu sau khi tích chọn */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200 bg-slate-50/70 p-3.5 rounded-xl">
+          <div className="text-xs text-slate-600 flex flex-wrap items-center gap-2">
+            {hasUnsavedChanges ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300 font-bold text-[11px]">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                <span>Đang có thay đổi chưa lưu — Chưa áp dụng vào hệ thống</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-[11px]">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>
+                  Phân quyền đang được áp dụng đồng bộ
+                  {lastSavedAt ? ` (Đã lưu lúc ${lastSavedAt})` : ''}
+                </span>
+              </span>
+            )}
+            <span className="text-[11px] text-slate-500">
+              • Chỉ khi Admin nhấn <strong>&quot;Lưu Phân Quyền&quot;</strong> thì phân quyền mới mới được áp dụng.
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {hasUnsavedChanges && (
+              <button
+                type="button"
+                onClick={handleDiscardUnsavedPermissions}
+                disabled={isSavingPerms}
+                className="px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold transition cursor-pointer disabled:opacity-50"
+              >
+                Hủy thay đổi chưa lưu
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSavePermissionsConfiguration}
+              disabled={isSavingPerms}
+              className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-xs sm:text-sm font-extrabold shadow-sm transition cursor-pointer disabled:opacity-50 ${
+                hasUnsavedChanges
+                  ? 'bg-emerald-600 hover:bg-emerald-700 ring-2 ring-emerald-300'
+                  : 'bg-purple-600 hover:bg-purple-700'
+              }`}
+            >
+              <Save className="w-4 h-4" />
+              <span>
+                {isSavingPerms
+                  ? 'Đang lưu & áp dụng phân quyền...'
+                  : hasUnsavedChanges
+                  ? 'Lưu Phân Quyền (Áp dụng ngay)'
+                  : 'Lưu Phân Quyền'}
+              </span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Search Bar */}
@@ -1537,7 +2216,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Tìm theo Tên đăng nhập, Email, Họ tên..."
+            placeholder="Tìm theo Tên đăng nhập, Email, Họ tên, Vai trò..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3 py-2 text-xs border border-slate-300 rounded-xl focus:outline-blue-600 bg-slate-50/50"
@@ -1558,7 +2237,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                 <th className="p-3">Họ và Tên Nhân Viên</th>
                 <th className="p-3">Email Liên Kết</th>
                 <th className="p-3">Mật Khẩu Cấp</th>
-                <th className="p-3 text-center">Vai Trò</th>
+                <th className="p-3 text-center">Vai Trò Phân Quyền (1–6)</th>
                 <th className="p-3 text-center">Trạng Thái</th>
                 <th className="p-3">Ngày Cấp</th>
                 <th className="p-3 text-center">Thao Tác</th>
@@ -1573,8 +2252,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                 </tr>
               ) : (
                 filteredUsers.map((user) => {
-                  const isUserAdmin = user.role === 'admin';
                   const isLocked = user.status === 'locked';
+                  const roleDef = getRoleDefinition(resolveAccountRoleKey(user));
 
                   return (
                     <tr
@@ -1601,19 +2280,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                         </span>
                       </td>
                       <td className="p-3 text-center">
-                        {isUserAdmin ? (
-                          <span className="inline-flex items-center gap-1 bg-purple-100 text-purple-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
-                            <ShieldCheck className="w-3 h-3" /> Admin (Toàn quyền)
-                          </span>
-                        ) : user.hrmRole === 'nhan_vien_y_te' ? (
-                          <span className="inline-flex items-center gap-1 bg-teal-100 text-teal-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
-                            <UserCheck className="w-3 h-3" /> Nhân viên y tế
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 bg-sky-100 text-sky-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
-                            <UserCheck className="w-3 h-3" /> Nhân viên tuyển dụng
-                          </span>
-                        )}
+                        <span
+                          className={`inline-flex items-center gap-1 border text-[10px] font-bold px-2.5 py-0.5 rounded-full ${roleDef.badgeCls}`}
+                        >
+                          {roleDef.key === 'admin' ? (
+                            <ShieldCheck className="w-3 h-3" />
+                          ) : (
+                            <UserCheck className="w-3 h-3" />
+                          )}
+                          <span>{roleDef.label}</span>
+                        </span>
                       </td>
                       <td className="p-3 text-center">
                         {isLocked ? (
@@ -1635,7 +2311,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                             type="button"
                             onClick={() => handleOpenEdit(user)}
                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition"
-                            title="Sửa thông tin / Đổi mật khẩu"
+                            title="Sửa thông tin / Đổi vai trò / Đổi mật khẩu"
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
@@ -1677,7 +2353,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                     Tạo Tài Khoản Mới Cho Nhân Viên
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Cấp tài khoản đăng nhập và thông tin xác thực qua Email
+                    Cấp tài khoản đăng nhập và gán 1 trong 6 vai trò nghiệp vụ
                   </p>
                 </div>
               </div>
@@ -1707,19 +2383,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
 
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">
-                  Tên đăng nhập (Username) *
+                  Tên đăng nhập (Username / Mã nhân viên) *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ví dụ: tuyendung02, hr_nguyen..."
+                  placeholder="Ví dụ: tuyendung01, yte01, cnb_lead..."
                   value={newUsername}
                   onChange={(e) => setNewUsername(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:outline-blue-600"
                 />
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  Tên đăng nhập viết liền không dấu, dùng để đăng nhập vào hệ thống
-                </p>
               </div>
 
               <div>
@@ -1747,7 +2420,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
 
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">
-                  Email nhân viên (Dùng để đổi mật khẩu nếu quên) *
+                  Email nhân viên (Dùng để đổi mật khẩu nếu quên)
                 </label>
                 <input
                   type="email"
@@ -1756,14 +2429,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                   onChange={(e) => setNewEmail(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-blue-600"
                 />
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  Có thể để trống nếu nhân viên chưa có email; đăng nhập bằng mã nhân viên.
-                </p>
               </div>
 
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">
-                  Phân quyền vai trò *
+                  Phân quyền vai trò (1 trong 6 vai trò chuẩn) *
                 </label>
                 <select
                   value={newHrmRole}
@@ -1775,13 +2445,22 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-blue-600 bg-white font-medium"
                 >
                   <option value="nhan_vien_tuyen_dung">
-                    Nhân viên tuyển dụng (Đăng ký NV mới, Đăng ký KSK &amp; Xem tiêu chuẩn KSK)
+                    1. Nhân viên tuyển dụng (Tiếp nhận NV mới, Đăng ký KSK)
                   </option>
                   <option value="nhan_vien_y_te">
-                    Nhân viên y tế (Theo dõi &amp; Cập nhật KSK tuyển dụng)
+                    2. Nhân viên y tế (Theo dõi &amp; Cập nhật kết quả KSK)
+                  </option>
+                  <option value="nhan_vien_quan_ly_ho_so">
+                    3. Nhân viên quản lý hồ sơ (Rà soát &amp; Quản lý hồ sơ nhân sự)
+                  </option>
+                  <option value="truong_nhom_cnb">
+                    4. Trưởng nhóm C&amp;B (Quản lý Lương, Phụ cấp, BHXH &amp; Tiêu chuẩn lương)
+                  </option>
+                  <option value="truong_nhom_tuyen_dung">
+                    5. Trưởng nhóm tuyển dụng (Giám sát toàn bộ Tuyển dụng &amp; KSK)
                   </option>
                   <option value="admin">
-                    Quản trị viên (Toàn quyền xem &amp; sửa toàn bộ thông tin)
+                    6. Admin (Full quyền toàn hệ thống)
                   </option>
                 </select>
               </div>
@@ -1876,7 +2555,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-700 font-semibold mb-1">
-                    Vai trò phân quyền
+                    Vai trò phân quyền (1–6)
                   </label>
                   <select
                     value={editHrmRole}
@@ -1887,9 +2566,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                     }}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-blue-600 bg-white"
                   >
-                    <option value="nhan_vien_tuyen_dung">Nhân viên tuyển dụng</option>
-                    <option value="nhan_vien_y_te">Nhân viên y tế</option>
-                    <option value="admin">Quản trị viên (Admin)</option>
+                    <option value="nhan_vien_tuyen_dung">1. Nhân viên tuyển dụng</option>
+                    <option value="nhan_vien_y_te">2. Nhân viên y tế</option>
+                    <option value="nhan_vien_quan_ly_ho_so">3. Nhân viên quản lý hồ sơ</option>
+                    <option value="truong_nhom_cnb">4. Trưởng nhóm C&amp;B</option>
+                    <option value="truong_nhom_tuyen_dung">5. Trưởng nhóm tuyển dụng</option>
+                    <option value="admin">6. Admin (Full quyền)</option>
                   </select>
                 </div>
 

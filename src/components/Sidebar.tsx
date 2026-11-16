@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   UserPlus,
+  UserCheck,
   CalendarCheck,
   FileText,
   Hospital,
@@ -23,7 +24,7 @@ interface SidebarProps {
   onTabChange: (tab: AppTab) => void;
   healthSubTab: HealthSubTab;
   onHealthSubTabChange: (subTab: HealthSubTab) => void;
-  healthCounts: { regs: number; standards: number; providers: number };
+  healthCounts: { regs: number; completedRegs?: number; standards: number; providers: number };
   currentUser: UserProfile;
   recordsCount: number;
   sidebarCollapsed: boolean;
@@ -133,6 +134,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               <button
                 type="button"
+                onClick={() => handleSelectHealthSubTab('tuyen_dung_ket_qua')}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  healthSubTab === 'tuyen_dung_ket_qua'
+                    ? 'bg-blue-50 text-blue-700 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="truncate">3. Tiếp nhận sau KSK</span>
+                </div>
+                <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-full font-bold shrink-0">
+                  {healthCounts.completedRegs ?? 0}
+                </span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => handleSelectHealthSubTab('tuyen_dung_tieu_chuan')}
                 className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                   healthSubTab === 'tuyen_dung_tieu_chuan'
@@ -141,7 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }`}
               >
                 <FileText className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span className="truncate">3. Tiêu chuẩn KSK tuyển dụng</span>
+                <span className="truncate">4. Tiêu chuẩn KSK tuyển dụng</span>
               </button>
 
               {(isAdmin || isMedicalStaff) && (
@@ -157,7 +176,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Stethoscope className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span className="truncate">4. Tiêu chuẩn KSK định kỳ</span>
+                      <span className="truncate">5. Tiêu chuẩn KSK định kỳ</span>
                     </div>
                     <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-full font-bold shrink-0">
                       {healthCounts.standards}
@@ -175,7 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Hospital className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                      <span className="truncate">5. Nhà cung cấp KSK</span>
+                      <span className="truncate">6. Nhà cung cấp KSK</span>
                     </div>
                     <span className="px-1.5 py-0.2 bg-blue-100 text-blue-800 text-[10px] rounded-full font-bold shrink-0">
                       {healthCounts.providers}
@@ -192,7 +211,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }`}
                   >
                     <BarChart3 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                    <span className="truncate">6. Dashboard KSK tuyển dụng</span>
+                    <span className="truncate">7. Dashboard KSK tuyển dụng</span>
                   </button>
                 </>
               )}

@@ -6,6 +6,7 @@ import type {
   OptimizedImageFile,
 } from '../types';
 import type { RecruitmentHealthRegItem } from './HealthCheckStandardsManager';
+import { fetchHealthRegistrationsFromCloud } from '../utils/healthNotificationService';
 import { optimizeImageFile } from '../utils/imageOptimizer';
 import { extractOCRGroup } from '../utils/ocrClient';
 import { checkGroupDuplicateCCCD, normalizeCCCD } from '../utils/duplicateCheck';
@@ -58,13 +59,24 @@ interface DocumentUploaderProps {
   onClearTransferredCandidate?: () => void;
 }
 
-const isPassedHealthCheck = (reg: RecruitmentHealthRegItem): boolean => {
-  const st = (reg.trangThai || '').trim();
-  return st === 'Đã khám (Đạt)' || st === 'Đã khám - Đạt';
+const isCompletedStep2HealthCheck = (reg: RecruitmentHealthRegItem): boolean => {
+  const st = (reg.trangThai || '').toLowerCase().trim();
+  return st.includes('đã khám') || st.includes('đạt') || st.includes('không đạt');
 };
 
-const isAcceptedOffer = (reg: RecruitmentHealthRegItem): boolean => {
-  return (reg.trangThaiNhanViec || '').trim() === 'Đã nhận việc';
+const getStep3Choice = (
+  reg: RecruitmentHealthRegItem
+): 'chuyen_nhan_vien_moi' | 'chuyen_dia_diem' | 'khong_nhan_viec' | '' => {
+  if (reg.luaChonSauKham) return reg.luaChonSauKham;
+  if (reg.trangThaiNhanViec === 'Đã nhận việc') return 'chuyen_nhan_vien_moi';
+  if (reg.trangThaiNhanViec === 'Không nhận việc') return 'khong_nhan_viec';
+  return '';
+};
+
+const isEligibleFromStep3 = (reg: RecruitmentHealthRegItem): boolean => {
+  if (!isCompletedStep2HealthCheck(reg)) return false;
+  const choice = getStep3Choice(reg);
+  return choice === 'chuyen_nhan_vien_moi' || choice === 'chuyen_dia_diem';
 };
 
 const isGroupBlankSlot = (group: EmployeeDocumentGroup, form?: Step1EmployeeForm): boolean => {
@@ -101,16 +113,18 @@ const kskCandidateToForm = (reg: RecruitmentHealthRegItem): Step1EmployeeForm =>
   setIfVal('soDienThoai', reg.soDienThoai);
   setIfVal('khoi', reg.khoi || reg.phongBanKhoi);
   setIfVal('ban', reg.ban);
-  setIfVal('phong', reg.phong);
+  setIfVal('phong', reg.diaDiemChuyenDen || reg.phong);
   setIfVal('congViecDuKien', reg.congViec || reg.viTriViecLam);
   setIfVal('chucVu', reg.chucVu);
 
-  form.trangThaiKSK = `${reg.trangThai || 'Đã khám (Đạt)'}${
-    reg.trangThaiNhanViec === 'Đã nhận việc' ? ' · Đã nhận việc' : ''
-  }`;
-  form.ghiChu = reg.nhaCungCap
-    ? `Đồng bộ từ Quản lý KSK (NCC: ${reg.nhaCungCap})`
-    : 'Đồng bộ từ Quản lý KSK tuyển dụng';
+  const step3Choice = getStep3Choice(reg);
+  const choiceLabel =
+    step3Choice === 'chuyen_dia_diem'
+      ? `Chuyển địa điểm${reg.diaDiemChuyenDen ? ` (${reg.diaDiemChuyenDen})` : ''}`
+      : 'Chuyển nhân viên mới';
+
+  form.trangThaiKSK = `${reg.trangThai || 'Đã khám'} · ${choiceLabel}`;
+  form.ghiChu = `Đồng bộ từ Bước 3 Tiếp nhận sau KSK (${choiceLabel})`;
   form.kskLockedFields = locked;
   return form;
 };
@@ -164,12 +178,14 @@ export function DocumentUploader({
   >({});
   const [globalError, setGlobalError] = useState<string | null>(null);
 
-  // KSK Multi-Picker Modal State
+  // KSK Multi-Picker Modal State (Lấy dữ liệu từ Bước 3 Tiếp nhận sau KSK)
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [recruitmentList, setRecruitmentList] = useState<RecruitmentHealthRegItem[]>([]);
   const [pickerSearch, setPickerSearch] = useState('');
   const [pickerSelectedIds, setPickerSelectedIds] = useState<string[]>([]);
-  const [pickerIncludePendingOffer, setPickerIncludePendingOffer] = useState(false);
+  const [pickerChoiceFilter, setPickerChoiceFilter] = useState<
+    'ALL' | 'chuyen_nhan_vien_moi' | 'chuyen_dia_diem'
+  >('ALL');
 
   // Split-view & Upload Tray UI Controls
   const [splitViewMode, setSplitViewMode] = useState<'split' | 'image' | 'form'>('split');
@@ -352,6 +368,11 @@ export function DocumentUploader({
     } catch {
       // ignore storage errors
     }
+    void fetchHealthRegistrationsFromCloud().then((remote) => {
+      if (Array.isArray(remote) && remote.length > 0) {
+        setRecruitmentList(remote);
+      }
+    });
   };
 
   useEffect(() => {
@@ -362,22 +383,24 @@ export function DocumentUploader({
     loadRecruitmentCandidates();
     setPickerSearch('');
     setPickerSelectedIds([]);
-    setPickerIncludePendingOffer(false);
+    setPickerChoiceFilter('ALL');
     setIsPickerOpen(true);
   };
 
-  // Filtered KSK candidates in Picker Modal
+  // Filtered KSK candidates in Picker Modal:
+  // Chỉ cho phép lấy từ Bước 3 Tiếp nhận sau KSK đối với nhân viên có trạng thái "Chuyển nhân viên mới" hoặc "Chuyển địa điểm"
   const eligiblePickerCandidates = useMemo(() => {
     const q = pickerSearch.trim().toLowerCase();
     return recruitmentList.filter((reg) => {
-      if (!isPassedHealthCheck(reg)) return false;
-      if (!pickerIncludePendingOffer && !isAcceptedOffer(reg)) return false;
+      if (!isEligibleFromStep3(reg)) return false;
+      const choice = getStep3Choice(reg);
+      if (pickerChoiceFilter !== 'ALL' && choice !== pickerChoiceFilter) return false;
       if (!q) return true;
-      return `${reg.hoVaTen} ${reg.soCCCD} ${reg.soDienThoai || ''} ${reg.congViec || ''} ${reg.chucVu || ''} ${reg.phong || ''}`
+      return `${reg.hoVaTen} ${reg.soCCCD} ${reg.soDienThoai || ''} ${reg.congViec || ''} ${reg.chucVu || ''} ${reg.diaDiemChuyenDen || reg.phong || ''}`
         .toLowerCase()
         .includes(q);
     });
-  }, [recruitmentList, pickerSearch, pickerIncludePendingOffer]);
+  }, [recruitmentList, pickerSearch, pickerChoiceFilter]);
 
   const alreadyLoadedCCCDSet = useMemo(() => {
     const set = new Set<string>();
@@ -1585,10 +1608,12 @@ export function DocumentUploader({
                 <Hospital className="w-5 h-5 text-[#1a73e8] mt-0.5 shrink-0" />
                 <div>
                   <h3 className="font-bold text-slate-900 text-sm">
-                    Chọn Nhiều Ứng Viên Từ Quản Lý KSK Tuyển Dụng
+                    Lấy Dữ Liệu Ứng Viên Từ Bước 3: Tiếp Nhận Sau KSK
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Mặc định lọc ứng viên <strong>Đã khám (Đạt)</strong> và <strong>Đã nhận việc</strong>. Hệ thống sẽ tạo khung tải ảnh riêng cho từng người được chọn.
+                    Chỉ cho phép lấy nhân viên tại <strong>Bước 3 (Tiếp nhận sau KSK)</strong> có trạng thái lựa chọn là{' '}
+                    <strong className="text-emerald-700">Chuyển nhân viên mới</strong> hoặc{' '}
+                    <strong className="text-indigo-700">Chuyển địa điểm</strong>.
                   </p>
                 </div>
               </div>
@@ -1601,7 +1626,7 @@ export function DocumentUploader({
               </button>
             </div>
 
-            {/* Search & Select All toolbar */}
+            {/* Search & Filter by Step 3 Choice & Select All toolbar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -1609,12 +1634,26 @@ export function DocumentUploader({
                   type="text"
                   value={pickerSearch}
                   onChange={(e) => setPickerSearch(e.target.value)}
-                  placeholder="Tìm theo Họ tên, Số CCCD, SĐT, Vị trí..."
+                  placeholder="Tìm theo Họ tên, Số CCCD, Phòng/Địa điểm..."
                   className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 text-xs outline-none focus:border-[#1a73e8]"
                 />
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <select
+                  value={pickerChoiceFilter}
+                  onChange={(e) =>
+                    setPickerChoiceFilter(
+                      e.target.value as 'ALL' | 'chuyen_nhan_vien_moi' | 'chuyen_dia_diem'
+                    )
+                  }
+                  className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 outline-none cursor-pointer focus:border-[#1a73e8]"
+                >
+                  <option value="ALL">Tất cả (Chuyển NV mới &amp; Chuyển địa điểm)</option>
+                  <option value="chuyen_nhan_vien_moi">Trạng thái: Chuyển nhân viên mới</option>
+                  <option value="chuyen_dia_diem">Trạng thái: Chuyển địa điểm</option>
+                </select>
+
                 <button
                   type="button"
                   onClick={handleToggleSelectAllPicker}
@@ -1629,29 +1668,24 @@ export function DocumentUploader({
               </div>
             </div>
 
-            <label className="inline-flex items-center gap-2 text-[11px] text-slate-600 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={pickerIncludePendingOffer}
-                onChange={(e) => setPickerIncludePendingOffer(e.target.checked)}
-                className="rounded text-[#1a73e8]"
-              />
-              <span>Hiển thị thêm ứng viên Đã khám (Đạt) chưa đánh dấu Nhận việc</span>
-            </label>
-
             {/* Candidate list */}
             <div className="max-h-[340px] overflow-y-auto space-y-2 pr-1">
               {eligiblePickerCandidates.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 text-xs border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                  Không có ứng viên nào thuộc nhóm{' '}
-                  <strong>Đã khám (Đạt) và Đã nhận việc</strong> phù hợp.
+                  Chưa có nhân viên nào ở <strong>Bước 3: Tiếp nhận sau KSK</strong> được tích chọn trạng thái{' '}
+                  <strong>&ldquo;Chuyển nhân viên mới&rdquo;</strong> hoặc{' '}
+                  <strong>&ldquo;Chuyển địa điểm&rdquo;</strong>.
                   <br />
-                  Hãy kiểm tra trạng thái tại module <strong>Quản lý KSK tuyển dụng</strong>.
+                  Vui lòng vào mục <strong>Quản lý &amp; Tiêu chuẩn KSK &rarr; 3. Tiếp nhận sau KSK</strong> để tích chọn trạng thái cho ứng viên.
                 </div>
               ) : (
                 eligiblePickerCandidates.map((reg) => {
                   const isChecked = pickerSelectedIds.includes(reg.id);
                   const alreadyInWorkspace = alreadyLoadedCCCDSet.has(normalizeCCCD(reg.soCCCD));
+                  const choice = getStep3Choice(reg);
+                  const examDate = reg.ngayKhamSucKhoe || reg.ngayHenKham || '---';
+                  const targetPhong = reg.diaDiemChuyenDen || reg.phong;
+
                   return (
                     <label
                       key={reg.id}
@@ -1689,15 +1723,15 @@ export function DocumentUploader({
                             )}
                           </div>
                           <div className="text-slate-500 mt-0.5 font-mono text-[11px] tabular-nums">
-                            CCCD: {reg.soCCCD} &middot; SĐT: {reg.soDienThoai || '---'} &middot;{' '}
-                            {[reg.congViec || reg.viTriViecLam, reg.chucVu]
-                              .filter(Boolean)
-                              .join(' - ')}
+                            CCCD: {reg.soCCCD || '---'} &middot; Ngày khám: {examDate}
+                            {reg.congViec || reg.chucVu
+                              ? ` · ${[reg.congViec, reg.chucVu].filter(Boolean).join(' - ')}`
+                              : ''}
                           </div>
-                          {(reg.khoi || reg.phongBanKhoi) && (
+                          {(reg.khoi || reg.phongBanKhoi || targetPhong) && (
                             <div className="text-[11px] text-slate-500 mt-0.5">
-                              Đơn vị dự kiến:{' '}
-                              {[reg.khoi || reg.phongBanKhoi, reg.ban, reg.phong]
+                              Đơn vị / Địa điểm:{' '}
+                              {[reg.khoi || reg.phongBanKhoi, reg.ban, targetPhong]
                                 .filter(Boolean)
                                 .join(' → ')}
                             </div>
@@ -1705,12 +1739,18 @@ export function DocumentUploader({
                         </div>
                       </div>
 
-                      <div className="text-right shrink-0">
-                        <div className="text-[11px] font-bold text-emerald-700">
-                          {reg.trangThai || 'Đã khám (Đạt)'}
-                        </div>
-                        <div className="text-[11px] font-semibold text-blue-700">
-                          {reg.trangThaiNhanViec || 'Chưa xử lý'}
+                      <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                        {choice === 'chuyen_dia_diem' ? (
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 text-[10px] font-bold">
+                            Chuyển địa điểm{reg.diaDiemChuyenDen ? `: ${reg.diaDiemChuyenDen}` : ''}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                            Chuyển nhân viên mới
+                          </span>
+                        )}
+                        <div className="text-[11px] font-semibold text-slate-600">
+                          KSK: {reg.trangThai || 'Đã khám'}
                         </div>
                       </div>
                     </label>

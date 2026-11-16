@@ -1,10 +1,14 @@
 export type UserRole = 'admin' | 'employee';
 export type HrmSubRole =
   | 'admin'
-  | 'quan_ly_nhan_su'
-  | 'nhan_vien_nhan_su'
   | 'nhan_vien_tuyen_dung'
-  | 'nhan_vien_y_te';
+  | 'nhan_vien_y_te'
+  | 'nhan_vien_quan_ly_ho_so'
+  | 'truong_nhom_cnb'
+  | 'truong_nhom_tuyen_dung'
+  | 'quan_ly_nhan_su'
+  | 'nhan_vien_nhan_su';
+
 
 export interface UserProfile {
   employeeCode?:string;
@@ -340,3 +344,20 @@ export interface EmailLogItem {
   htmlContent: string;
   status: 'Thành công' | 'Thất bại';
 }
+
+export interface HealthCheckNotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  candidateNames: string[];
+  candidateCount: number;
+  phong?: string;
+  nhaCungCap?: string;
+  ngayHenKham?: string;
+  createdBy: string;
+  createdByEmail?: string;
+  createdAt: string;
+  readBy: string[];
+  targetRole: 'nhan_vien_y_te' | 'all';
+}
+

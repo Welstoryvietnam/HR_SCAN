@@ -62,13 +62,25 @@ export default function App() {
     const isMed = currentUser?.role !== 'admin' && currentUser?.hrmRole === 'nhan_vien_y_te';
     return isMed ? 'tuyen_dung_theo_doi' : 'tuyen_dung_dang_ky';
   });
-  const [healthCounts, setHealthCounts] = useState<{ regs: number; standards: number; providers: number }>(() => {
+  const [healthCounts, setHealthCounts] = useState<{
+    regs: number;
+    completedRegs?: number;
+    standards: number;
+    providers: number;
+  }>(() => {
     let regs = 2;
+    let completedRegs = 1;
     let standards = 0;
     let providers = 3;
     try {
       const r = JSON.parse(localStorage.getItem('hr_recruitment_health_regs') || 'null');
-      if (Array.isArray(r)) regs = r.length;
+      if (Array.isArray(r)) {
+        regs = r.length;
+        completedRegs = r.filter((item: any) => {
+          const st = String(item?.trangThai || '').toLowerCase();
+          return st.includes('đã khám') || st.includes('đạt') || st.includes('không đạt');
+        }).length;
+      }
     } catch {}
     try {
       const s = JSON.parse(localStorage.getItem('hr_health_check_standards') || 'null');
@@ -78,7 +90,7 @@ export default function App() {
       const p = JSON.parse(localStorage.getItem('hr_healthcare_providers') || 'null');
       if (Array.isArray(p)) providers = p.length;
     } catch {}
-    return { regs, standards, providers };
+    return { regs, completedRegs, standards, providers };
   });
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
     try {
@@ -734,6 +746,10 @@ export default function App() {
         onLogout={handleLogout}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+        onNavigateToHealthTracking={() => {
+          setActiveTab('health');
+          setHealthSubTab('tuyen_dung_theo_doi');
+        }}
       />
 
       {/* Floating Notifications */}

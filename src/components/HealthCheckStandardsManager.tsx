@@ -12,6 +12,12 @@ import {
   type HealthCheckColumnDef,
 } from '../data/healthCheckStandards';
 import { safeFetchJson } from '../utils/apiHelper';
+import {
+  notifyNewHealthCheckRegistrations,
+  syncHealthRegistrationsToCloud,
+  fetchHealthRegistrationsFromCloud,
+  HEALTH_REGISTRATIONS_CLOUD_EVENT,
+} from '../utils/healthNotificationService';
 import { optimizeImageFile } from '../utils/imageOptimizer';
 import { extractOCRGroup } from '../utils/ocrClient';
 import { DEFAULT_JOB_POSITIONS } from '../data/jobPositionHierarchy';
@@ -87,14 +93,18 @@ export interface RecruitmentHealthRegItem {
   nhaCungCap: string;
   ngayDangKyKham: string;
   ngayHenKham: string;
+  ngayKhamSucKhoe?: string;
   nguoiDangKy: string;
   ghiChu: string;
+  ghiChuHangMucKhongDat?: string;
   soDienThoai?: string;
   phongBanKhoi?: string;
   viTriViecLam?: string;
   trangThai?: string;
   trangThaiNhanViec?: 'Chưa xử lý' | 'Đã nhận việc' | 'Không nhận việc';
   lyDoKhongNhanViec?: string;
+  luaChonSauKham?: 'chuyen_nhan_vien_moi' | 'khong_nhan_viec' | 'chuyen_dia_diem' | '';
+  diaDiemChuyenDen?: string;
 }
 
 export interface RecruitmentStandardItem {
@@ -107,6 +117,7 @@ export interface RecruitmentStandardItem {
 export type HealthSubTab =
   | 'tuyen_dung_dang_ky'
   | 'tuyen_dung_theo_doi'
+  | 'tuyen_dung_ket_qua'
   | 'tuyen_dung_tieu_chuan'
   | 'dinh_ky'
   | 'nha_cung_cap'
@@ -117,7 +128,12 @@ interface HealthCheckStandardsManagerProps {
   onTransferToNewEmployee?: (reg: RecruitmentHealthRegItem) => void;
   activeSubTab?: HealthSubTab;
   onSubTabChange?: (tab: HealthSubTab) => void;
-  onCountsChange?: (counts: { regs: number; standards: number; providers: number }) => void;
+  onCountsChange?: (counts: {
+    regs: number;
+    completedRegs?: number;
+    standards: number;
+    providers: number;
+  }) => void;
   organizationHierarchy?: KhoiNode[];
 }
 
@@ -398,13 +414,44 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     } catch {}
   }, [recruitmentRegs]);
 
+  // Đồng bộ danh sách đăng ký KSK từ Cloud Firestore khi mở màn hình hoặc khi nhận sự kiện thông báo đẩy
   useEffect(() => {
+    let mounted = true;
+    void fetchHealthRegistrationsFromCloud().then((remote) => {
+      if (mounted && Array.isArray(remote) && remote.length > 0) {
+        setRecruitmentRegs(remote);
+      }
+    });
+
+    const handleCloudSynced = (e: Event) => {
+      const detail = (e as CustomEvent<RecruitmentHealthRegItem[]>).detail;
+      if (Array.isArray(detail)) {
+        setRecruitmentRegs(detail);
+      }
+    };
+
+    window.addEventListener(HEALTH_REGISTRATIONS_CLOUD_EVENT, handleCloudSynced);
+    return () => {
+      mounted = false;
+      window.removeEventListener(HEALTH_REGISTRATIONS_CLOUD_EVENT, handleCloudSynced);
+    };
+  }, []);
+
+  const isCompletedHealthCheck = (status?: string): boolean => {
+    if (!status) return false;
+    const s = status.toLowerCase();
+    return s.includes('đã khám') || s.includes('đạt') || s.includes('không đạt');
+  };
+
+  useEffect(() => {
+    const completedCount = recruitmentRegs.filter((r) => isCompletedHealthCheck(r.trangThai)).length;
     onCountsChange?.({
       regs: recruitmentRegs.length,
+      completedRegs: completedCount,
       standards: standards.length,
       providers: providers.length,
     });
-  }, [recruitmentRegs.length, standards.length, providers.length]);
+  }, [recruitmentRegs, standards.length, providers.length]);
 
   // Bước 1: Danh sách đăng ký nháp tại Bảng 2 (chỉ đẩy sang Bước 2 sau khi nhấn "Gửi đăng ký")
   const [draftRecruitmentRegs, setDraftRecruitmentRegs] = useState<RecruitmentHealthRegItem[]>(() => {
@@ -889,7 +936,16 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       setRecruitmentRegs(updated);
       setIsRegModalOpen(false);
       setDuplicateWarningModal(null);
-      showToast('success', editingReg ? 'Đã cập nhật đăng ký KSK tuyển dụng!' : 'Đã đăng ký lịch khám tuyển dụng thành công!');
+      if (!editingReg) {
+        void notifyNewHealthCheckRegistrations([newItem], currentUser, updated);
+        showToast(
+          'success',
+          `Đã đăng ký lịch khám cho ${newItem.hoVaTen} và gửi thông báo đẩy cho Nhân viên y tế!`
+        );
+      } else {
+        void syncHealthRegistrationsToCloud(updated);
+        showToast('success', 'Đã cập nhật đăng ký KSK tuyển dụng!');
+      }
     };
 
     if (cleanCccd) {
@@ -910,7 +966,11 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const [confirmDeleteTrackingRegId, setConfirmDeleteTrackingRegId] = useState<string | null>(null);
 
   const handleDeleteTrackingReg = (id: string, name?: string) => {
-    setRecruitmentRegs((prev) => prev.filter((r) => r.id !== id));
+    setRecruitmentRegs((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      void syncHealthRegistrationsToCloud(next);
+      return next;
+    });
     setConfirmDeleteTrackingRegId((prev) => (prev === id ? null : prev));
     showToast('success', `Đã xóa ứng viên${name ? ` ${name}` : ''} khỏi danh sách theo dõi KSK!`);
   };
@@ -996,11 +1056,16 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     const duplicates = getDuplicateCccds(cccdList);
 
     const executeSubmit = () => {
-      setRecruitmentRegs((prev) => [...readyItems, ...prev]);
+      const nextList = [...readyItems, ...recruitmentRegs];
+      setRecruitmentRegs(nextList);
       setDraftRecruitmentRegs([]);
       setConfirmDeleteRegId(null);
       setDuplicateWarningModal(null);
-      showToast('success', `Đã gửi ${readyItems.length} hồ sơ đăng ký sang Bước 2 - Theo dõi KSK tuyển dụng!`);
+      void notifyNewHealthCheckRegistrations(readyItems, currentUser, nextList);
+      showToast(
+        'success',
+        `Đã gửi ${readyItems.length} hồ sơ đăng ký sang Bước 2 và bắn thông báo đẩy cho Nhân viên y tế!`
+      );
     };
 
     if (duplicates.length > 0) {
@@ -1112,14 +1177,113 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     setTrackingDraftRegs(recruitmentRegs);
   }, [recruitmentRegs]);
 
+  // State cho Bước 3 mới: Danh sách nhân viên đã thực hiện khám sức khỏe (Đạt & Không đạt)
+  const [step3Search, setStep3Search] = useState('');
+  const [step3StatusFilter, setStep3StatusFilter] = useState<'ALL' | 'DAT' | 'KHONG_DAT'>('ALL');
+  const [step3DecisionFilter, setStep3DecisionFilter] = useState<
+    'ALL' | 'chuyen_nhan_vien_moi' | 'khong_nhan_viec' | 'chuyen_dia_diem' | 'chua_chon'
+  >('ALL');
+
   const handleSaveStep2TrackingResults = () => {
-    setRecruitmentRegs(trackingDraftRegs);
-    showToast('success', 'Đã lưu kết quả khám thành công vào hệ thống!');
+    const normalizedDrafts = trackingDraftRegs.map((r) => {
+      if (isCompletedHealthCheck(r.trangThai) && !r.ngayKhamSucKhoe) {
+        return {
+          ...r,
+          ngayKhamSucKhoe: r.ngayHenKham || new Date().toISOString().slice(0, 10),
+        };
+      }
+      return r;
+    });
+    setTrackingDraftRegs(normalizedDrafts);
+    setRecruitmentRegs(normalizedDrafts);
+    void syncHealthRegistrationsToCloud(normalizedDrafts);
+    const completedTotal = normalizedDrafts.filter((r) => isCompletedHealthCheck(r.trangThai)).length;
+    showToast(
+      'success',
+      `Đã lưu kết quả khám và chuyển ${completedTotal} ứng viên đã thực hiện khám (Đạt & Không đạt) sang Bước 3!`
+    );
   };
 
   const handleUpdateTrackingItem = (id: string, patch: Partial<RecruitmentHealthRegItem>) => {
     setTrackingDraftRegs((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   };
+
+  const handleToggleStep3Decision = (
+    reg: RecruitmentHealthRegItem,
+    choice: 'chuyen_nhan_vien_moi' | 'khong_nhan_viec' | 'chuyen_dia_diem'
+  ) => {
+    const nextChoice: RecruitmentHealthRegItem['luaChonSauKham'] =
+      reg.luaChonSauKham === choice ? '' : choice;
+    const nextTrangThaiNhanViec: RecruitmentHealthRegItem['trangThaiNhanViec'] =
+      nextChoice === 'chuyen_nhan_vien_moi'
+        ? 'Đã nhận việc'
+        : nextChoice === 'khong_nhan_viec'
+        ? 'Không nhận việc'
+        : 'Chưa xử lý';
+
+    const updateList = (list: RecruitmentHealthRegItem[]): RecruitmentHealthRegItem[] =>
+      list.map((r) =>
+        r.id === reg.id
+          ? {
+              ...r,
+              luaChonSauKham: nextChoice,
+              trangThaiNhanViec: nextTrangThaiNhanViec,
+            }
+          : r
+      );
+
+    const nextRegs = updateList(recruitmentRegs);
+    setRecruitmentRegs(nextRegs);
+    setTrackingDraftRegs(updateList(trackingDraftRegs));
+    void syncHealthRegistrationsToCloud(nextRegs);
+  };
+
+  const handleUpdateStep3ItemField = (id: string, patch: Partial<RecruitmentHealthRegItem>) => {
+    const updateList = (list: RecruitmentHealthRegItem[]) =>
+      list.map((r) => (r.id === id ? { ...r, ...patch } : r));
+    const nextRegs = updateList(recruitmentRegs);
+    setRecruitmentRegs(nextRegs);
+    setTrackingDraftRegs(updateList(trackingDraftRegs));
+  };
+
+  const handleSaveStep3Decisions = () => {
+    void syncHealthRegistrationsToCloud(recruitmentRegs);
+    showToast(
+      'success',
+      'Đã lưu và đồng bộ thông tin lựa chọn sau khám sức khỏe lên Cloud Firestore!'
+    );
+  };
+
+  const completedHealthCheckRegs = useMemo(() => {
+    return recruitmentRegs.filter((r) => isCompletedHealthCheck(r.trangThai));
+  }, [recruitmentRegs]);
+
+  const filteredStep3Regs = useMemo(() => {
+    return completedHealthCheckRegs.filter((reg) => {
+      if (step3Search.trim()) {
+        const q = step3Search.toLowerCase().trim();
+        const matchName = (reg.hoVaTen || '').toLowerCase().includes(q);
+        const matchCCCD = (reg.soCCCD || '').toLowerCase().includes(q);
+        const matchRoom = (reg.phong || '').toLowerCase().includes(q);
+        const matchNote = (reg.ghiChuHangMucKhongDat || '').toLowerCase().includes(q);
+        if (!matchName && !matchCCCD && !matchRoom && !matchNote) return false;
+      }
+      const st = (reg.trangThai || '').toLowerCase();
+      const isKhongDat = st.includes('không đạt');
+      if (step3StatusFilter === 'DAT' && isKhongDat) return false;
+      if (step3StatusFilter === 'KHONG_DAT' && !isKhongDat) return false;
+
+      if (step3DecisionFilter !== 'ALL') {
+        const curDecision = reg.luaChonSauKham || '';
+        if (step3DecisionFilter === 'chua_chon') {
+          if (curDecision) return false;
+        } else if (curDecision !== step3DecisionFilter) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [completedHealthCheckRegs, step3Search, step3StatusFilter, step3DecisionFilter]);
 
   const trackingPeriodRegs = useMemo(() => {
     return trackingDraftRegs.filter((reg) => {
@@ -1998,6 +2162,19 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
         <button
           type="button"
+          onClick={() => setHealthSubTab('tuyen_dung_ket_qua')}
+          className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+            healthSubTab === 'tuyen_dung_ket_qua'
+              ? 'bg-[#1a73e8] text-white shadow-sm'
+              : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'
+          }`}
+        >
+          <UserCheck className="w-4 h-4 text-emerald-300" />
+          <span>3. Tiếp nhận sau KSK ({completedHealthCheckRegs.length})</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setHealthSubTab('tuyen_dung_tieu_chuan')}
           className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
             healthSubTab === 'tuyen_dung_tieu_chuan'
@@ -2006,7 +2183,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
           }`}
         >
           <FileText className="w-4 h-4 text-amber-300" />
-          <span>3. Tiêu chuẩn KSK tuyển dụng</span>
+          <span>4. Tiêu chuẩn KSK tuyển dụng</span>
         </button>
 
         {(isAdmin || isMedicalStaff) && (
@@ -2021,7 +2198,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
               }`}
             >
               <Stethoscope className="w-4 h-4 text-emerald-300" />
-              <span>4. Tiêu chuẩn KSK định kỳ ({standards.length})</span>
+              <span>5. Tiêu chuẩn KSK định kỳ ({standards.length})</span>
             </button>
 
             <button
@@ -2034,7 +2211,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
               }`}
             >
               <Hospital className="w-4 h-4 text-blue-300" />
-              <span>5. Nhà cung cấp KSK ({providers.length})</span>
+              <span>6. Nhà cung cấp KSK ({providers.length})</span>
             </button>
 
             <button
@@ -2047,7 +2224,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
               }`}
             >
               <BarChart3 className="w-4 h-4 text-indigo-300" />
-              <span>6. Dashboard khám sức khỏe tuyển dụng</span>
+              <span>7. Dashboard khám sức khỏe tuyển dụng</span>
             </button>
           </>
         )}
@@ -2829,14 +3006,28 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleSaveStep2TrackingResults}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-sm transition cursor-pointer"
-            >
-              <Check className="w-4 h-4" />
-              <span>Lưu kết quả khám</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSaveStep2TrackingResults}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-sm transition cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Lưu kết quả khám</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  handleSaveStep2TrackingResults();
+                  setHealthSubTab('tuyen_dung_ket_qua');
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1a73e8] hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition cursor-pointer"
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>Lưu &amp; Chuyển sang Bước 3 ({completedHealthCheckRegs.length})</span>
+              </button>
+            </div>
           </div>
 
           {trackingViewMode === 'active' ? (
@@ -2845,19 +3036,25 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                     <th className="p-3 text-center w-12">STT</th>
-                    <th className="p-3">Họ và tên ứng viên</th>
-                    <th className="p-3">Vị trí việc làm</th>
-                    <th className="p-3">Nhà cung cấp khám</th>
-                    <th className="p-3 text-center">Ngày hẹn khám</th>
-                    <th className="p-3 text-center">Trạng thái KSK</th>
+                    <th className="p-3 min-w-[160px]">Họ và tên ứng viên</th>
+                    <th className="p-3 min-w-[140px]">Vị trí việc làm</th>
+                    <th className="p-3 min-w-[150px]">Nhà cung cấp khám</th>
+                    <th className="p-3 text-center min-w-[115px]">Ngày hẹn khám</th>
+                    <th className="p-3 text-center min-w-[145px] bg-blue-50/60 text-blue-900">
+                      Ngày khám sức khỏe
+                    </th>
+                    <th className="p-3 text-center min-w-[125px]">Trạng thái KSK</th>
                     <th className="p-3 text-center min-w-[160px]">Cập nhật Kết quả</th>
-                    <th className="p-3 text-center w-24">Xóa</th>
+                    <th className="p-3 min-w-[230px] bg-rose-50/50 text-rose-900">
+                      Ghi chú (Hạng mục khám không đạt)
+                    </th>
+                    <th className="p-3 text-center w-20">Xóa</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {filteredTrackingRegs.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-slate-500">
+                      <td colSpan={10} className="p-8 text-center text-slate-500">
                         Không tìm thấy lịch khám tuyển dụng phù hợp với điều kiện tìm kiếm.
                       </td>
                     </tr>
@@ -2886,6 +3083,16 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                         </td>
                         <td className="p-3 text-slate-700">{reg.nhaCungCap}</td>
                         <td className="p-3 text-center font-mono font-bold text-slate-700">{reg.ngayHenKham}</td>
+                        <td className="p-2.5 text-center bg-blue-50/20">
+                          <input
+                            type="date"
+                            value={reg.ngayKhamSucKhoe || reg.ngayHenKham || ''}
+                            onChange={(e) =>
+                              handleUpdateTrackingItem(reg.id, { ngayKhamSucKhoe: e.target.value })
+                            }
+                            className="px-2.5 py-1.5 bg-white border border-slate-300 focus:border-[#1a73e8] rounded-lg text-xs font-mono font-semibold text-slate-800 outline-none"
+                          />
+                        </td>
                         <td className="p-3 text-center">
                           {(() => {
                             const currentStatus = reg.trangThai || 'Chờ khám';
@@ -2905,8 +3112,19 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                           <select
                             value={reg.trangThai || 'Chờ Khám'}
                             onChange={(e) => {
-                              handleUpdateTrackingItem(reg.id, { trangThai: e.target.value });
-                              showToast('success', `Đã cập nhật kết quả KSK thành ${e.target.value}!`);
+                              const nextStatus = e.target.value;
+                              const patch: Partial<RecruitmentHealthRegItem> = {
+                                trangThai: nextStatus,
+                              };
+                              if (isCompletedHealthCheck(nextStatus) && !reg.ngayKhamSucKhoe) {
+                                patch.ngayKhamSucKhoe =
+                                  reg.ngayHenKham || new Date().toISOString().slice(0, 10);
+                              }
+                              handleUpdateTrackingItem(reg.id, patch);
+                              showToast(
+                                'success',
+                                `Đã chọn kết quả KSK "${nextStatus}". Nhấn "Lưu kết quả khám" để áp dụng & chuyển sang Bước 3!`
+                              );
                             }}
                             className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
                           >
@@ -2915,6 +3133,19 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                             <option value="Đã khám (không đạt)">Đã khám (không đạt)</option>
                             <option value="Hoãn">Hoãn</option>
                           </select>
+                        </td>
+                        <td className="p-2.5 bg-rose-50/15">
+                          <input
+                            type="text"
+                            value={reg.ghiChuHangMucKhongDat || ''}
+                            onChange={(e) =>
+                              handleUpdateTrackingItem(reg.id, {
+                                ghiChuHangMucKhongDat: e.target.value,
+                              })
+                            }
+                            placeholder="Nhập hạng mục khám không đạt / ghi chú..."
+                            className="w-full px-2.5 py-1.5 bg-white border border-slate-300 focus:border-rose-500 rounded-lg text-xs text-slate-800 outline-none"
+                          />
                         </td>
                         <td className="p-3 text-center">
                           {confirmDeleteTrackingRegId === reg.id ? (
@@ -2968,8 +3199,9 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                       <th className="p-3">Họ và tên ứng viên</th>
                       <th className="p-3">Vị trí / Phòng</th>
                       <th className="p-3">Nhà cung cấp khám</th>
-                      <th className="p-3 text-center">Ngày hẹn khám</th>
+                      <th className="p-3 text-center">Ngày khám sức khỏe</th>
                       <th className="p-3 text-center">Trạng thái KSK</th>
+                      <th className="p-3 min-w-[180px]">Ghi chú (Hạng mục khám không đạt)</th>
                       <th className="p-3 min-w-[200px]">Lý do / Ghi chú không nhận việc</th>
                       <th className="p-3 text-center">Khôi phục</th>
                       <th className="p-3 text-center w-24">Xóa</th>
@@ -2978,7 +3210,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                   <tbody className="divide-y divide-slate-200">
                     {filteredTrackingRegs.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="p-8 text-center text-slate-500">
+                        <td colSpan={10} className="p-8 text-center text-slate-500">
                           Chưa có ứng viên nào trong danh sách Không nhận việc.
                         </td>
                       </tr>
@@ -3001,14 +3233,16 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                             )}
                           </td>
                           <td className="p-3 text-slate-700">{reg.nhaCungCap}</td>
-                          <td className="p-3 text-center font-mono font-bold text-slate-700">{reg.ngayHenKham}</td>
+                          <td className="p-3 text-center font-mono font-bold text-slate-700">
+                            {reg.ngayKhamSucKhoe || reg.ngayHenKham}
+                          </td>
                           <td className="p-3 text-center">
                             {(() => {
                               const currentStatus = reg.trangThai || 'Chờ khám';
                               return (
                                 <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                  currentStatus === 'Đã khám - Đạt' ? 'bg-teal-100 text-teal-800' :
-                                  currentStatus === 'Đã khám - Không đạt' ? 'bg-rose-100 text-rose-800' :
+                                  currentStatus.includes('Đạt') && !currentStatus.includes('không') ? 'bg-teal-100 text-teal-800' :
+                                  currentStatus.includes('không đạt') || currentStatus.includes('Không đạt') ? 'bg-rose-100 text-rose-800' :
                                   currentStatus === 'Hoãn' ? 'bg-amber-100 text-amber-800' :
                                   'bg-blue-100 text-blue-800'
                                 }`}>
@@ -3016,6 +3250,9 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                                 </span>
                               );
                             })()}
+                          </td>
+                          <td className="p-2.5 text-slate-700 text-xs">
+                            {reg.ghiChuHangMucKhongDat || '---'}
                           </td>
                           <td className="p-2.5">
                             <input
@@ -3079,6 +3316,376 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* BƯỚC 3 MỚI (SAU BƯỚC 2 THEO DÕI KSK TUYỂN DỤNG):
+          Danh sách nhân viên đã thực hiện khám sức khỏe (bao gồm Đạt và Không đạt) */}
+      {healthSubTab === 'tuyen_dung_ket_qua' && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5 animate-fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-extrabold">
+                  Bước 3
+                </span>
+                <h3 className="text-base font-bold text-slate-900">
+                  Kết Quả KSK Tuyển Dụng &amp; Điều Phối Tiếp Nhận Nhân Viên
+                </h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Danh sách toàn bộ ứng viên đã thực hiện khám sức khỏe từ Bước 2 (bao gồm cả <strong>Đạt</strong> và <strong>Không đạt</strong>). Tích chọn phương án xử lý: <strong>Chuyển nhân viên mới</strong>, <strong>Không nhận việc</strong>, hoặc <strong>Chuyển địa điểm</strong>.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHealthSubTab('tuyen_dung_theo_doi')}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold transition cursor-pointer"
+              >
+                <CalendarCheck className="w-4 h-4 text-purple-600" />
+                <span>Quay lại Bước 2</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveStep3Decisions}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-sm transition cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Lưu lựa chọn Bước 3</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Thống kê nhanh Bước 3 */}
+          {(() => {
+            const totalExamined = completedHealthCheckRegs.length;
+            const countDat = completedHealthCheckRegs.filter(
+              (r) => !(r.trangThai || '').toLowerCase().includes('không đạt')
+            ).length;
+            const countKhongDat = totalExamined - countDat;
+            const countChuyenNVMoi = completedHealthCheckRegs.filter(
+              (r) => r.luaChonSauKham === 'chuyen_nhan_vien_moi'
+            ).length;
+            const countKhongNhan = completedHealthCheckRegs.filter(
+              (r) => r.luaChonSauKham === 'khong_nhan_viec'
+            ).length;
+            const countChuyenDiaDiem = completedHealthCheckRegs.filter(
+              (r) => r.luaChonSauKham === 'chuyen_dia_diem'
+            ).length;
+
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                <div className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-600">Đã khám KSK</span>
+                  <span className="text-sm font-extrabold text-slate-900">{totalExamined}</span>
+                </div>
+                <div className="bg-teal-50/70 border border-teal-200 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-teal-800">Kết quả Đạt</span>
+                  <span className="text-sm font-extrabold text-teal-900">{countDat}</span>
+                </div>
+                <div className="bg-rose-50/70 border border-rose-200 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-rose-800">Không đạt</span>
+                  <span className="text-sm font-extrabold text-rose-900">{countKhongDat}</span>
+                </div>
+                <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-emerald-800">Chuyển NV mới</span>
+                  <span className="text-sm font-extrabold text-emerald-900">{countChuyenNVMoi}</span>
+                </div>
+                <div className="bg-amber-50/80 border border-amber-200 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-amber-800">Không nhận việc</span>
+                  <span className="text-sm font-extrabold text-amber-900">{countKhongNhan}</span>
+                </div>
+                <div className="bg-indigo-50/80 border border-indigo-200 rounded-xl px-3 py-2.5 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-indigo-800">Chuyển địa điểm</span>
+                  <span className="text-sm font-extrabold text-indigo-900">{countChuyenDiaDiem}</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Thanh tìm kiếm & bộ lọc Bước 3 */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={step3Search}
+                onChange={(e) => setStep3Search(e.target.value)}
+                placeholder="Tìm theo Họ tên, Số CCCD, Phòng, Ghi chú..."
+                className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-xs outline-none focus:border-[#1a73e8]"
+              />
+            </div>
+
+            <div>
+              <select
+                value={step3StatusFilter}
+                onChange={(e) => setStep3StatusFilter(e.target.value as 'ALL' | 'DAT' | 'KHONG_DAT')}
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="ALL">Tất cả trạng thái KSK (Đạt &amp; Không đạt)</option>
+                <option value="DAT">Đã khám (Đạt)</option>
+                <option value="KHONG_DAT">Đã khám (Không đạt)</option>
+              </select>
+            </div>
+
+            <div>
+              <select
+                value={step3DecisionFilter}
+                onChange={(e) =>
+                  setStep3DecisionFilter(
+                    e.target.value as
+                      | 'ALL'
+                      | 'chuyen_nhan_vien_moi'
+                      | 'khong_nhan_viec'
+                      | 'chuyen_dia_diem'
+                      | 'chua_chon'
+                  )
+                }
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
+              >
+                <option value="ALL">Tất cả lựa chọn xử lý</option>
+                <option value="chuyen_nhan_vien_moi">Đã chọn: Chuyển nhân viên mới</option>
+                <option value="khong_nhan_viec">Đã chọn: Không nhận việc</option>
+                <option value="chuyen_dia_diem">Đã chọn: Chuyển địa điểm</option>
+                <option value="chua_chon">Chưa chọn phương án</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Bảng danh sách nhân viên đã thực hiện KSK (Đạt & Không đạt) */}
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100 text-slate-800 font-bold border-b border-slate-200">
+                  <th className="p-3 text-center w-12">STT</th>
+                  <th className="p-3 min-w-[180px]">Họ tên ứng viên</th>
+                  <th className="p-3 text-center min-w-[130px]">Số căn cước</th>
+                  <th className="p-3 text-center min-w-[125px]">Ngày khám</th>
+                  <th className="p-3 min-w-[190px]">Trạng thái KSK</th>
+                  <th className="p-3 min-w-[380px] bg-blue-50/60 text-blue-950">
+                    Lựa chọn xử lý (Tích chọn: Chuyển nhân viên mới / Không nhận việc / Chuyển địa điểm)
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {filteredStep3Regs.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-slate-500">
+                      Chưa có ứng viên nào đã thực hiện khám sức khỏe (Đạt hoặc Không đạt) từ Bước 2. Hãy cập nhật kết quả khám tại Bước 2 và nhấn &ldquo;Lưu kết quả khám&rdquo;.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredStep3Regs.map((reg, idx) => {
+                    const currentStatus = reg.trangThai || 'Đã khám';
+                    const isKhongDat = currentStatus.toLowerCase().includes('không đạt');
+                    const examDate = reg.ngayKhamSucKhoe || reg.ngayHenKham || '---';
+                    const decision = reg.luaChonSauKham || '';
+
+                    return (
+                      <tr key={reg.id} className="hover:bg-slate-50/90 transition align-top">
+                        <td className="p-3 text-center font-bold text-slate-600">{idx + 1}</td>
+
+                        {/* Họ tên ứng viên */}
+                        <td className="p-3">
+                          <div className="font-bold text-slate-900 text-xs sm:text-sm">
+                            {reg.hoVaTen}
+                          </div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            Phòng/Bếp: <strong className="text-slate-700">{reg.phong || '---'}</strong>
+                            {reg.congViec || reg.chucVu
+                              ? ` • ${[reg.congViec, reg.chucVu].filter(Boolean).join(' - ')}`
+                              : ''}
+                          </div>
+                        </td>
+
+                        {/* Số căn cước */}
+                        <td className="p-3 text-center font-mono font-bold text-slate-800">
+                          {reg.soCCCD || '---'}
+                        </td>
+
+                        {/* Ngày khám */}
+                        <td className="p-3 text-center font-mono font-bold text-blue-800">
+                          {examDate}
+                        </td>
+
+                        {/* Trạng thái KSK + Ghi chú hạng mục không đạt */}
+                        <td className="p-3">
+                          <div className="flex flex-col items-start gap-1.5">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                                isKhongDat
+                                  ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                  : 'bg-teal-100 text-teal-800 border border-teal-200'
+                              }`}
+                            >
+                              {currentStatus}
+                            </span>
+                            {reg.ghiChuHangMucKhongDat && (
+                              <div className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1 w-full">
+                                <span className="font-bold">Hạng mục không đạt:</span>{' '}
+                                {reg.ghiChuHangMucKhongDat}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Cột Checkbox lựa chọn: Chuyển nhân viên mới, Không nhận việc, Chuyển địa điểm */}
+                        <td className="p-3 bg-blue-50/15">
+                          <div className="space-y-2.5">
+                            <div className="flex flex-wrap items-center gap-3">
+                              {/* Checkbox 1: Chuyển nhân viên mới */}
+                              <label
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer select-none transition ${
+                                  decision === 'chuyen_nhan_vien_moi'
+                                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                                    : 'bg-white hover:bg-emerald-50 text-slate-700 border-slate-300'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={decision === 'chuyen_nhan_vien_moi'}
+                                  onChange={() =>
+                                    handleToggleStep3Decision(reg, 'chuyen_nhan_vien_moi')
+                                  }
+                                  className="w-3.5 h-3.5 rounded border-slate-300 accent-emerald-600 cursor-pointer"
+                                />
+                                <span>Chuyển nhân viên mới</span>
+                              </label>
+
+                              {/* Checkbox 2: Không nhận việc */}
+                              <label
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer select-none transition ${
+                                  decision === 'khong_nhan_viec'
+                                    ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                                    : 'bg-white hover:bg-rose-50 text-slate-700 border-slate-300'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={decision === 'khong_nhan_viec'}
+                                  onChange={() => handleToggleStep3Decision(reg, 'khong_nhan_viec')}
+                                  className="w-3.5 h-3.5 rounded border-slate-300 accent-rose-600 cursor-pointer"
+                                />
+                                <span>Không nhận việc</span>
+                              </label>
+
+                              {/* Checkbox 3: Chuyển địa điểm */}
+                              <label
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer select-none transition ${
+                                  decision === 'chuyen_dia_diem'
+                                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                    : 'bg-white hover:bg-indigo-50 text-slate-700 border-slate-300'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={decision === 'chuyen_dia_diem'}
+                                  onChange={() => handleToggleStep3Decision(reg, 'chuyen_dia_diem')}
+                                  className="w-3.5 h-3.5 rounded border-slate-300 accent-indigo-600 cursor-pointer"
+                                />
+                                <span>Chuyển địa điểm</span>
+                              </label>
+                            </div>
+
+                            {/* Hành động / Ô nhập bổ sung tương ứng với lựa chọn */}
+                            {decision === 'chuyen_nhan_vien_moi' && (
+                              <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-lg bg-emerald-50 border border-emerald-200">
+                                <span className="text-[11px] font-semibold text-emerald-800">
+                                  Đã chọn chuyển thành nhân viên mới.
+                                </span>
+                                {onTransferToNewEmployee && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onTransferToNewEmployee(reg)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold shadow-2xs cursor-pointer transition"
+                                  >
+                                    <UserPlus className="w-3.5 h-3.5" />
+                                    <span>Chuyển sang Đăng ký NV mới ngay</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {decision === 'khong_nhan_viec' && (
+                              <div className="p-2 rounded-lg bg-rose-50 border border-rose-200 flex items-center gap-2">
+                                <span className="text-[11px] font-bold text-rose-800 shrink-0">
+                                  Lý do:
+                                </span>
+                                <input
+                                  type="text"
+                                  value={reg.lyDoKhongNhanViec || ''}
+                                  onChange={(e) =>
+                                    handleUpdateStep3ItemField(reg.id, {
+                                      lyDoKhongNhanViec: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Nhập lý do không nhận việc..."
+                                  className="w-full px-2.5 py-1 bg-white border border-rose-200 rounded-md text-xs text-slate-800 outline-none focus:border-rose-500"
+                                />
+                              </div>
+                            )}
+
+                            {decision === 'chuyen_dia_diem' && (
+                              <div className="p-2 rounded-lg bg-indigo-50 border border-indigo-200 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-[11px] font-bold text-indigo-900 shrink-0">
+                                    Địa điểm chuyển đến:
+                                  </span>
+                                  <select
+                                    value={reg.diaDiemChuyenDen || reg.phong || ''}
+                                    onChange={(e) => {
+                                      const newPhong = e.target.value;
+                                      const phongInfo = allPhongs.find((p) => p.phong === newPhong);
+                                      handleUpdateStep3ItemField(reg.id, {
+                                        diaDiemChuyenDen: newPhong,
+                                        ...(phongInfo
+                                          ? {
+                                              phong: phongInfo.phong,
+                                              ban: phongInfo.ban,
+                                              khoi: phongInfo.khoi,
+                                            }
+                                          : {}),
+                                      });
+                                    }}
+                                    className="px-2.5 py-1 bg-white border border-indigo-200 rounded-md text-xs font-semibold text-slate-800 outline-none focus:border-indigo-500"
+                                  >
+                                    <option value="">-- Chọn Phòng / Địa điểm mới --</option>
+                                    {allPhongs.map((p) => (
+                                      <option key={p.phong} value={p.phong}>
+                                        {p.phong} ({p.ban} - {p.khoi})
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {reg.diaDiemChuyenDen && (
+                                    <span className="text-[11px] font-semibold text-indigo-700">
+                                      &rarr; <strong>{reg.diaDiemChuyenDen}</strong>
+                                    </span>
+                                  )}
+                                </div>
+                                {onTransferToNewEmployee && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onTransferToNewEmployee(reg)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold shadow-2xs cursor-pointer transition"
+                                  >
+                                    <UserPlus className="w-3.5 h-3.5" />
+                                    <span>Chuyển sang Đăng ký NV mới ngay</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

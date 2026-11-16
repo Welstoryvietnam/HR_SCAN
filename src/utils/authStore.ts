@@ -5,17 +5,40 @@ export const AUTH_USER_STORAGE_KEY = 'hr_current_user';
 export const AUTH_ACCOUNTS_STORAGE_KEY = 'hr_user_accounts';
 export const AUTH_SESSION_EXPIRED_EVENT = 'hr-auth-session-expired';
 
+export const HRM_ROLE_LABELS: Record<string, string> = {
+  nhan_vien_tuyen_dung: 'Nhân viên tuyển dụng',
+  nhan_vien_y_te: 'Nhân viên y tế',
+  nhan_vien_quan_ly_ho_so: 'Nhân viên quản lý hồ sơ',
+  truong_nhom_cnb: 'Trưởng nhóm C&B',
+  truong_nhom_tuyen_dung: 'Trưởng nhóm tuyển dụng',
+  admin: 'Admin (Full quyền)',
+  quan_ly_nhan_su: 'Quản lý nhân sự',
+  nhan_vien_nhan_su: 'Nhân viên nhân sự',
+};
+
 export function normalizeUserProfile(raw: Partial<UserProfile> & Record<string, any>): UserProfile {
   const isAdmin =
     raw.role === 'admin' ||
     raw.hrmRole === 'admin' ||
     String(raw.username || '').toLowerCase() === 'admin';
   const role: 'admin' | 'employee' = isAdmin ? 'admin' : 'employee';
-  const hrmRole: 'nhan_vien_tuyen_dung' | 'nhan_vien_y_te' | 'admin' = isAdmin
-    ? 'admin'
-    : raw.hrmRole === 'nhan_vien_y_te'
-    ? 'nhan_vien_y_te'
-    : 'nhan_vien_tuyen_dung';
+  const validSubRoles = [
+    'nhan_vien_tuyen_dung',
+    'nhan_vien_y_te',
+    'nhan_vien_quan_ly_ho_so',
+    'truong_nhom_cnb',
+    'truong_nhom_tuyen_dung',
+    'quan_ly_nhan_su',
+    'nhan_vien_nhan_su',
+    'admin',
+  ];
+  const hrmRole = (
+    isAdmin
+      ? 'admin'
+      : validSubRoles.includes(String(raw.hrmRole || ''))
+      ? raw.hrmRole
+      : 'nhan_vien_tuyen_dung'
+  ) as UserProfile['hrmRole'];
 
   return {
     id: String(raw.id || (isAdmin ? 'usr_admin_01' : 'usr_employee')),
@@ -26,11 +49,8 @@ export function normalizeUserProfile(raw: Partial<UserProfile> & Record<string, 
     hrmRole,
     displayName:
       raw.displayName ||
-      (isAdmin
-        ? 'Quản trị viên (Toàn quyền)'
-        : hrmRole === 'nhan_vien_y_te'
-        ? 'Nhân viên y tế'
-        : 'Nhân viên tuyển dụng'),
+      HRM_ROLE_LABELS[hrmRole || 'nhan_vien_tuyen_dung'] ||
+      'Nhân viên tuyển dụng',
     employeeCode: raw.employeeCode || raw.username,
     department: raw.department,
     contactEmail: raw.contactEmail || raw.email,
