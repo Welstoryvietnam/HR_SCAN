@@ -30,6 +30,16 @@ import {
   type RecruitmentExportKind,
 } from '../utils/recruitmentHealthExport';
 import {
+  isCompletedKskStatus,
+  isStep3ConfirmedLocked,
+  isStep2LockedForUser,
+  getStep3ChoiceShortLabel,
+  applyStep2ItemPatch,
+  applyStep2SaveResults,
+  applyStep3ToggleChoice,
+  applyStep3ConfirmSave,
+} from '../utils/healthCheckStepLock';
+import {
   Stethoscope,
   Search,
   Filter,
@@ -66,6 +76,7 @@ import {
   BarChart3,
   UserX,
   UserCheck,
+  Lock,
 } from 'lucide-react';
 
 export interface HealthcareProviderItem {
@@ -105,7 +116,12 @@ export interface RecruitmentHealthRegItem {
   lyDoKhongNhanViec?: string;
   luaChonSauKham?: 'chuyen_nhan_vien_moi' | 'khong_nhan_viec' | 'chuyen_dia_diem' | '';
   diaDiemChuyenDen?: string;
+  step3Confirmed?: boolean;
+  step3ConfirmedAt?: string;
+  step3ConfirmedBy?: string;
 }
+
+export { isStep3ConfirmedLocked, isStep2LockedForUser };
 
 export interface RecruitmentStandardItem {
   id: string;
@@ -437,11 +453,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     };
   }, []);
 
-  const isCompletedHealthCheck = (status?: string): boolean => {
-    if (!status) return false;
-    const s = status.toLowerCase();
-    return s.includes('đã khám') || s.includes('đạt') || s.includes('không đạt');
-  };
+  const isCompletedHealthCheck = isCompletedKskStatus;
 
   useEffect(() => {
     const completedCount = recruitmentRegs.filter((r) => isCompletedHealthCheck(r.trangThai)).length;
@@ -966,6 +978,15 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const [confirmDeleteTrackingRegId, setConfirmDeleteTrackingRegId] = useState<string | null>(null);
 
   const handleDeleteTrackingReg = (id: string, name?: string) => {
+    const target = recruitmentRegs.find((r) => r.id === id);
+    if (target && isStep2LockedForUser(target, isAdmin)) {
+      showToast(
+        'error',
+        `Ứng viên ${target.hoVaTen} đã được chốt ở Bước 3. Chỉ Admin hoặc khi Bước 3 bỏ chọn mới có thể xóa.`
+      );
+      setConfirmDeleteTrackingRegId(null);
+      return;
+    }
     setRecruitmentRegs((prev) => {
       const next = prev.filter((r) => r.id !== id);
       void syncHealthRegistrationsToCloud(next);
@@ -1185,57 +1206,68 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   >('ALL');
 
   const handleSaveStep2TrackingResults = () => {
-    const normalizedDrafts = trackingDraftRegs.map((r) => {
-      if (isCompletedHealthCheck(r.trangThai) && !r.ngayKhamSucKhoe) {
-        return {
-          ...r,
-          ngayKhamSucKhoe: r.ngayHenKham || new Date().toISOString().slice(0, 10),
-        };
-      }
-      return r;
-    });
+    const normalizedDrafts = applyStep2SaveResults(
+      recruitmentRegs,
+      trackingDraftRegs,
+      isAdmin
+    );
+
     setTrackingDraftRegs(normalizedDrafts);
     setRecruitmentRegs(normalizedDrafts);
     void syncHealthRegistrationsToCloud(normalizedDrafts);
     const completedTotal = normalizedDrafts.filter((r) => isCompletedHealthCheck(r.trangThai)).length;
     showToast(
       'success',
-      `Đã lưu kết quả khám và chuyển ${completedTotal} ứng viên đã thực hiện khám (Đạt & Không đạt) sang Bước 3!`
+      `Đã lưu kết quả khám và đồng bộ ${completedTotal} ứng viên đã thực hiện khám (Đạt & Không đạt) sang Bước 3!`
     );
   };
 
   const handleUpdateTrackingItem = (id: string, patch: Partial<RecruitmentHealthRegItem>) => {
-    setTrackingDraftRegs((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    const { nextDrafts, blockedLockedFields } = applyStep2ItemPatch(
+      recruitmentRegs,
+      trackingDraftRegs,
+      id,
+      patch,
+      isAdmin
+    );
+
+    if (blockedLockedFields) {
+      showToast(
+        'error',
+        'Ứng viên đã được Tuyển dụng lưu lựa chọn tại Bước 3 nên Trạng thái & Ngày khám đã bị khóa. Bạn vẫn có thể sửa Ghi chú hoặc liên hệ Admin.'
+      );
+    }
+
+    if (nextDrafts !== trackingDraftRegs) {
+      setTrackingDraftRegs(nextDrafts);
+    }
   };
 
   const handleToggleStep3Decision = (
     reg: RecruitmentHealthRegItem,
     choice: 'chuyen_nhan_vien_moi' | 'khong_nhan_viec' | 'chuyen_dia_diem'
   ) => {
-    const nextChoice: RecruitmentHealthRegItem['luaChonSauKham'] =
-      reg.luaChonSauKham === choice ? '' : choice;
-    const nextTrangThaiNhanViec: RecruitmentHealthRegItem['trangThaiNhanViec'] =
-      nextChoice === 'chuyen_nhan_vien_moi'
-        ? 'Đã nhận việc'
-        : nextChoice === 'khong_nhan_viec'
-        ? 'Không nhận việc'
-        : 'Chưa xử lý';
+    const { nextList: nextRegs, unlockedFromConfirmed } = applyStep3ToggleChoice(
+      recruitmentRegs,
+      reg.id,
+      choice
+    );
+    const { nextList: nextDrafts } = applyStep3ToggleChoice(
+      trackingDraftRegs,
+      reg.id,
+      choice
+    );
 
-    const updateList = (list: RecruitmentHealthRegItem[]): RecruitmentHealthRegItem[] =>
-      list.map((r) =>
-        r.id === reg.id
-          ? {
-              ...r,
-              luaChonSauKham: nextChoice,
-              trangThaiNhanViec: nextTrangThaiNhanViec,
-            }
-          : r
-      );
-
-    const nextRegs = updateList(recruitmentRegs);
     setRecruitmentRegs(nextRegs);
-    setTrackingDraftRegs(updateList(trackingDraftRegs));
+    setTrackingDraftRegs(nextDrafts);
     void syncHealthRegistrationsToCloud(nextRegs);
+
+    if (unlockedFromConfirmed) {
+      showToast(
+        'success',
+        `Đã bỏ chọn phương án Bước 3 cho ${reg.hoVaTen} và tự động mở khóa lại Trạng thái & Ngày khám tại Bước 2.`
+      );
+    }
   };
 
   const handleUpdateStep3ItemField = (id: string, patch: Partial<RecruitmentHealthRegItem>) => {
@@ -1247,10 +1279,33 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   };
 
   const handleSaveStep3Decisions = () => {
-    void syncHealthRegistrationsToCloud(recruitmentRegs);
+    const confirmedBy = currentUser.name || currentUser.email;
+    const { nextList: confirmedRegs, lockedCount } = applyStep3ConfirmSave(
+      recruitmentRegs,
+      confirmedBy
+    );
+
+    setRecruitmentRegs(confirmedRegs);
+    setTrackingDraftRegs((prev) => {
+      const confirmedById = new Map(confirmedRegs.map((item) => [item.id, item]));
+      return prev.map((item) => {
+        const synced = confirmedById.get(item.id);
+        if (!synced) return item;
+        return {
+          ...item,
+          luaChonSauKham: synced.luaChonSauKham,
+          trangThaiNhanViec: synced.trangThaiNhanViec,
+          step3Confirmed: synced.step3Confirmed,
+          step3ConfirmedAt: synced.step3ConfirmedAt,
+          step3ConfirmedBy: synced.step3ConfirmedBy,
+        };
+      });
+    });
+
+    void syncHealthRegistrationsToCloud(confirmedRegs);
     showToast(
       'success',
-      'Đã lưu và đồng bộ thông tin lựa chọn sau khám sức khỏe lên Cloud Firestore!'
+      `Đã lưu lựa chọn Bước 3 lên Cloud Firestore (${lockedCount} hồ sơ đã khóa Trạng thái & Ngày khám tại Bước 2)!`
     );
   };
 
@@ -1341,9 +1396,18 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     reg: RecruitmentHealthRegItem,
     decision: 'Đã nhận việc' | 'Không nhận việc' | 'Chưa xử lý'
   ) => {
-    setRecruitmentRegs((prev) =>
-      prev.map((r) => (r.id === reg.id ? { ...r, trangThaiNhanViec: decision } : r))
-    );
+    if (isStep2LockedForUser(reg, isAdmin)) {
+      showToast(
+        'error',
+        `Ứng viên ${reg.hoVaTen} đã được chốt ở Bước 3. Chỉ Admin hoặc khi Bước 3 bỏ chọn mới có thể khôi phục.`
+      );
+      return;
+    }
+    setRecruitmentRegs((prev) => {
+      const next = prev.map((r) => (r.id === reg.id ? { ...r, trangThaiNhanViec: decision } : r));
+      void syncHealthRegistrationsToCloud(next);
+      return next;
+    });
     if (decision === 'Không nhận việc') {
       showToast('success', `Đã chuyển ${reg.hoVaTen} sang danh sách Không nhận việc để quản lý riêng.`);
     } else if (decision === 'Đã nhận việc') {
@@ -3059,7 +3123,13 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                       </td>
                     </tr>
                   ) : (
-                    filteredTrackingRegs.map((reg, idx) => (
+                    filteredTrackingRegs.map((reg, idx) => {
+                      const persistedReg = recruitmentRegs.find((item) => item.id === reg.id) || reg;
+                      const step3Confirmed = isStep3ConfirmedLocked(persistedReg);
+                      const isRowLockedForUser = isStep2LockedForUser(persistedReg, isAdmin);
+                      const step3ChoiceText = getStep3ChoiceShortLabel(persistedReg.luaChonSauKham);
+
+                      return (
                       <tr key={reg.id} className="hover:bg-slate-50 transition">
                         <td className="p-3 text-center font-bold text-slate-600">{idx + 1}</td>
                         <td className="p-3">
@@ -3087,10 +3157,20 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                           <input
                             type="date"
                             value={reg.ngayKhamSucKhoe || reg.ngayHenKham || ''}
+                            disabled={isRowLockedForUser}
+                            title={
+                              isRowLockedForUser
+                                ? 'Đã chốt tiếp nhận ở Bước 3 — không thể đổi ngày khám (chỉ Admin sửa được hoặc bỏ chọn tại Bước 3 để mở khóa)'
+                                : 'Chọn ngày khám sức khỏe thực tế'
+                            }
                             onChange={(e) =>
                               handleUpdateTrackingItem(reg.id, { ngayKhamSucKhoe: e.target.value })
                             }
-                            className="px-2.5 py-1.5 bg-white border border-slate-300 focus:border-[#1a73e8] rounded-lg text-xs font-mono font-semibold text-slate-800 outline-none"
+                            className={`px-2.5 py-1.5 border rounded-lg text-xs font-mono font-semibold outline-none ${
+                              isRowLockedForUser
+                                ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed'
+                                : 'bg-white border-slate-300 focus:border-[#1a73e8] text-slate-800'
+                            }`}
                           />
                         </td>
                         <td className="p-3 text-center">
@@ -3109,30 +3189,65 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                           })()}
                         </td>
                         <td className="p-3 text-center">
-                          <select
-                            value={reg.trangThai || 'Chờ Khám'}
-                            onChange={(e) => {
-                              const nextStatus = e.target.value;
-                              const patch: Partial<RecruitmentHealthRegItem> = {
-                                trangThai: nextStatus,
-                              };
-                              if (isCompletedHealthCheck(nextStatus) && !reg.ngayKhamSucKhoe) {
-                                patch.ngayKhamSucKhoe =
-                                  reg.ngayHenKham || new Date().toISOString().slice(0, 10);
+                          <div className="flex flex-col items-center gap-1">
+                            <select
+                              value={reg.trangThai || 'Chờ Khám'}
+                              disabled={isRowLockedForUser}
+                              title={
+                                isRowLockedForUser
+                                  ? 'Đã chốt tiếp nhận ở Bước 3 — không thể thay đổi trạng thái (chỉ Admin sửa được hoặc bỏ chọn tại Bước 3 để mở khóa)'
+                                  : 'Chọn trạng thái kết quả khám sức khỏe'
                               }
-                              handleUpdateTrackingItem(reg.id, patch);
-                              showToast(
-                                'success',
-                                `Đã chọn kết quả KSK "${nextStatus}". Nhấn "Lưu kết quả khám" để áp dụng & chuyển sang Bước 3!`
-                              );
-                            }}
-                            className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 outline-none cursor-pointer"
-                          >
-                            <option value="Chờ Khám">Chờ Khám</option>
-                            <option value="Đã khám (Đạt)">Đã khám (Đạt)</option>
-                            <option value="Đã khám (không đạt)">Đã khám (không đạt)</option>
-                            <option value="Hoãn">Hoãn</option>
-                          </select>
+                              onChange={(e) => {
+                                if (isRowLockedForUser) {
+                                  handleUpdateTrackingItem(reg.id, { trangThai: e.target.value });
+                                  return;
+                                }
+                                const nextStatus = e.target.value;
+                                const patch: Partial<RecruitmentHealthRegItem> = {
+                                  trangThai: nextStatus,
+                                };
+                                if (isCompletedHealthCheck(nextStatus) && !reg.ngayKhamSucKhoe) {
+                                  patch.ngayKhamSucKhoe =
+                                    reg.ngayHenKham || new Date().toISOString().slice(0, 10);
+                                }
+                                handleUpdateTrackingItem(reg.id, patch);
+                                showToast(
+                                  'success',
+                                  `Đã chọn kết quả KSK "${nextStatus}". Nhấn "Lưu kết quả khám" để áp dụng & chuyển sang Bước 3!`
+                                );
+                              }}
+                              className={`px-2.5 py-1.5 border rounded-lg text-xs font-semibold outline-none ${
+                                isRowLockedForUser
+                                  ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed'
+                                  : 'bg-white border-slate-300 text-slate-700 cursor-pointer'
+                              }`}
+                            >
+                              <option value="Chờ Khám">Chờ Khám</option>
+                              <option value="Đã khám (Đạt)">Đã khám (Đạt)</option>
+                              <option value="Đã khám (không đạt)">Đã khám (không đạt)</option>
+                              <option value="Hoãn">Hoãn</option>
+                            </select>
+                            {isRowLockedForUser && (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700"
+                                title="Tuyển dụng đã bấm Lưu lựa chọn ở Bước 3. Bỏ chọn ở Bước 3 hoặc liên hệ Admin để mở khóa."
+                              >
+                                <Lock className="w-3 h-3 shrink-0" />
+                                <span>
+                                  Đã khóa Bước 3{step3ChoiceText ? ` · ${step3ChoiceText}` : ''}
+                                </span>
+                              </span>
+                            )}
+                            {!isRowLockedForUser && step3Confirmed && isAdmin && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500">
+                                <Lock className="w-3 h-3 shrink-0 text-amber-600" />
+                                <span>
+                                  Đã chốt Bước 3{step3ChoiceText ? ` (${step3ChoiceText})` : ''} · Quyền Admin
+                                </span>
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="p-2.5 bg-rose-50/15">
                           <input
@@ -3146,9 +3261,23 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                             placeholder="Nhập hạng mục khám không đạt / ghi chú..."
                             className="w-full px-2.5 py-1.5 bg-white border border-slate-300 focus:border-rose-500 rounded-lg text-xs text-slate-800 outline-none"
                           />
+                          {isRowLockedForUser && (
+                            <div className="mt-1 text-[10px] text-slate-500">
+                              Vẫn cho phép bổ sung ghi chú
+                            </div>
+                          )}
                         </td>
                         <td className="p-3 text-center">
-                          {confirmDeleteTrackingRegId === reg.id ? (
+                          {isRowLockedForUser ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="p-1.5 rounded text-slate-300 cursor-not-allowed"
+                              title="Đã chốt Bước 3 — không thể xóa ứng viên này"
+                            >
+                              <Lock className="w-4 h-4" />
+                            </button>
+                          ) : confirmDeleteTrackingRegId === reg.id ? (
                             <div className="inline-flex items-center gap-1">
                               <button
                                 type="button"
@@ -3177,7 +3306,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                           )}
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -3215,7 +3345,10 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                         </td>
                       </tr>
                     ) : (
-                      filteredTrackingRegs.map((reg, idx) => (
+                      filteredTrackingRegs.map((reg, idx) => {
+                        const persistedReg = recruitmentRegs.find((item) => item.id === reg.id) || reg;
+                        const isRowLockedForUser = isStep2LockedForUser(persistedReg, isAdmin);
+                        return (
                         <tr key={reg.id} className="hover:bg-slate-50 transition">
                           <td className="p-3 text-center font-bold text-slate-600">{idx + 1}</td>
                           <td className="p-3">
@@ -3271,16 +3404,34 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                           <td className="p-3 text-center">
                             <button
                               type="button"
+                              disabled={isRowLockedForUser}
                               onClick={() => handleMarkOfferDecision(reg, 'Chưa xử lý')}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-[11px] transition cursor-pointer whitespace-nowrap shrink-0"
-                              title="Chuyển lại về danh sách theo dõi KSK"
+                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border font-semibold text-[11px] transition whitespace-nowrap shrink-0 ${
+                                isRowLockedForUser
+                                  ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                                  : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700 cursor-pointer'
+                              }`}
+                              title={
+                                isRowLockedForUser
+                                  ? 'Đã chốt Bước 3 — vui lòng bỏ chọn tại Bước 3 hoặc liên hệ Admin để khôi phục'
+                                  : 'Chuyển lại về danh sách theo dõi KSK'
+                              }
                             >
-                              <RotateCcw className="w-3 h-3" />
+                              {isRowLockedForUser ? <Lock className="w-3 h-3" /> : <RotateCcw className="w-3 h-3" />}
                               <span>Khôi phục</span>
                             </button>
                           </td>
                           <td className="p-3 text-center">
-                            {confirmDeleteTrackingRegId === reg.id ? (
+                            {isRowLockedForUser ? (
+                              <button
+                                type="button"
+                                disabled
+                                className="p-1.5 rounded text-slate-300 cursor-not-allowed"
+                                title="Đã chốt Bước 3 — không thể xóa"
+                              >
+                                <Lock className="w-4 h-4" />
+                              </button>
+                            ) : confirmDeleteTrackingRegId === reg.id ? (
                               <div className="inline-flex items-center gap-1">
                                 <button
                                   type="button"
@@ -3309,7 +3460,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                             )}
                           </td>
                         </tr>
-                      ))
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -3348,14 +3500,29 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                 <span>Quay lại Bước 2</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handleSaveStep3Decisions}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold shadow-sm transition cursor-pointer"
-              >
-                <Check className="w-4 h-4" />
-                <span>Lưu lựa chọn Bước 3</span>
-              </button>
+              {(() => {
+                const pendingStep3ConfirmCount = completedHealthCheckRegs.filter(
+                  (r) => Boolean(r.luaChonSauKham) && !r.step3Confirmed
+                ).length;
+                return (
+                  <button
+                    type="button"
+                    onClick={handleSaveStep3Decisions}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-xs font-bold shadow-sm transition cursor-pointer ${
+                      pendingStep3ConfirmCount > 0
+                        ? 'bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-300'
+                        : 'bg-teal-600 hover:bg-teal-700'
+                    }`}
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>
+                      {pendingStep3ConfirmCount > 0
+                        ? `Lưu lựa chọn Bước 3 (${pendingStep3ConfirmCount} chờ khóa Bước 2)`
+                        : 'Lưu lựa chọn Bước 3'}
+                    </span>
+                  </button>
+                );
+              })()}
             </div>
           </div>
 
@@ -3675,6 +3842,23 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                                     <span>Chuyển sang Đăng ký NV mới ngay</span>
                                   </button>
                                 )}
+                              </div>
+                            )}
+                            {/* Trạng thái xác nhận khóa Bước 2 */}
+                            {Boolean(decision) && reg.step3Confirmed && (
+                              <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                                <Lock className="w-3.5 h-3.5 shrink-0" />
+                                <span>
+                                  Đã lưu xác nhận · Bước 2 đã khóa Trạng thái &amp; Ngày khám
+                                </span>
+                              </div>
+                            )}
+                            {Boolean(decision) && !reg.step3Confirmed && (
+                              <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-700">
+                                <Clock className="w-3.5 h-3.5 shrink-0" />
+                                <span>
+                                  Đã tích chọn · Bấm &ldquo;Lưu lựa chọn Bước 3&rdquo; để khóa Bước 2
+                                </span>
                               </div>
                             )}
                           </div>
