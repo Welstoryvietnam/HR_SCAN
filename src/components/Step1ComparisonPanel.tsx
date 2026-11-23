@@ -942,7 +942,7 @@ export const Step1ComparisonPanel: React.FC<Step1ComparisonPanelProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
             <div>
-              {renderFieldLabel('Quê quán', 'queQuan', false, ['quê quán'], activeForm.queQuan)}
+              {renderFieldLabel('Quê quán', 'queQuan', true, ['quê quán'], activeForm.queQuan)}
               <textarea
                 rows={2}
                 value={activeForm.queQuan}
@@ -953,7 +953,7 @@ export const Step1ComparisonPanel: React.FC<Step1ComparisonPanelProps> = ({
             </div>
 
             <div>
-              {renderFieldLabel('Địa chỉ thường trú (Ưu tiên VNeID)', 'diaChiThuongTru', false, ['thường trú'], activeForm.diaChiThuongTru)}
+              {renderFieldLabel('Địa chỉ thường trú (Ưu tiên VNeID)', 'diaChiThuongTru', true, ['thường trú'], activeForm.diaChiThuongTru)}
               <textarea
                 rows={2}
                 value={activeForm.diaChiThuongTru}

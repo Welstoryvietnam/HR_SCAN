@@ -33,7 +33,7 @@ import {
   Cloud
 } from 'lucide-react';
 
-export type AppTab = 'upload' | 'records' | 'health' | 'organization' | 'salary' | 'users';
+export type AppTab = 'upload' | 'records' | 'health' | 'benefits' | 'sop' | 'labor_law' | 'organization' | 'salary' | 'users';
 
 interface HeaderProps {
   currentUser: UserProfile;

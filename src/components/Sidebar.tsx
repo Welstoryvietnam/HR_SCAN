@@ -14,10 +14,27 @@ import {
   FileText,
   Hospital,
   BarChart3,
+  Gift,
+  Award,
+  RotateCcw,
+  Home,
+  BookOpen,
+  ClipboardList,
+  FilePlus2,
+  Scale,
+  ShieldCheck,
 } from 'lucide-react';
 import { AppTab } from './Header';
 import { HealthSubTab } from './HealthCheckStandardsManager';
-import { UserProfile } from '../types';
+import { BenefitCounts } from './RecruitmentBenefitsManager';
+import { SopCounts } from './HrSopManager';
+import { LaborLawCounts } from './LaborLawManager';
+import {
+  UserProfile,
+  RecruitmentBenefitSubTab,
+  HrSopSubTab,
+  LaborLawSubTab,
+} from '../types';
 
 interface SidebarProps {
   activeTab: AppTab;
@@ -25,6 +42,15 @@ interface SidebarProps {
   healthSubTab: HealthSubTab;
   onHealthSubTabChange: (subTab: HealthSubTab) => void;
   healthCounts: { regs: number; completedRegs?: number; standards: number; providers: number };
+  benefitsSubTab: RecruitmentBenefitSubTab;
+  onBenefitsSubTabChange: (subTab: RecruitmentBenefitSubTab) => void;
+  benefitCounts: BenefitCounts;
+  sopSubTab: HrSopSubTab;
+  onSopSubTabChange: (subTab: HrSopSubTab) => void;
+  sopCounts: SopCounts;
+  laborLawSubTab: LaborLawSubTab;
+  onLaborLawSubTabChange: (subTab: LaborLawSubTab) => void;
+  laborLawCounts: LaborLawCounts;
   currentUser: UserProfile;
   recordsCount: number;
   sidebarCollapsed: boolean;
@@ -37,6 +63,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   healthSubTab,
   onHealthSubTabChange,
   healthCounts,
+  benefitsSubTab,
+  onBenefitsSubTabChange,
+  benefitCounts,
+  sopSubTab,
+  onSopSubTabChange,
+  sopCounts,
+  laborLawSubTab,
+  onLaborLawSubTabChange,
+  laborLawCounts,
   currentUser,
   recordsCount,
   sidebarCollapsed,
@@ -45,12 +80,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const isAdmin = currentUser.role === 'admin';
   const isMedicalStaff = !isAdmin && currentUser.hrmRole === 'nhan_vien_y_te';
   const isRecruiter = !isAdmin && !isMedicalStaff;
+  const canAccessBenefits =
+    isAdmin ||
+    currentUser.hrmRole === 'admin' ||
+    currentUser.hrmRole === 'truong_nhom_tuyen_dung' ||
+    currentUser.hrmRole === 'truong_nhom_cnb';
 
   const isUploadGroup = ['upload', 'records', 'salary'].includes(activeTab);
 
   const handleSelectHealthSubTab = (sub: HealthSubTab) => {
     onTabChange('health');
     onHealthSubTabChange(sub);
+  };
+
+  const handleSelectBenefitsSubTab = (sub: RecruitmentBenefitSubTab) => {
+    onTabChange('benefits');
+    onBenefitsSubTabChange(sub);
+  };
+
+  const handleSelectSopSubTab = (sub: HrSopSubTab) => {
+    onTabChange('sop');
+    onSopSubTabChange(sub);
+  };
+
+  const handleSelectLaborLawSubTab = (sub: LaborLawSubTab) => {
+    onTabChange('labor_law');
+    onLaborLawSubTabChange(sub);
   };
 
   return (
@@ -286,6 +341,215 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
         )}
+
+        {/* 3. Chính sách & Phúc lợi tuyển dụng (Chỉ Admin, Trưởng nhóm Tuyển dụng, Trưởng nhóm C&B) */}
+        {canAccessBenefits && (
+          <div>
+            <button
+              type="button"
+              onClick={() => onTabChange('benefits')}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+                activeTab === 'benefits'
+                  ? 'bg-[#1a73e8] text-white shadow-sm'
+                  : 'text-slate-700 hover:bg-slate-100'
+              }`}
+              title="Chính sách & Phúc lợi tuyển dụng"
+            >
+              <Gift className={`w-5 h-5 shrink-0 ${activeTab === 'benefits' ? 'text-amber-300' : 'text-amber-600'}`} />
+              {!sidebarCollapsed && <span className="truncate">Chính sách &amp; Phúc lợi TD</span>}
+            </button>
+
+            {!sidebarCollapsed && activeTab === 'benefits' && (
+              <div className="pl-4 pt-1.5 space-y-1 animate-fade-in border-l-2 border-blue-100 ml-4 my-1">
+                <button
+                  type="button"
+                  onClick={() => handleSelectBenefitsSubTab('danh_muc_chinh_sach')}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    benefitsSubTab === 'danh_muc_chinh_sach'
+                      ? 'bg-blue-50 text-blue-700 font-bold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <BookOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span className="truncate">1. Danh mục chính sách</span>
+                  </div>
+                  <span className="px-1.5 py-0.2 bg-blue-100 text-blue-800 text-[10px] rounded-full font-bold shrink-0">
+                    {benefitCounts.danh_muc_chinh_sach ?? 0}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectBenefitsSubTab('thuong_gioi_thieu')}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    benefitsSubTab === 'thuong_gioi_thieu'
+                      ? 'bg-blue-50 text-blue-700 font-bold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Award className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span className="truncate">2. Thưởng giới thiệu</span>
+                  </div>
+                  <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[10px] rounded-full font-bold shrink-0">
+                    {benefitCounts.thuong_gioi_thieu}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectBenefitsSubTab('nguoi_cu_quay_lai')}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    benefitsSubTab === 'nguoi_cu_quay_lai'
+                      ? 'bg-blue-50 text-blue-700 font-bold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <RotateCcw className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span className="truncate">3. Người cũ quay lại</span>
+                  </div>
+                  <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-800 text-[10px] rounded-full font-bold shrink-0">
+                    {benefitCounts.nguoi_cu_quay_lai}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSelectBenefitsSubTab('ho_tro_nha_tro')}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    benefitsSubTab === 'ho_tro_nha_tro'
+                      ? 'bg-blue-50 text-blue-700 font-bold'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Home className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                    <span className="truncate">4. Hỗ trợ nhà trọ</span>
+                  </div>
+                  <span className="px-1.5 py-0.2 bg-teal-100 text-teal-800 text-[10px] rounded-full font-bold shrink-0">
+                    {benefitCounts.ho_tro_nha_tro}
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 4. Tra cứu, đăng ký SOP nhân sự */}
+        <div>
+          <button
+            type="button"
+            onClick={() => onTabChange('sop')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+              activeTab === 'sop'
+                ? 'bg-[#1a73e8] text-white shadow-sm'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
+            title="Tra cứu, đăng ký SOP nhân sự"
+          >
+            <ClipboardList className={`w-5 h-5 shrink-0 ${activeTab === 'sop' ? 'text-teal-300' : 'text-indigo-600'}`} />
+            {!sidebarCollapsed && <span className="truncate">Tra cứu &amp; Đăng ký SOP</span>}
+          </button>
+
+          {!sidebarCollapsed && activeTab === 'sop' && (
+            <div className="pl-4 pt-1.5 space-y-1 animate-fade-in border-l-2 border-blue-100 ml-4 my-1">
+              <button
+                type="button"
+                onClick={() => handleSelectSopSubTab('tra_cuu_sop')}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  sopSubTab === 'tra_cuu_sop'
+                    ? 'bg-blue-50 text-blue-700 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <BookOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="truncate">1. Tra cứu SOP nhân sự</span>
+                </div>
+                <span className="px-1.5 py-0.2 bg-blue-100 text-blue-800 text-[10px] rounded-full font-bold shrink-0">
+                  {sopCounts.sop_list}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectSopSubTab('dang_ky_sop')}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  sopSubTab === 'dang_ky_sop'
+                    ? 'bg-blue-50 text-blue-700 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <FilePlus2 className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span className="truncate">2. Đăng ký / Đề xuất SOP</span>
+                </div>
+                <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 text-[10px] rounded-full font-bold shrink-0">
+                  {sopCounts.sop_registrations}
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 5. Tra cứu Luật lao động, Nội quy lao động */}
+        <div>
+          <button
+            type="button"
+            onClick={() => onTabChange('labor_law')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+              activeTab === 'labor_law'
+                ? 'bg-[#1a73e8] text-white shadow-sm'
+                : 'text-slate-700 hover:bg-slate-100'
+            }`}
+            title="Tra cứu luật lao động, nội quy lao động"
+          >
+            <Scale className={`w-5 h-5 shrink-0 ${activeTab === 'labor_law' ? 'text-amber-300' : 'text-emerald-600'}`} />
+            {!sidebarCollapsed && <span className="truncate">Luật LĐ &amp; Nội quy LĐ</span>}
+          </button>
+
+          {!sidebarCollapsed && activeTab === 'labor_law' && (
+            <div className="pl-4 pt-1.5 space-y-1 animate-fade-in border-l-2 border-blue-100 ml-4 my-1">
+              <button
+                type="button"
+                onClick={() => handleSelectLaborLawSubTab('luat_lao_dong')}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  laborLawSubTab === 'luat_lao_dong'
+                    ? 'bg-blue-50 text-blue-700 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Scale className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="truncate">1. Tra cứu Luật lao động</span>
+                </div>
+                <span className="px-1.5 py-0.2 bg-blue-100 text-blue-800 text-[10px] rounded-full font-bold shrink-0">
+                  {laborLawCounts.luat_lao_dong}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSelectLaborLawSubTab('noi_quy_lao_dong')}
+                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                  laborLawSubTab === 'noi_quy_lao_dong'
+                    ? 'bg-blue-50 text-blue-700 font-bold'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="truncate">2. Nội quy lao động</span>
+                </div>
+                <span className="px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] rounded-full font-bold shrink-0">
+                  {laborLawCounts.noi_quy_lao_dong}
+                </span>
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Admin Tabs */}
         {isAdmin && (

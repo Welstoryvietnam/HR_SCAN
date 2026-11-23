@@ -10,7 +10,10 @@ import {
   EmployeeIntakeInfo,
   IntakeDraftSummary,
   IntakeFormDraft,
-  KhoiNode
+  KhoiNode,
+  RecruitmentBenefitSubTab,
+  HrSopSubTab,
+  LaborLawSubTab
 } from './types';
 import { DEFAULT_ORGANIZATION_HIERARCHY } from './data/organizationHierarchy';
 import { Header, AppTab } from './components/Header';
@@ -24,6 +27,9 @@ import { NhanSuTable } from './components/NhanSuTable';
 import { TieuChuanLuongManager } from './components/TieuChuanLuongManager';
 import { OrganizationHierarchyManager } from './components/OrganizationHierarchyManager';
 import { HealthCheckStandardsManager, HealthSubTab } from './components/HealthCheckStandardsManager';
+import { RecruitmentBenefitsManager, BenefitCounts } from './components/RecruitmentBenefitsManager';
+import { HrSopManager, SopCounts } from './components/HrSopManager';
+import { LaborLawManager, LaborLawCounts } from './components/LaborLawManager';
 
 import { UserManagement } from './components/UserManagement';
 import { SopProgressHeader } from './components/SopProgressHeader';
@@ -61,6 +67,53 @@ export default function App() {
   const [healthSubTab, setHealthSubTab] = useState<HealthSubTab>(() => {
     const isMed = currentUser?.role !== 'admin' && currentUser?.hrmRole === 'nhan_vien_y_te';
     return isMed ? 'tuyen_dung_theo_doi' : 'tuyen_dung_dang_ky';
+  });
+  const [benefitsSubTab, setBenefitsSubTab] = useState<RecruitmentBenefitSubTab>('danh_muc_chinh_sach');
+  const [benefitCounts, setBenefitCounts] = useState<BenefitCounts>(() => {
+    const countKey = (k: string) => {
+      try {
+        const arr = JSON.parse(localStorage.getItem(k) || '[]');
+        return Array.isArray(arr) ? arr.length : 0;
+      } catch {
+        return 0;
+      }
+    };
+    return {
+      danh_muc_chinh_sach: countKey('hr_benefits_v1_danh_muc_chinh_sach') || 4,
+      thuong_gioi_thieu: countKey('hr_benefits_v1_thuong_gioi_thieu'),
+      nguoi_cu_quay_lai: countKey('hr_benefits_v1_nguoi_cu_quay_lai'),
+      ho_tro_nha_tro: countKey('hr_benefits_v1_ho_tro_nha_tro'),
+    };
+  });
+  const [sopSubTab, setSopSubTab] = useState<HrSopSubTab>('tra_cuu_sop');
+  const [sopCounts, setSopCounts] = useState<SopCounts>(() => {
+    const countKey = (k: string, fallback: number) => {
+      try {
+        const arr = JSON.parse(localStorage.getItem(k) || 'null');
+        return Array.isArray(arr) ? arr.length : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+    return {
+      sop_list: countKey('hr_knowledge_v1_sop_list', 6),
+      sop_registrations: countKey('hr_knowledge_v1_sop_registrations', 2),
+    };
+  });
+  const [laborLawSubTab, setLaborLawSubTab] = useState<LaborLawSubTab>('luat_lao_dong');
+  const [laborLawCounts, setLaborLawCounts] = useState<LaborLawCounts>(() => {
+    const countKey = (k: string, fallback: number) => {
+      try {
+        const arr = JSON.parse(localStorage.getItem(k) || 'null');
+        return Array.isArray(arr) ? arr.length : fallback;
+      } catch {
+        return fallback;
+      }
+    };
+    return {
+      luat_lao_dong: countKey('hr_knowledge_v1_luat_lao_dong', 14),
+      noi_quy_lao_dong: countKey('hr_knowledge_v1_noi_quy_lao_dong', 9),
+    };
   });
   const [healthCounts, setHealthCounts] = useState<{
     regs: number;
@@ -737,6 +790,11 @@ export default function App() {
   }
 
   const isAdmin = currentUser.role === 'admin';
+  const canAccessBenefits =
+    isAdmin ||
+    currentUser.hrmRole === 'admin' ||
+    currentUser.hrmRole === 'truong_nhom_tuyen_dung' ||
+    currentUser.hrmRole === 'truong_nhom_cnb';
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
@@ -780,6 +838,15 @@ export default function App() {
           healthSubTab={healthSubTab}
           onHealthSubTabChange={setHealthSubTab}
           healthCounts={healthCounts}
+          benefitsSubTab={benefitsSubTab}
+          onBenefitsSubTabChange={setBenefitsSubTab}
+          benefitCounts={benefitCounts}
+          sopSubTab={sopSubTab}
+          onSopSubTabChange={setSopSubTab}
+          sopCounts={sopCounts}
+          laborLawSubTab={laborLawSubTab}
+          onLaborLawSubTabChange={setLaborLawSubTab}
+          laborLawCounts={laborLawCounts}
           currentUser={currentUser}
           recordsCount={records.length}
           sidebarCollapsed={sidebarCollapsed}
@@ -1038,6 +1105,44 @@ export default function App() {
               onSubTabChange={setHealthSubTab}
               onCountsChange={setHealthCounts}
               organizationHierarchy={organizationHierarchy}
+            />
+          </div>
+        )}
+
+        {/* Tab Chính sách & Phúc lợi tuyển dụng (Thưởng giới thiệu, Người cũ quay lại, Hỗ trợ nhà trọ) */}
+        {canAccessBenefits && activeTab === 'benefits' && (
+          <div className="animate-fade-in">
+            <RecruitmentBenefitsManager
+              currentUser={currentUser}
+              records={records}
+              organizationHierarchy={organizationHierarchy}
+              activeSubTab={benefitsSubTab}
+              onSubTabChange={setBenefitsSubTab}
+              onCountsChange={setBenefitCounts}
+            />
+          </div>
+        )}
+
+        {/* Tab Tra cứu & Đăng ký SOP nhân sự */}
+        {activeTab === 'sop' && (
+          <div className="animate-fade-in">
+            <HrSopManager
+              currentUser={currentUser}
+              activeSubTab={sopSubTab}
+              onSubTabChange={setSopSubTab}
+              onCountsChange={setSopCounts}
+            />
+          </div>
+        )}
+
+        {/* Tab Tra cứu Luật lao động & Nội quy lao động */}
+        {activeTab === 'labor_law' && (
+          <div className="animate-fade-in">
+            <LaborLawManager
+              currentUser={currentUser}
+              activeSubTab={laborLawSubTab}
+              onSubTabChange={setLaborLawSubTab}
+              onCountsChange={setLaborLawCounts}
             />
           </div>
         )}

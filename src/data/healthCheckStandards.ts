@@ -1,3 +1,5 @@
+import type { KhoiNode } from '../types';
+
 export type HealthCheckItemKey =
   | 'khamLamSangTongQuat'
   | 'xetNghiemMau'
@@ -234,6 +236,8 @@ export const HEALTH_CHECK_GROUP_LABELS: Record<HealthCheckColumnDef['group'], st
 export interface HealthCheckStandardItem {
   id: string;
   stt: number;
+  khoi?: string; // Khối (VD: FS MANAGEMENT, FD MANAGEMENT, HR & GA...)
+  ban?: string;  // Ban (VD: FS5, PURCHASE, HYGIENICS & SAFETY...)
   phong: string; // Col C: Tên Phòng / Điểm bếp / Đơn vị
   thoiHan: string; // Col D: 6 tháng | 12 tháng | 6 tháng (bếp chính)-12 tháng (bếp phụ)
   phanLoai: string; // Col E: Bếp Samsung | Bếp ngoài | OFFICE
@@ -243,6 +247,62 @@ export interface HealthCheckStandardItem {
   khuVuc: string; // Col AE: Bắc Ninh | Thái Nguyên | Hà Nội | Ninh Bình | Phú Thọ | Hải Phòng | Nghệ An | TP.HCM
   items: Record<HealthCheckItemKey, boolean>; // Col G -> AA ('X' = true)
   capNhatLuc?: string;
+}
+
+/**
+ * Tra cứu Khối và Ban từ Cây Cơ cấu tổ chức dựa theo tên phòng/đơn vị
+ */
+export function lookupOrgHierarchyForRoom(
+  roomName: string,
+  hierarchy: KhoiNode[] = []
+): { khoi: string; ban: string } {
+  if (!roomName || !hierarchy || hierarchy.length === 0) {
+    return { khoi: '', ban: '' };
+  }
+
+  const clean = (s: string) => (s || '').trim().toLowerCase();
+  const target = clean(roomName);
+
+  // 1. Khớp chính xác tên Phòng
+  for (const khoi of hierarchy) {
+    for (const ban of khoi.bans || []) {
+      for (const phong of ban.phongs || []) {
+        if (clean(phong.name) === target) {
+          return { khoi: khoi.name, ban: ban.name };
+        }
+      }
+    }
+  }
+
+  // 2. Khớp chính xác tên Ban
+  for (const khoi of hierarchy) {
+    for (const ban of khoi.bans || []) {
+      if (clean(ban.name) === target) {
+        return { khoi: khoi.name, ban: ban.name };
+      }
+    }
+  }
+
+  // 3. Khớp chính xác tên Khối
+  for (const khoi of hierarchy) {
+    if (clean(khoi.name) === target) {
+      return { khoi: khoi.name, ban: '' };
+    }
+  }
+
+  // 4. Khớp linh hoạt (prefix / suffix)
+  for (const khoi of hierarchy) {
+    for (const ban of khoi.bans || []) {
+      for (const phong of ban.phongs || []) {
+        const pClean = clean(phong.name);
+        if (pClean && (target === pClean || target.startsWith(pClean + ' ') || target.endsWith(' ' + pClean))) {
+          return { khoi: khoi.name, ban: ban.name };
+        }
+      }
+    }
+  }
+
+  return { khoi: '', ban: '' };
 }
 
 export function createHealthItemsMap(activeKeys: HealthCheckItemKey[]): Record<HealthCheckItemKey, boolean> {

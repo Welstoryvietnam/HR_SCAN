@@ -973,7 +973,9 @@ export function DocumentUploader({
           !f?.gioiTinh.trim() ||
           !f?.ngayCap.trim() ||
           !f?.ngayHetHanCCCD.trim() ||
-          !f?.noiCap.trim())
+          !f?.noiCap.trim() ||
+          !f?.queQuan.trim() ||
+          !f?.diaChiThuongTru.trim())
       );
     });
 
@@ -981,7 +983,7 @@ export function DocumentUploader({
       const idx = groups.findIndex((g) => g.id === incompleteNonBlank.id);
       setActiveGroupId(incompleteNonBlank.id);
       setGlobalError(
-        `Nhân viên #${idx + 1} đang thiếu các trường bắt buộc (Họ tên, Số CCCD, Ngày sinh, Giới tính, Ngày cấp, Ngày hết hạn, Nơi cấp). Vui lòng kiểm tra trước khi sang Bước 2.`
+        `Nhân viên #${idx + 1} đang thiếu các trường bắt buộc (Họ tên, Số CCCD, Ngày sinh, Giới tính, Ngày cấp, Ngày hết hạn, Nơi cấp, Quê quán, Địa chỉ thường trú). Vui lòng kiểm tra trước khi sang Bước 2.`
       );
       return;
     }
@@ -994,11 +996,13 @@ export function DocumentUploader({
         d.gioiTinh.trim() &&
         d.ngayCap.trim() &&
         d.ngayHetHanCCCD.trim() &&
-        d.noiCap.trim()
+        d.noiCap.trim() &&
+        d.queQuan.trim() &&
+        d.diaChiThuongTru.trim()
     );
     if (completedDrafts.length === 0) {
       setGlobalError(
-        'Vui lòng nhập đầy đủ các trường bắt buộc (Họ tên, Số CCCD, Ngày sinh, Giới tính, Ngày cấp, Ngày hết hạn, Nơi cấp) ít nhất cho 1 nhân viên để tiếp tục sang Bước 2.'
+        'Vui lòng nhập đầy đủ các trường bắt buộc (Họ tên, Số CCCD, Ngày sinh, Giới tính, Ngày cấp, Ngày hết hạn, Nơi cấp, Quê quán, Địa chỉ thường trú) ít nhất cho 1 nhân viên để tiếp tục sang Bước 2.'
       );
       return;
     }

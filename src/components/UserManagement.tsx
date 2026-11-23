@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   UserCheck,
   Mail,
+  Phone,
   Trash2,
   Edit2,
   AlertCircle,
@@ -460,18 +461,78 @@ const DEFAULT_ADMIN_ACCOUNT: SystemUserAccount = {
   username: 'admin',
   email: 'happyendpu@gmail.com',
   fullName: 'Quản Trị Viên Hệ Thống',
+  phone: '0912345678',
   role: 'admin',
   hrmRole: 'admin',
   status: 'active',
   createdAt: '2026-09-01T08:00:00.000Z',
 };
 
+const INITIAL_USER_ACCOUNTS: SystemUserAccount[] = [
+  DEFAULT_ADMIN_ACCOUNT,
+  {
+    id: 'usr_2609079269',
+    username: '2609079269',
+    email: '2609079269@welstory.com',
+    fullName: 'Nguyễn Thị Luyến',
+    phone: '',
+    role: 'employee',
+    hrmRole: 'nhan_vien_y_te',
+    status: 'active',
+    createdAt: '2026-11-20T08:00:00.000Z',
+  },
+  {
+    id: 'usr_2502038104',
+    username: '2502038104',
+    email: '2502038104@welstory.com',
+    fullName: 'Nguyễn Văn Hùng',
+    phone: '',
+    role: 'employee',
+    hrmRole: 'nhan_vien_tuyen_dung',
+    status: 'active',
+    createdAt: '2026-11-20T08:00:00.000Z',
+  },
+  {
+    id: 'usr_2302016468',
+    username: '2302016468',
+    email: '2302016468@welstory.com',
+    fullName: 'Nguyễn Thị Hằng',
+    phone: '',
+    role: 'employee',
+    hrmRole: 'truong_nhom_cnb',
+    status: 'active',
+    createdAt: '2026-11-20T08:00:00.000Z',
+  },
+  {
+    id: 'usr_1906042875',
+    username: '1906042875',
+    email: '1906042875@welstory.com',
+    fullName: 'Hà Văn Nam',
+    phone: '',
+    role: 'employee',
+    hrmRole: 'truong_nhom_tuyen_dung',
+    status: 'active',
+    createdAt: '2026-11-20T08:00:00.000Z',
+  },
+  {
+    id: 'usr_2603168875',
+    username: '2603168875',
+    email: '2603168875@welstory.com',
+    fullName: 'Chu Thị Ngọc Hà',
+    phone: '',
+    role: 'employee',
+    hrmRole: 'nhan_vien_quan_ly_ho_so',
+    status: 'active',
+    createdAt: '2026-11-20T08:00:00.000Z',
+  },
+];
+
 interface UserManagementProps {
   currentUser: UserProfile;
 }
 
 export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) => {
-  const [users, setUsers] = useState<SystemUserAccount[]>([DEFAULT_ADMIN_ACCOUNT]);
+  const [users, setUsers] = useState<SystemUserAccount[]>(INITIAL_USER_ACCOUNTS);
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -545,6 +606,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newPhone, setNewPhone] = useState('');
   const [newFullName, setNewFullName] = useState('');
   const [newRole, setNewRole] = useState<'admin' | 'employee'>('employee');
   const [newHrmRole, setNewHrmRole] = useState<HrmSubRole>('nhan_vien_tuyen_dung');
@@ -555,6 +617,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
   const [editingUser, setEditingUser] = useState<SystemUserAccount | null>(null);
   const [editFullName, setEditFullName] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
   const [editPassword, setEditPassword] = useState('');
   const [editRole, setEditRole] = useState<'admin' | 'employee'>('employee');
   const [editHrmRole, setEditHrmRole] = useState<HrmSubRole>('nhan_vien_tuyen_dung');
@@ -595,11 +658,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       if (res.data?.success && Array.isArray(res.data.users) && res.data.users.length > 0) {
         setUsers(res.data.users);
       } else {
-        setUsers([DEFAULT_ADMIN_ACCOUNT]);
+        setUsers(INITIAL_USER_ACCOUNTS);
       }
     } catch (err) {
       console.warn('Lỗi gọi API /api/admin/users, dùng dữ liệu lưu trữ nội bộ:', err);
-      setUsers([DEFAULT_ADMIN_ACCOUNT]);
+      setUsers(INITIAL_USER_ACCOUNTS);
     } finally {
       setIsLoading(false);
     }
@@ -979,6 +1042,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
             username: cleanUsername,
             password: newPassword.trim(),
             email: cleanEmail,
+            phone: newPhone.trim(),
             fullName: newFullName.trim(),
             role: newHrmRole === 'admin' ? 'admin' : newRole,
             hrmRole: newHrmRole,
@@ -996,6 +1060,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       setNewUsername('');
       setNewPassword('');
       setNewEmail('');
+      setNewPhone('');
       setNewFullName('');
       setNewRole('employee');
       setNewHrmRole('nhan_vien_tuyen_dung');
@@ -1010,6 +1075,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
     setEditingUser(user);
     setEditFullName(user.fullName);
     setEditEmail(user.contactEmail ?? user.email);
+    setEditPhone(user.phone || '');
     setEditPassword('');
     setEditRole(user.role);
     setEditHrmRole(resolveAccountRoleKey(user));
@@ -1025,6 +1091,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       const payload: any = {
         fullName: editFullName.trim(),
         email: editEmail.trim(),
+        phone: editPhone.trim(),
         role: editHrmRole === 'admin' ? 'admin' : editRole,
         hrmRole: editHrmRole,
         status: editStatus,
@@ -1125,6 +1192,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
       u.username.toLowerCase().includes(term) ||
       u.fullName.toLowerCase().includes(term) ||
       u.email.toLowerCase().includes(term) ||
+      (u.phone && u.phone.toLowerCase().includes(term)) ||
       roleDef.label.toLowerCase().includes(term) ||
       roleDef.shortLabel.toLowerCase().includes(term)
     );
@@ -2235,6 +2303,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
               <tr className="bg-slate-100/80 text-slate-700 uppercase font-bold text-[11px] border-b border-slate-200">
                 <th className="p-3">Tên Đăng Nhập</th>
                 <th className="p-3">Họ và Tên Nhân Viên</th>
+                <th className="p-3">Số Điện Thoại</th>
                 <th className="p-3">Email Liên Kết</th>
                 <th className="p-3">Mật Khẩu Cấp</th>
                 <th className="p-3 text-center">Vai Trò Phân Quyền (1–6)</th>
@@ -2246,7 +2315,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
             <tbody className="divide-y divide-slate-100">
               {filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-slate-400">
+                  <td colSpan={9} className="p-6 text-center text-slate-400">
                     Không tìm thấy tài khoản nào phù hợp.
                   </td>
                 </tr>
@@ -2267,6 +2336,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                       </td>
                       <td className="p-3 font-semibold text-slate-800">
                         {user.fullName}
+                      </td>
+                      <td className="p-3 text-slate-700 font-mono">
+                        {user.phone ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Phone className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{user.phone}</span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 italic">---</span>
+                        )}
                       </td>
                       <td className="p-3 text-slate-600">
                         <span className="inline-flex items-center gap-1">
@@ -2420,6 +2499,22 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
 
               <div>
                 <label className="block text-slate-700 font-semibold mb-1">
+                  Số điện thoại liên hệ
+                </label>
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="tel"
+                    placeholder="Ví dụ: 0912345678, 0987654321..."
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-blue-600 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
                   Email nhân viên (Dùng để đổi mật khẩu nếu quên)
                 </label>
                 <input
@@ -2537,6 +2632,22 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUser }) =
                   onChange={(e) => setEditEmail(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-blue-600"
                 />
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">
+                  Số điện thoại liên hệ
+                </label>
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="tel"
+                    placeholder="Ví dụ: 0912345678, 0987654321..."
+                    value={editPhone}
+                    onChange={(e) => setEditPhone(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:outline-blue-600 font-mono"
+                  />
+                </div>
               </div>
 
               <div>

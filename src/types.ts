@@ -13,6 +13,7 @@ export type HrmSubRole =
 export interface UserProfile {
   employeeCode?:string;
   contactEmail?:string;
+  phone?: string;
   hrmRole?:HrmSubRole;
   department?:string;
   sessionToken?: string;
@@ -27,6 +28,7 @@ export interface UserProfile {
 
 export interface SystemUserAccount {
   contactEmail?:string;
+  phone?: string;
   hrmRole?:HrmSubRole;
   id: string;
   username: string;
@@ -359,5 +361,195 @@ export interface HealthCheckNotificationItem {
   createdAt: string;
   readBy: string[];
   targetRole: 'nhan_vien_y_te' | 'all';
+}
+
+export type BenefitApprovalStatus = 'cho_duyet' | 'du_dieu_kien' | 'da_chi_tra' | 'tu_choi';
+
+export type RecruitmentBenefitSubTab =
+  | 'danh_muc_chinh_sach'
+  | 'thuong_gioi_thieu'
+  | 'nguoi_cu_quay_lai'
+  | 'ho_tro_nha_tro';
+
+export interface RecruitmentPolicyItem {
+  id: string;
+  stt?: number;
+  maChinhSach: string;
+  tenChinhSach: string;
+  loaiChinhSach: 'thuong_gioi_thieu' | 'nguoi_cu_quay_lai' | 'ho_tro_nha_tro' | 'khac';
+  doiTuong: string;
+  chinhSachHoTro: string;
+  thoiHan: string;
+  thoiGianApDung: string;
+  dieuKienChiTiet?: string;
+  trangThai: 'dang_ap_dung' | 'tam_dung' | 'het_hieu_luc';
+  ghiChu?: string;
+  nguoiTao?: string;
+  capNhatLuc?: string;
+}
+
+export interface ReferralBonusRecord {
+  id: string;
+  maNVNguoiGioiThieu: string;
+  tenNguoiGioiThieu: string;
+  phongNguoiGioiThieu: string;
+  sdtNguoiGioiThieu: string;
+  hoVaTenUngVien: string;
+  soCCCD: string;
+  soDienThoai: string;
+  khoi: string;
+  ban: string;
+  phong: string;
+  congViec: string;
+  chucVu: string;
+  ngayVaoLam: string;
+  ngayDuDieuKien: string;
+  mucThuong: number;
+  kyChiTra: string;
+  trangThai: BenefitApprovalStatus;
+  ghiChu: string;
+  nguoiTao: string;
+  capNhatLuc: string;
+}
+
+export interface RehireEmployeeRecord {
+  id: string;
+  maNVCu: string;
+  hoVaTen: string;
+  soCCCD: string;
+  soDienThoai: string;
+  khoi: string;
+  ban: string;
+  phongCu: string;
+  ngayNghiViecCu: string;
+  lyDoNghiCu: string;
+  phongMoi: string;
+  congViec: string;
+  chucVu: string;
+  ngayQuayLai: string;
+  mucHoTro: number;
+  danhGiaTruocDay: 'tot' | 'binh_thuong' | 'can_luu_y';
+  trangThai: BenefitApprovalStatus;
+  ghiChu: string;
+  nguoiTao: string;
+  capNhatLuc: string;
+}
+
+export interface HousingSupportRecord {
+  id: string;
+  maNV: string;
+  hoVaTen: string;
+  soCCCD: string;
+  soDienThoai: string;
+  khoi: string;
+  ban: string;
+  phong: string;
+  congViec: string;
+  chucVu: string;
+  ngayVaoLam: string;
+  queQuan: string;
+  diaChiNhaTro: string;
+  loaiHoTro: 'tien_mat' | 'ky_tuc_xa' | 'ho_tro_thue_ngoai';
+  mucHoTroThang: number;
+  soThangHoTro: number;
+  tongHoTro: number;
+  tuNgay: string;
+  denNgay: string;
+  trangThai: BenefitApprovalStatus;
+  ghiChu: string;
+  nguoiTao: string;
+  capNhatLuc: string;
+}
+
+// ==========================================
+// MODULE: TRA CỨU & ĐĂNG KÝ SOP NHÂN SỰ
+// ==========================================
+export type HrSopSubTab = 'tra_cuu_sop' | 'dang_ky_sop';
+
+export type HrSopCategory =
+  | 'tuyen_dung'
+  | 'cnb_luong_thuong'
+  | 'dao_tao_hoi_nhap'
+  | 'quan_he_lao_dong'
+  | 'y_te_an_toan'
+  | 'hanh_chinh_nhan_su';
+
+export type HrSopStatus = 'dang_ap_dung' | 'dang_ra_soat' | 'het_hieu_luc';
+
+export interface HrSopItem {
+  id: string;
+  maSop: string;
+  tenSop: string;
+  phienBan: string;
+  nhomNghiepVu: HrSopCategory;
+  boPhanBanHanh: string;
+  doiTuongApDung: string;
+  ngayHieuLuc: string;
+  ngayRaSoatTiepTheo?: string;
+  mucDich: string;
+  noiDungTomTat: string;
+  cacBuocThucHien: string; // Multi-line steps
+  bieuMauDinhKem?: string;
+  trangThai: HrSopStatus;
+  nguoiBienSoan: string;
+  nguoiPheDuyet: string;
+  ghiChu?: string;
+  capNhatLuc?: string;
+}
+
+export type SopRegistrationType = 'ban_hanh_moi' | 'sua_doi' | 'huy_bo';
+export type SopRegistrationStatus = 'cho_duyet' | 'dang_tham_dinh' | 'da_phe_duyet' | 'tu_choi';
+export type SopPriorityLevel = 'binh_thuong' | 'gap' | 'khan_cap';
+
+export interface HrSopRegistrationItem {
+  id: string;
+  maYeuCau: string;
+  loaiDeXuat: SopRegistrationType;
+  maSopLienQuan?: string;
+  tenSopDeXuat: string;
+  nhomNghiepVu: HrSopCategory;
+  donViDeXuat: string;
+  nguoiDeXuat: string;
+  ngayDeXuat: string;
+  ngayMongMuonApDung: string;
+  mucDoUuTien: SopPriorityLevel;
+  lyDoDeXuat: string;
+  noiDungDeXuat: string;
+  trangThai: SopRegistrationStatus;
+  nguoiDuyet?: string;
+  phanHoiDuyet?: string;
+  capNhatLuc?: string;
+}
+
+// ==========================================
+// MODULE: TRA CỨU LUẬT LAO ĐỘNG & NỘI QUY LAO ĐỘNG
+// ==========================================
+export type LaborLawSubTab = 'luat_lao_dong' | 'noi_quy_lao_dong';
+
+export type LaborLawTopic =
+  | 'hop_dong_lao_dong'
+  | 'thoi_gio_lam_viec'
+  | 'tien_luong_thuong'
+  | 'ky_luat_lao_dong'
+  | 'bhxh_thai_san'
+  | 'an_toan_vsld'
+  | 'nghi_phep_nghi_viec'
+  | 'quy_dinh_chung';
+
+export interface LaborLawDocumentItem {
+  id: string;
+  loaiVanBan: 'luat_lao_dong' | 'noi_quy_lao_dong';
+  soDieu: string; // VD: Điều 25 - BLLĐ 2019 hoặc Chương II - Điều 5
+  tieuDe: string;
+  nguonVanBan: string; // VD: Bộ luật Lao động 45/2019/QH14, Nội quy lao động Công ty 2026
+  chuyenDe: LaborLawTopic;
+  tomTatCotLoi: string;
+  noiDungChiTiet: string;
+  luuYApDungThucTe?: string;
+  ngayHieuLuc: string;
+  trangThai: 'dang_hieu_luc' | 'sap_ap_dung' | 'het_hieu_luc';
+  tuKhoa?: string;
+  nguoiCapNhat?: string;
+  capNhatLuc?: string;
 }
 

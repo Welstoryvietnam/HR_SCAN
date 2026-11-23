@@ -7,6 +7,7 @@ import {
   DEFAULT_HEALTH_CHECK_STANDARDS,
   HEALTH_STANDARD_GAS_CODE_GS,
   createHealthItemsMap,
+  lookupOrgHierarchyForRoom,
   type HealthCheckStandardItem,
   type HealthCheckItemKey,
   type HealthCheckColumnDef,
@@ -74,20 +75,25 @@ import {
   Camera,
   Send,
   BarChart3,
-  UserX,
   UserCheck,
   Lock,
 } from 'lucide-react';
 
 export interface HealthcareProviderItem {
   id: string;
+  tenVietTat?: string;
   tenNhaCungCap: string;
-  diaChi: string;
-  thoiHanHopDong: string;
-  nguoiPhuTrach: string;
-  soDienThoai: string;
+  khuVuc?: string;
+  thoiGianThanhToan?: string;
+  ngayBatDauHD?: string;
+  ngayKetThucHD?: string;
+  thoiHanHopDong?: string;
+  nguoiPhuTrach?: string;
+  soDienThoai?: string;
+  phuTrachCongNo?: string;
   email: string;
   ghiChu: string;
+  diaChi?: string;
 }
 
 export interface RecruitmentHealthRegItem {
@@ -170,14 +176,265 @@ const KHU_VUC_OPTIONS = [
   'Nghệ An',
   'TP.HCM',
 ];
+export const DEFAULT_HEALTHCARE_PROVIDERS: HealthcareProviderItem[] = [
+  {
+    id: 'prov-1',
+    tenVietTat: 'Hữu Phúc',
+    tenNhaCungCap: 'CÔNG TY TNHH Y DƯỢC HỮU PHÚC - PHÒNG KHÁM ĐA KHOA HỮU PHÚC',
+    khuVuc: 'Tam Đa- Bắc Ninh',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Ms Nguyên',
+    soDienThoai: '0336.172.192',
+    phuTrachCongNo: 'Ms Nguyên: 0336.172.192',
+    email: 'suckhoe6666@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-2',
+    tenVietTat: 'Nhân Đức',
+    tenNhaCungCap: 'CÔNG TY CỔ PHẦN BỆNH VIỆN QUỐC TẾ NHÂN ĐỨC',
+    khuVuc: 'Lãm Làng, Vân Dương, TP Bắc Ninh',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Ms Hằng',
+    soDienThoai: '0962.612.119',
+    phuTrachCongNo: 'Ms Hằng: 0962.612.119',
+    email: 'benhvienquoctenhanduc@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-3',
+    tenVietTat: 'Ngôi Sao',
+    tenNhaCungCap: 'CÔNG TY TNHH BỆNH VIỆN NGÔI SAO',
+    khuVuc: 'Vạn Xuân - Thái Nguyên',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Ms Huyền',
+    soDienThoai: '0366.040.805',
+    phuTrachCongNo: 'Ms Huyền: 0366.040.805',
+    email: 'phongkhamngoisao@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-4',
+    tenVietTat: 'Nam Lương Sơn',
+    tenNhaCungCap: 'CHI NHÁNH CÔNG TY TNHH KHÁM CHỮA BỆNH HÀ NỘI HIGHT QUALITY - BỆNH VIỆN NAM LƯƠNG SƠN',
+    khuVuc: 'Hoà bình',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Mr Trường',
+    soDienThoai: '0976.321.688',
+    phuTrachCongNo: 'Mr Trường: 0976.321.688',
+    email: 'Truongpl0976321688@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-5',
+    tenVietTat: 'Thanh Bình',
+    tenNhaCungCap: 'CÔNG TY CP ĐẠI ĐỒNG ĐƯỜNG - PK THANH BÌNH',
+    khuVuc: 'Hải Dương',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Ms Giang',
+    soDienThoai: '0975.670.799',
+    phuTrachCongNo: 'Ms Giang: 0975.670.799',
+    email: 'giangpktb2016@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-6',
+    tenVietTat: 'Huệ Linh - Hoa Hồng',
+    tenNhaCungCap: 'CÔNG TY TNHH DỊCH VỤ Y TẾ VÀ THƯƠNG MẠI HUỆ LINH - PHÒNG KHÁM ĐA KHOA Y CAO HOA HỒNG',
+    khuVuc: 'Ninh Bình',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Ms Duyên',
+    soDienThoai: '0982.746.928',
+    phuTrachCongNo: 'Ms Duyên: 0982.746.928',
+    email: 'nueunn.ncatnservice@gmail.com, phongkhamhoahong2023@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-7',
+    tenVietTat: 'Hồng Hà - Đức Kiên',
+    tenNhaCungCap: 'BỆNH VIỆN ĐA KHOA TƯ NHÂN HỒNG HÀ - ĐỨC KIÊN',
+    khuVuc: 'Đống Đa, Hà Nội',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Mr Huy',
+    soDienThoai: '0941.955.567',
+    phuTrachCongNo: 'Mr Huy: 0941.955.567',
+    email: 'huytq@benhvienhongha.com.vn',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-8',
+    tenVietTat: 'Âu Cơ',
+    tenNhaCungCap: 'CÔNG TY TNHH PHÁT TRIỂN Y HỌC ÂU CƠ - PHÒNG KHÁM ÂU CƠ - PHÚ HÀ',
+    khuVuc: 'TX Phú Thọ',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Ms Ngân',
+    soDienThoai: '0961 166 384',
+    phuTrachCongNo: 'Ms Ngân: 0961 166 384',
+    email: 'phongkhamaurophuha2019@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-9',
+    tenVietTat: 'Y dược Sài Gòn',
+    tenNhaCungCap: 'CÔNG TY CỔ PHẦN BỆNH VIỆN Y DƯỢC SÀI GÒN',
+    khuVuc: 'Thủ Đức - HCM',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Ms Diễm Ngọc / Mr Tường Văn',
+    soDienThoai: '0354 558 010 / 0909.818.204',
+    phuTrachCongNo: 'Ms Diễm Ngọc: 0354 558 010 / Mr Tường Văn: 0909.818.204',
+    email: 'doanlongphu@gmail.com',
+    ghiChu: '0',
+  },
+  {
+    id: 'prov-10',
+    tenVietTat: 'Long Bình',
+    tenNhaCungCap: 'CÔNG TY CỔ PHẦN PHÒNG KHÁM QUỐC TẾ LONG BÌNH',
+    khuVuc: 'Biên Hoà - Đồng Nai',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Phạm Phước Tài',
+    soDienThoai: '0976.769.920',
+    phuTrachCongNo: 'Phạm Phước Tài: 0976.769.920',
+    email: 'benhvienlongbinh@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-11',
+    tenVietTat: 'Nhân Nghĩa',
+    tenNhaCungCap: 'CÔNG TY CỔ PHẦN THƯƠNG MẠI DỊCH VỤ Y TẾ NHÂN NGHĨA',
+    khuVuc: 'Bình Dương',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Mr Quang Huy',
+    soDienThoai: '0378.518.568',
+    phuTrachCongNo: 'Mr Quang Huy: 0378.518.568',
+    email: 'pkdknn@gmail.com, hanhnongcong@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-12',
+    tenVietTat: 'Hoàn Mỹ',
+    tenNhaCungCap: 'CÔNG TY CỔ PHẦN BỆNH VIỆN QUỐC TẾ HOÀN MỸ',
+    khuVuc: 'Võ Cường - TP Bắc Ninh',
+    thoiGianThanhToan: 'Theo quý 3 tháng/lần',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Ms Đặng Nga',
+    soDienThoai: '0979.541.689',
+    phuTrachCongNo: 'Ms Đặng Nga: 0979.541.689',
+    email: 'suckhoehoanmy2020@gmail.com, dangnga281089@gmail.com',
+    ghiChu: 'Lịch thanh toán có thể thay đổi theo số lượng khám hàng tháng',
+  },
+  {
+    id: 'prov-13',
+    tenVietTat: 'Đô Lương',
+    tenNhaCungCap: 'BỆNH VIỆN ĐA KHOA ĐÔ LƯƠNG',
+    khuVuc: 'Đô Lương - Nghệ an',
+    thoiGianThanhToan: 'Theo quý 3 tháng/lần',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Nguyễn Đình Việt',
+    soDienThoai: '0979.289.976',
+    phuTrachCongNo: 'Nguyễn Đình Việt: 0979.289.976',
+    email: 'Nguyendinhviet2010@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-14',
+    tenVietTat: 'An Nhiên',
+    tenNhaCungCap: 'CÔNG TY TNHH DỊCH VỤ Y DƯỢC AN NHIÊN',
+    khuVuc: 'Mỹ Lộc - Nam Định',
+    thoiGianThanhToan: 'Theo quý 3 tháng/lần',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Trần Ngọc Anh',
+    soDienThoai: '0843.090.097',
+    phuTrachCongNo: 'Trần Ngọc Anh: 0843.090.097',
+    email: 'anhngoctran2112@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-15',
+    tenVietTat: 'Đông Âu',
+    tenNhaCungCap: 'CHI NHÁNH CÔNG TY CP DƯỢC PHẨM VÀ TB Y TẾ ĐÔNG ÂU - BỆNH VIỆN ĐA KHOA ĐÔNG ÂU',
+    khuVuc: 'TPVinh - Nghệ an',
+    thoiGianThanhToan: 'Theo quý 3 tháng/lần',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Mr Việt Hoàng',
+    soDienThoai: '0945.353.638',
+    phuTrachCongNo: 'Mr Việt Hoàng: 0945.353.638',
+    email: 'viethoang46kdtvt@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-16',
+    tenVietTat: 'Hải Tiến',
+    tenNhaCungCap: 'CÔNG TY CỔ PHẦN BỆNH VIỆN ĐA KHOA MEDIC HẢI TIẾN - BỆNH VIỆN ĐA KHOA HẢI TIẾN',
+    khuVuc: 'Thanh hoá',
+    thoiGianThanhToan: 'Theo quý 3 tháng/lần',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Ms Nguyệt',
+    soDienThoai: '0967.770.924',
+    phuTrachCongNo: 'Ms Nguyệt: 0967.770.924',
+    email: 'nguyettieuthu2505@gmail.com',
+    ghiChu: '',
+  },
+  {
+    id: 'prov-17',
+    tenVietTat: 'Bạch Mai',
+    tenNhaCungCap: 'CÔNG TY CỔ PHẦN Y DƯỢC VĨNH PHÚC - PHÒNG KHÁM ĐA KHOA TƯ NHÂN BẠCH MAI',
+    khuVuc: 'Phú Thọ',
+    thoiGianThanhToan: 'Hàng tháng',
+    ngayBatDauHD: '',
+    ngayKetThucHD: '',
+    nguoiPhuTrach: 'Ms. Mai',
+    soDienThoai: '0987.038.473',
+    phuTrachCongNo: 'Ms. Mai: 0987.038.473',
+    email: 'yduocvinhphuc@gmail.com',
+    ghiChu: 'Đang chờ hoàn thiện...',
+  },
+];
+
 const NHA_CUNG_CAP_SUGGESTIONS = [
   'Hữu Phúc',
+  'Nhân Đức',
+  'Ngôi Sao',
+  'Nam Lương Sơn',
+  'Thanh Bình',
+  'Huệ Linh - Hoa Hồng',
+  'Hồng Hà - Đức Kiên',
   'Âu Cơ',
-  'Huệ Linh',
-  'Đông Âu',
-  'Medlatec',
-  'Hồng Ngọc',
+  'Y dược Sài Gòn',
+  'Long Bình',
+  'Nhân Nghĩa',
   'Hoàn Mỹ',
+  'Đô Lương',
+  'An Nhiên',
+  'Đông Âu',
+  'Hải Tiến',
+  'Bạch Mai',
 ];
 
 export const RECRUITMENT_CHECK_ITEMS = HEALTH_CHECK_ITEMS.filter(
@@ -207,10 +464,24 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
   const [standards, setStandards] = useState<HealthCheckStandardItem[]>(() => {
     try {
-      const cached = localStorage.getItem('hr_health_check_standards');
+      const cached = localStorage.getItem('hr_health_check_standards_v2');
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((item) => {
+            const p = (item.phong || '').toLowerCase();
+            return (
+              !p.startsWith('lưu ý') &&
+              !p.includes('giấy phép lao động') &&
+              !p.includes('hp dạ dày') &&
+              p !== 'ngoại khoa' &&
+              p !== 'ure' &&
+              !p.includes('thương hàn') &&
+              p !== 'morphin' &&
+              p !== 'lách'
+            );
+          }).map((item, idx) => ({ ...item, stt: idx + 1 }));
+        }
       }
     } catch {
       // ignore
@@ -260,79 +531,64 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   // 1. Nhà cung cấp KSK (Providers)
   const [providers, setProviders] = useState<HealthcareProviderItem[]>(() => {
     try {
-      const cached = localStorage.getItem('hr_healthcare_providers');
+      const cached = localStorage.getItem('hr_healthcare_providers_v4');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {}
-    return [
-      {
-        id: 'prov-1',
-        tenNhaCungCap: 'Phòng khám Đa khoa Hữu Phúc',
-        diaChi: 'KCN Yên Phong, Bắc Ninh',
-        thoiHanHopDong: '31/12/2026',
-        nguoiPhuTrach: 'Bs. Nguyễn Văn Hùng',
-        soDienThoai: '0912345678',
-        email: 'contact@huuphuclinic.vn',
-        ghiChu: 'Đối tác chiến lược KCN Yên Phong.',
-      },
-      {
-        id: 'prov-2',
-        tenNhaCungCap: 'Bệnh viện Đa khoa Âu Cơ',
-        diaChi: 'TP. Bắc Ninh',
-        thoiHanHopDong: '30/06/2026',
-        nguoiPhuTrach: 'ThS. Trần Thị Mai',
-        soDienThoai: '0988776655',
-        email: 'hospital@auco.vn',
-        ghiChu: 'Ưu đãi giá khám đoàn.',
-      },
-      {
-        id: 'prov-3',
-        tenNhaCungCap: 'Phòng khám Đa khoa Huệ Linh',
-        diaChi: 'Yên Phong, Bắc Ninh',
-        thoiHanHopDong: '15/10/2026',
-        nguoiPhuTrach: 'Lê Văn Tuấn',
-        soDienThoai: '0903112233',
-        email: 'huelinh@clinic.vn',
-        ghiChu: 'Lấy mẫu tại doanh nghiệp theo yêu cầu.',
-      },
-    ];
+    return DEFAULT_HEALTHCARE_PROVIDERS;
   });
 
   useEffect(() => {
     try {
-      localStorage.setItem('hr_healthcare_providers', JSON.stringify(providers));
+      localStorage.setItem('hr_healthcare_providers_v4', JSON.stringify(providers));
     } catch {}
   }, [providers]);
 
+  const [providerSearchTerm, setProviderSearchTerm] = useState('');
+  const [recStandardSearch, setRecStandardSearch] = useState('');
+  const [recFilterKhoi, setRecFilterKhoi] = useState('ALL');
+  const [recFilterBan, setRecFilterBan] = useState('ALL');
+  const [recFilterPhanLoai, setRecFilterPhanLoai] = useState<string>('ALL');
+  const [recFilterKhuVuc, setRecFilterKhuVuc] = useState<string>('ALL');
+  const [recFilterTestItem, setRecFilterTestItem] = useState<HealthCheckItemKey | 'ALL'>('ALL');
   const [isProviderModalOpen, setIsProviderModalOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<HealthcareProviderItem | null>(null);
+  const [provTenVietTat, setProvTenVietTat] = useState('');
   const [provTen, setProvTen] = useState('');
-  const [provDiaChi, setProvDiaChi] = useState('');
-  const [provThoiHan, setProvThoiHan] = useState('');
-  const [provPhuTrach, setProvPhuTrach] = useState('');
-  const [provDienThoai, setProvDienThoai] = useState('');
+  const [provKhuVuc, setProvKhuVuc] = useState('');
+  const [provThoiGianThanhToan, setProvThoiGianThanhToan] = useState('');
+  const [provNgayBatDauHD, setProvNgayBatDauHD] = useState('');
+  const [provNgayKetThucHD, setProvNgayKetThucHD] = useState('');
+  const [provNguoiPhuTrach, setProvNguoiPhuTrach] = useState('');
+  const [provSoDienThoai, setProvSoDienThoai] = useState('');
   const [provEmail, setProvEmail] = useState('');
   const [provGhiChu, setProvGhiChu] = useState('');
 
   const handleOpenProviderModal = (prov?: HealthcareProviderItem) => {
     if (prov) {
       setEditingProvider(prov);
-      setProvTen(prov.tenNhaCungCap);
-      setProvDiaChi(prov.diaChi);
-      setProvThoiHan(prov.thoiHanHopDong);
-      setProvPhuTrach(prov.nguoiPhuTrach);
-      setProvDienThoai(prov.soDienThoai);
-      setProvEmail(prov.email);
-      setProvGhiChu(prov.ghiChu);
+      setProvTenVietTat(prov.tenVietTat || '');
+      setProvTen(prov.tenNhaCungCap || '');
+      setProvKhuVuc(prov.khuVuc || prov.diaChi || '');
+      setProvThoiGianThanhToan(prov.thoiGianThanhToan || 'Hàng tháng');
+      setProvNgayBatDauHD(prov.ngayBatDauHD || '');
+      setProvNgayKetThucHD(prov.ngayKetThucHD || '');
+      setProvNguoiPhuTrach(prov.nguoiPhuTrach || '');
+      setProvSoDienThoai(prov.soDienThoai || '');
+      setProvEmail(prov.email || '');
+      setProvGhiChu(prov.ghiChu || '');
     } else {
       setEditingProvider(null);
+      setProvTenVietTat('');
       setProvTen('');
-      setProvDiaChi('');
-      setProvThoiHan('');
-      setProvPhuTrach('');
-      setProvDienThoai('');
+      setProvKhuVuc('');
+      setProvThoiGianThanhToan('Hàng tháng');
+      setProvNgayBatDauHD('');
+      setProvNgayKetThucHD('');
+      setProvNguoiPhuTrach('');
+      setProvSoDienThoai('');
       setProvEmail('');
       setProvGhiChu('');
     }
@@ -347,11 +603,18 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     }
     const newItem: HealthcareProviderItem = {
       id: editingProvider ? editingProvider.id : 'prov-' + Date.now(),
+      tenVietTat: provTenVietTat.trim() || provTen.trim().substring(0, 20),
       tenNhaCungCap: provTen.trim(),
-      diaChi: provDiaChi.trim(),
-      thoiHanHopDong: provThoiHan.trim(),
-      nguoiPhuTrach: provPhuTrach.trim(),
-      soDienThoai: provDienThoai.trim(),
+      khuVuc: provKhuVuc.trim(),
+      thoiGianThanhToan: provThoiGianThanhToan.trim(),
+      ngayBatDauHD: provNgayBatDauHD.trim(),
+      ngayKetThucHD: provNgayKetThucHD.trim(),
+      thoiHanHopDong: provNgayBatDauHD.trim() && provNgayKetThucHD.trim()
+        ? `${provNgayBatDauHD.trim()} - ${provNgayKetThucHD.trim()}`
+        : (provNgayBatDauHD.trim() || provNgayKetThucHD.trim() || ''),
+      nguoiPhuTrach: provNguoiPhuTrach.trim(),
+      soDienThoai: provSoDienThoai.trim(),
+      phuTrachCongNo: provNguoiPhuTrach.trim() && provSoDienThoai.trim() ? `${provNguoiPhuTrach.trim()}: ${provSoDienThoai.trim()}` : (provNguoiPhuTrach.trim() || provSoDienThoai.trim()),
       email: provEmail.trim(),
       ghiChu: provGhiChu.trim(),
     };
@@ -367,6 +630,12 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     if (!window.confirm('Bạn chắc chắn muốn xóa nhà cung cấp này không?')) return;
     setProviders(providers.filter((p) => p.id !== id));
     showToast('success', 'Đã xóa nhà cung cấp thành công!');
+  };
+
+  const handleResetDefaultProviders = () => {
+    if (!window.confirm('Bạn có chắc chắn muốn nạp lại danh sách 17 Nhà cung cấp KSK chuẩn theo danh mục không?')) return;
+    setProviders(DEFAULT_HEALTHCARE_PROVIDERS);
+    showToast('success', 'Đã nạp lại 17 Nhà cung cấp khám sức khỏe chuẩn!');
   };
 
   // 2. Đăng ký KSK Tuyển dụng
@@ -1191,7 +1460,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const [trackingStartDate, setTrackingStartDate] = useState('');
   const [trackingEndDate, setTrackingEndDate] = useState('');
   const [trackingStatusFilter, setTrackingStatusFilter] = useState('ALL');
-  const [trackingViewMode, setTrackingViewMode] = useState<'active' | 'declined'>('active');
 
   const [trackingDraftRegs, setTrackingDraftRegs] = useState<RecruitmentHealthRegItem[]>(() => recruitmentRegs);
   useEffect(() => {
@@ -1363,16 +1631,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     });
   }, [trackingDraftRegs, trackingSearch, trackingMonth, trackingStartDate, trackingEndDate]);
 
-  const activeTrackingRegs = useMemo(() => {
-    return trackingPeriodRegs.filter((reg) => reg.trangThaiNhanViec !== 'Không nhận việc');
-  }, [trackingPeriodRegs]);
-
-  const declinedTrackingRegs = useMemo(() => {
-    return trackingPeriodRegs.filter((reg) => reg.trangThaiNhanViec === 'Không nhận việc');
-  }, [trackingPeriodRegs]);
-
   const filteredTrackingRegs = useMemo(() => {
-    const base = trackingViewMode === 'declined' ? declinedTrackingRegs : activeTrackingRegs;
+    const base = trackingPeriodRegs;
     if (trackingStatusFilter === 'ALL') return base;
     return base.filter((reg) => {
       const st = reg.trangThai || 'Chờ Khám';
@@ -1390,32 +1650,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       }
       return st === trackingStatusFilter;
     });
-  }, [trackingViewMode, activeTrackingRegs, declinedTrackingRegs, trackingStatusFilter]);
-
-  const handleMarkOfferDecision = (
-    reg: RecruitmentHealthRegItem,
-    decision: 'Đã nhận việc' | 'Không nhận việc' | 'Chưa xử lý'
-  ) => {
-    if (isStep2LockedForUser(reg, isAdmin)) {
-      showToast(
-        'error',
-        `Ứng viên ${reg.hoVaTen} đã được chốt ở Bước 3. Chỉ Admin hoặc khi Bước 3 bỏ chọn mới có thể khôi phục.`
-      );
-      return;
-    }
-    setRecruitmentRegs((prev) => {
-      const next = prev.map((r) => (r.id === reg.id ? { ...r, trangThaiNhanViec: decision } : r));
-      void syncHealthRegistrationsToCloud(next);
-      return next;
-    });
-    if (decision === 'Không nhận việc') {
-      showToast('success', `Đã chuyển ${reg.hoVaTen} sang danh sách Không nhận việc để quản lý riêng.`);
-    } else if (decision === 'Đã nhận việc') {
-      onTransferToNewEmployee?.(reg);
-    } else {
-      showToast('success', `Đã khôi phục ${reg.hoVaTen} về danh sách theo dõi KSK.`);
-    }
-  };
+  }, [trackingPeriodRegs, trackingStatusFilter]);
 
   const handleExportTrackingExcel = async (kind: RecruitmentExportKind) => {
     try {
@@ -1511,6 +1746,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterKhoi, setFilterKhoi] = useState<string>('ALL');
+  const [filterBan, setFilterBan] = useState<string>('ALL');
   const [filterPhanLoai, setFilterPhanLoai] = useState<string>('ALL');
   const [filterKhuVuc, setFilterKhuVuc] = useState<string>('ALL');
   const [filterThoiHan, setFilterThoiHan] = useState<string>('ALL');
@@ -1521,6 +1758,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const [selectedRoom, setSelectedRoom] = useState<HealthCheckStandardItem | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [isDetailEditing, setIsDetailEditing] = useState(false);
+  const [detailKhoi, setDetailKhoi] = useState('');
+  const [detailBan, setDetailBan] = useState('');
   const [detailPhong, setDetailPhong] = useState('');
   const [detailPhanLoai, setDetailPhanLoai] = useState('Bếp ngoài');
   const [detailKhuVuc, setDetailKhuVuc] = useState('Bắc Ninh');
@@ -1534,8 +1773,11 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const [detailError, setDetailError] = useState('');
 
   const handleOpenDetailModal = (room: HealthCheckStandardItem) => {
+    const org = lookupOrgHierarchyForRoom(room.phong, DEFAULT_ORGANIZATION_HIERARCHY);
     setSelectedRoom(room);
     setIsDetailEditing(false);
+    setDetailKhoi(room.khoi || org.khoi || '');
+    setDetailBan(room.ban || org.ban || '');
     setDetailPhong(room.phong);
     setDetailPhanLoai(room.phanLoai);
     setDetailKhuVuc(room.khuVuc);
@@ -1570,6 +1812,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     try {
       const payload = {
         id: selectedRoom.id,
+        khoi: detailKhoi.trim(),
+        ban: detailBan.trim(),
         phong: cleanPhong,
         phanLoai: detailPhanLoai.trim() || 'Bếp ngoài',
         khuVuc: detailKhuVuc.trim() || 'Bắc Ninh',
@@ -1597,12 +1841,14 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
       if (res.ok && res.data?.success && Array.isArray(res.data.list)) {
         setStandards(res.data.list);
-        localStorage.setItem('hr_health_check_standards', JSON.stringify(res.data.list));
+        localStorage.setItem('hr_health_check_standards_v2', JSON.stringify(res.data.list));
         if (res.data.data) {
           setSelectedRoom(res.data.data);
         } else {
           setSelectedRoom({
             ...selectedRoom,
+            khoi: detailKhoi.trim(),
+            ban: detailBan.trim(),
             phong: cleanPhong,
             phanLoai: detailPhanLoai,
             khuVuc: detailKhuVuc,
@@ -1621,6 +1867,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     } catch (err) {
       const updatedItem: HealthCheckStandardItem = {
         ...selectedRoom,
+        khoi: detailKhoi.trim(),
+        ban: detailBan.trim(),
         phong: cleanPhong,
         phanLoai: detailPhanLoai,
         khuVuc: detailKhuVuc,
@@ -1633,7 +1881,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       };
       const nextList = standards.map((s) => (s.id === selectedRoom.id ? updatedItem : s));
       setStandards(nextList);
-      localStorage.setItem('hr_health_check_standards', JSON.stringify(nextList));
+      localStorage.setItem('hr_health_check_standards_v2', JSON.stringify(nextList));
       setSelectedRoom(updatedItem);
       setIsDetailEditing(false);
       showToast('success', `Đã lưu cập nhật tiêu chuẩn khám cho phòng "${cleanPhong}" thành công.`);
@@ -1645,6 +1893,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   // Add / Edit Form Modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<HealthCheckStandardItem | null>(null);
+  const [formKhoi, setFormKhoi] = useState('');
+  const [formBan, setFormBan] = useState('');
   const [formPhong, setFormPhong] = useState('');
   const [formPhanLoai, setFormPhanLoai] = useState('Bếp ngoài');
   const [formKhuVuc, setFormKhuVuc] = useState('Bắc Ninh');
@@ -1679,8 +1929,21 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
         data: HealthCheckStandardItem[];
       }>('/api/sheets/tieu-chuan-ksk');
       if (res.ok && res.data?.success && Array.isArray(res.data.data)) {
-        setStandards(res.data.data);
-        localStorage.setItem('hr_health_check_standards', JSON.stringify(res.data.data));
+        const cleanData = res.data.data.filter((item) => {
+          const p = (item.phong || '').toLowerCase();
+          return (
+            !p.startsWith('lưu ý') &&
+            !p.includes('giấy phép lao động') &&
+            !p.includes('hp dạ dày') &&
+            p !== 'ngoại khoa' &&
+            p !== 'ure' &&
+            !p.includes('thương hàn') &&
+            p !== 'morphin' &&
+            p !== 'lách'
+          );
+        }).map((item, idx) => ({ ...item, stt: idx + 1 }));
+        setStandards(cleanData);
+        localStorage.setItem('hr_health_check_standards_v2', JSON.stringify(cleanData));
       }
     } catch {
       // fallback to local state
@@ -1760,19 +2023,61 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     return Array.from(set);
   }, [standards]);
 
+  const availableKhois = useMemo(() => {
+    return DEFAULT_ORGANIZATION_HIERARCHY.map((k) => k.name);
+  }, [DEFAULT_ORGANIZATION_HIERARCHY]);
+
+  const availableBansForFilter = useMemo(() => {
+    if (filterKhoi === 'ALL') {
+      const bans = new Set<string>();
+      DEFAULT_ORGANIZATION_HIERARCHY.forEach((k) => {
+        k.bans?.forEach((b) => bans.add(b.name));
+      });
+      return Array.from(bans);
+    }
+    const foundKhoi = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === filterKhoi);
+    return foundKhoi ? foundKhoi.bans.map((b) => b.name) : [];
+  }, [DEFAULT_ORGANIZATION_HIERARCHY, filterKhoi]);
+
+  const availableRecBansForFilter = useMemo(() => {
+    if (recFilterKhoi === 'ALL') {
+      const bans = new Set<string>();
+      DEFAULT_ORGANIZATION_HIERARCHY.forEach((k) => {
+        k.bans?.forEach((b) => bans.add(b.name));
+      });
+      return Array.from(bans);
+    }
+    const foundKhoi = DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === recFilterKhoi);
+    return foundKhoi ? foundKhoi.bans.map((b) => b.name) : [];
+  }, [DEFAULT_ORGANIZATION_HIERARCHY, recFilterKhoi]);
+
   // Filtered rows
   const filteredStandards = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return standards.filter((item) => {
+      const org = lookupOrgHierarchyForRoom(item.phong, DEFAULT_ORGANIZATION_HIERARCHY);
+      const kName = item.khoi || org.khoi || '';
+      const bName = item.ban || org.ban || '';
+
       if (q) {
         const matchRoom = item.phong.toLowerCase().includes(q);
+        const matchKhoi = kName.toLowerCase().includes(q);
+        const matchBan = bName.toLowerCase().includes(q);
         const matchProvider = (item.nhaCungCap || '').toLowerCase().includes(q);
         const matchRegion = (item.khuVuc || '').toLowerCase().includes(q);
         const matchNote = (item.ghiChu || '').toLowerCase().includes(q);
         const matchPurpose = (item.mucDichKham || '').toLowerCase().includes(q);
-        if (!matchRoom && !matchProvider && !matchRegion && !matchNote && !matchPurpose) {
+        if (!matchRoom && !matchKhoi && !matchBan && !matchProvider && !matchRegion && !matchNote && !matchPurpose) {
           return false;
         }
+      }
+
+      if (filterKhoi !== 'ALL' && kName !== filterKhoi) {
+        return false;
+      }
+
+      if (filterBan !== 'ALL' && bName !== filterBan) {
+        return false;
       }
 
       if (filterPhanLoai !== 'ALL' && item.phanLoai !== filterPhanLoai) {
@@ -1807,20 +2112,83 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   }, [
     standards,
     searchQuery,
+    filterKhoi,
+    filterBan,
     filterPhanLoai,
     filterKhuVuc,
     filterThoiHan,
     filterTestItem,
+    DEFAULT_ORGANIZATION_HIERARCHY,
+  ]);
+
+  // Filtered rows for Recruitment Health Check Standards (15 items)
+  const filteredRecStandards = useMemo(() => {
+    const q = recStandardSearch.trim().toLowerCase();
+    return standards.filter((item) => {
+      const org = lookupOrgHierarchyForRoom(item.phong, DEFAULT_ORGANIZATION_HIERARCHY);
+      const kName = item.khoi || org.khoi || '';
+      const bName = item.ban || org.ban || '';
+
+      if (q) {
+        const matchRoom = item.phong.toLowerCase().includes(q);
+        const matchKhoi = kName.toLowerCase().includes(q);
+        const matchBan = bName.toLowerCase().includes(q);
+        const matchPhanLoai = (item.phanLoai || '').toLowerCase().includes(q);
+        const matchProvider = (item.nhaCungCap || '').toLowerCase().includes(q);
+        const matchRegion = (item.khuVuc || '').toLowerCase().includes(q);
+        const matchNote = (item.ghiChu || '').toLowerCase().includes(q);
+        const matchPurpose = (item.mucDichKham || '').toLowerCase().includes(q);
+        if (!matchRoom && !matchKhoi && !matchBan && !matchPhanLoai && !matchProvider && !matchRegion && !matchNote && !matchPurpose) {
+          return false;
+        }
+      }
+
+      if (recFilterKhoi !== 'ALL' && kName !== recFilterKhoi) {
+        return false;
+      }
+
+      if (recFilterBan !== 'ALL' && bName !== recFilterBan) {
+        return false;
+      }
+
+      if (recFilterPhanLoai !== 'ALL' && item.phanLoai !== recFilterPhanLoai) {
+        return false;
+      }
+
+      if (recFilterKhuVuc !== 'ALL' && item.khuVuc !== recFilterKhuVuc) {
+        return false;
+      }
+
+      if (recFilterTestItem !== 'ALL' && !item.items?.[recFilterTestItem]) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    standards,
+    recStandardSearch,
+    recFilterKhoi,
+    recFilterBan,
+    recFilterPhanLoai,
+    recFilterKhuVuc,
+    recFilterTestItem,
+    DEFAULT_ORGANIZATION_HIERARCHY,
   ]);
 
   // Format clipboard text for emailing clinics
   const formatStandardForClipboard = (room: HealthCheckStandardItem): string => {
+    const org = lookupOrgHierarchyForRoom(room.phong, DEFAULT_ORGANIZATION_HIERARCHY);
+    const kName = room.khoi || org.khoi || '—';
+    const bName = room.ban || org.ban || '—';
     const mandatoryCols = HEALTH_CHECK_ITEMS.filter((col) => room.items?.[col.key]);
     const lines = [
       `==========================================================`,
       `TIÊU CHUẨN KHÁM SỨC KHỎE ĐỊNH KỲ - ĐỊA ĐIỂM: ${room.phong.toUpperCase()}`,
       `==========================================================`,
       `• STT (Sheet "Tiêu chuẩn"): #${room.stt} (Hàng ${room.stt + 3})`,
+      `• Khối: ${kName}`,
+      `• Ban: ${bName}`,
       `• Phòng / Địa điểm (Cột C): ${room.phong}`,
       `• Phân loại (Cột E): ${room.phanLoai}`,
       `• Khu vực (Cột AE): ${room.khuVuc}`,
@@ -1856,6 +2224,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   // Open Add Modal
   const handleOpenAddModal = () => {
     setEditingRoom(null);
+    setFormKhoi('');
+    setFormBan('');
     setFormPhong('');
     setFormPhanLoai('Bếp ngoài');
     setFormKhuVuc('Bắc Ninh');
@@ -1870,7 +2240,10 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
   // Open Edit Modal
   const handleOpenEditModal = (room: HealthCheckStandardItem) => {
+    const org = lookupOrgHierarchyForRoom(room.phong, DEFAULT_ORGANIZATION_HIERARCHY);
     setEditingRoom(room);
+    setFormKhoi(room.khoi || org.khoi || '');
+    setFormBan(room.ban || org.ban || '');
     setFormPhong(room.phong);
     setFormPhanLoai(room.phanLoai);
     setFormKhuVuc(room.khuVuc);
@@ -1910,6 +2283,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     try {
       const payload = {
         id: editingRoom?.id,
+        khoi: formKhoi.trim(),
+        ban: formBan.trim(),
         phong: cleanPhong,
         phanLoai: formPhanLoai.trim() || 'Bếp ngoài',
         khuVuc: formKhuVuc.trim() || 'Bắc Ninh',
@@ -1937,7 +2312,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
       if (res.ok && res.data?.success && Array.isArray(res.data.list)) {
         setStandards(res.data.list);
-        localStorage.setItem('hr_health_check_standards', JSON.stringify(res.data.list));
+        localStorage.setItem('hr_health_check_standards_v2', JSON.stringify(res.data.list));
         if (selectedRoom && editingRoom && selectedRoom.id === editingRoom.id && res.data.data) {
           setSelectedRoom(res.data.data);
         }
@@ -1957,6 +2332,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       const fallbackItem: HealthCheckStandardItem = {
         id: editingRoom?.id || `KSK_${Date.now()}`,
         stt: nextStt,
+        khoi: formKhoi.trim(),
+        ban: formBan.trim(),
         phong: cleanPhong,
         phanLoai: formPhanLoai.trim() || 'Bếp ngoài',
         khuVuc: formKhuVuc.trim() || 'Bắc Ninh',
@@ -1971,7 +2348,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
         ? standards.map((s) => (s.id === editingRoom.id ? fallbackItem : s))
         : [...standards, fallbackItem];
       setStandards(nextList);
-      localStorage.setItem('hr_health_check_standards', JSON.stringify(nextList));
+      localStorage.setItem('hr_health_check_standards_v2', JSON.stringify(nextList));
       showToast(
         'success',
         `Đã lưu tiêu chuẩn khám cho phòng "${cleanPhong}" (${(err as Error).message ? 'Chế độ cục bộ' : 'Thành công'}).`
@@ -2000,13 +2377,13 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
       if (res.ok && res.data?.success && Array.isArray(res.data.list)) {
         setStandards(res.data.list);
-        localStorage.setItem('hr_health_check_standards', JSON.stringify(res.data.list));
+        localStorage.setItem('hr_health_check_standards_v2', JSON.stringify(res.data.list));
       } else {
         const updated = standards
           .filter((item) => item.id !== target.id)
           .map((item, idx) => ({ ...item, stt: idx + 1 }));
         setStandards(updated);
-        localStorage.setItem('hr_health_check_standards', JSON.stringify(updated));
+        localStorage.setItem('hr_health_check_standards_v2', JSON.stringify(updated));
       }
 
       if (selectedRoom?.id === target.id) {
@@ -2018,7 +2395,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
         .filter((item) => item.id !== target.id)
         .map((item, idx) => ({ ...item, stt: idx + 1 }));
       setStandards(updated);
-      localStorage.setItem('hr_health_check_standards', JSON.stringify(updated));
+      localStorage.setItem('hr_health_check_standards_v2', JSON.stringify(updated));
       showToast('success', `Đã xóa phòng "${target.phong}".`);
     }
   };
@@ -2027,7 +2404,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
   const handleResetDefaults = async () => {
     if (
       !window.confirm(
-        'Khôi phục lại danh sách 22 Phòng / Bếp tiêu chuẩn mặc định của Sheet "Tiêu chuẩn"?'
+        'Khôi phục lại toàn bộ danh sách Phòng / Bếp tiêu chuẩn gốc của Sheet "Tiêu chuẩn"?'
       )
     ) {
       return;
@@ -2042,11 +2419,11 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       });
       if (res.ok && res.data?.list) {
         setStandards(res.data.list);
-        localStorage.setItem('hr_health_check_standards', JSON.stringify(res.data.list));
+        localStorage.setItem('hr_health_check_standards_v2', JSON.stringify(res.data.list));
       } else {
         setStandards(DEFAULT_HEALTH_CHECK_STANDARDS);
         localStorage.setItem(
-          'hr_health_check_standards',
+          'hr_health_check_standards_v2',
           JSON.stringify(DEFAULT_HEALTH_CHECK_STANDARDS)
         );
       }
@@ -2080,6 +2457,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     const row3Headers = [
       'Cột A',
       'STT (Cột B)',
+      'Khối',
+      'Ban',
       'Phòng (Cột C)',
       'Thời hạn (Cột D)',
       'Phân loại (Cột E)',
@@ -2091,19 +2470,26 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       'Khu vực (Cột AE)',
     ];
 
-    const dataRows = filteredStandards.map((item) => [
-      '',
-      item.stt,
-      item.phong,
-      item.thoiHan,
-      item.phanLoai,
-      item.mucDichKham,
-      ...HEALTH_CHECK_ITEMS.map((col) => (item.items?.[col.key] ? 'X' : '')),
-      countMandatoryTests(item),
-      item.nhaCungCap,
-      item.ghiChu,
-      item.khuVuc,
-    ]);
+    const dataRows = filteredStandards.map((item) => {
+      const org = lookupOrgHierarchyForRoom(item.phong, DEFAULT_ORGANIZATION_HIERARCHY);
+      const k = item.khoi || org.khoi || '';
+      const b = item.ban || org.ban || '';
+      return [
+        '',
+        item.stt,
+        k,
+        b,
+        item.phong,
+        item.thoiHan,
+        item.phanLoai,
+        item.mucDichKham,
+        ...HEALTH_CHECK_ITEMS.map((col) => (item.items?.[col.key] ? 'X' : '')),
+        countMandatoryTests(item),
+        item.nhaCungCap,
+        item.ghiChu,
+        item.khuVuc,
+      ];
+    });
 
     const csvLines = [row1Title, row2Meta, row3Headers, ...dataRows].map((row) =>
       row.map(escapeCsv).join(',')
@@ -2126,6 +2512,85 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
     showToast(
       'success',
       `Đã xuất ${filteredStandards.length} địa điểm ra file Excel/CSV chuẩn cấu trúc Sheet "Tiêu chuẩn"!`
+    );
+  };
+
+  // Export CSV for Recruitment Health Check Standards (15 items)
+  const handleExportRecCsv = () => {
+    const escapeCsv = (val: string | number | undefined | null) => {
+      if (val === null || val === undefined) return '""';
+      const s = String(val).replace(/"/g, '""');
+      return `"${s}"`;
+    };
+
+    const row1Title = [
+      '',
+      'BẢNG TIÊU CHUẨN KHÁM SỨC KHỎE TUYỂN DỤNG (15 HẠNG MỤC)',
+      ...Array(23).fill(''),
+    ];
+    const row2Meta = [
+      '',
+      `Ngày xuất báo cáo: ${new Date().toLocaleString('vi-VN')} | Số điểm lọc: ${filteredRecStandards.length}`,
+      ...Array(23).fill(''),
+    ];
+
+    const row3Headers = [
+      'Cột A',
+      'STT',
+      'Khối',
+      'Ban',
+      'Nhóm Đối Tượng / Vị Trí',
+      'Phân loại',
+      'Mục đích khám',
+      ...RECRUITMENT_CHECK_ITEMS.map((col, idx) => `#${idx + 1} ${col.label}`),
+      'Tổng X',
+      'Nhà cung cấp',
+      'Lưu ý đặc biệt / Tiêu chuẩn',
+      'Khu vực',
+    ];
+
+    const dataRows = filteredRecStandards.map((item, idx) => {
+      const org = lookupOrgHierarchyForRoom(item.phong, DEFAULT_ORGANIZATION_HIERARCHY);
+      const k = item.khoi || org.khoi || '';
+      const b = item.ban || org.ban || '';
+      const totalRecX = RECRUITMENT_CHECK_ITEMS.filter((col) => Boolean(item.items?.[col.key])).length;
+      return [
+        '',
+        idx + 1,
+        k,
+        b,
+        item.phong,
+        item.phanLoai,
+        item.mucDichKham,
+        ...RECRUITMENT_CHECK_ITEMS.map((col) => (item.items?.[col.key] ? 'X' : '')),
+        totalRecX,
+        item.nhaCungCap,
+        item.ghiChu,
+        item.khuVuc,
+      ];
+    });
+
+    const csvLines = [row1Title, row2Meta, row3Headers, ...dataRows].map((row) =>
+      row.map(escapeCsv).join(',')
+    );
+
+    const csvContent = '\uFEFF' + csvLines.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute(
+      'download',
+      `Tieu_Chuan_KSK_Tuyen_Dung_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showToast(
+      'success',
+      `Đã xuất ${filteredRecStandards.length} vị trí tiêu chuẩn KSK tuyển dụng ra file Excel/CSV!`
     );
   };
 
@@ -2416,7 +2881,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                       </div>
                       <div className="text-left min-w-0">
                         <div className="text-xs font-bold text-slate-200 leading-snug">
-                          Upload ảnh CCCD/chọn tệp từ thiết bị (Tối đa 10MB)
+                          Chọn tệp từ thiết bị (Tối đa 10MB)
                         </div>
                       </div>
                     </div>
@@ -2501,7 +2966,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                   Bảng Thông Tin Đăng Ký Khám Sức Khỏe Tuyển Dụng ({draftRecruitmentRegs.length} hồ sơ chờ gửi)
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Điền tay hoặc chỉnh sửa trực tiếp từng ô bên dưới, sau đó nhấn <strong>&quot;Gửi đăng ký&quot;</strong> để đẩy danh sách sang Bước 2 - Theo dõi KSK tuyển dụng.
+                  Điền thông tin &quot;Phòng&quot;, ngày khám dự kiến, Công việc, Chức vụ
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -2719,19 +3184,355 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
       )}
 
       {healthSubTab === 'tuyen_dung_tieu_chuan' && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-6 animate-fade-in">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Tiêu Chuẩn Khám Sức Khỏe Tuyển Dụng - Bảng Ma Trận Chuẩn Y Tế</h3>
-              <p className="text-xs text-slate-500">Quy định danh mục khám tối thiểu bắt buộc đối với ứng viên tuyển dụng (đã loại bỏ 6 mục chuyên sâu: Khám phụ khoa, Siêu âm ổ bụng, Nhóm máu Rh/ABO, Tuyến vú, UT cổ tử cung).</p>
+        <div className="space-y-4 animate-fade-in">
+          {/* TOP HEADER BANNER (Medical / Corporate Deep Blue Theme) */}
+          <div className="rounded-2xl bg-gradient-to-r from-[#1e3c72] via-[#1a56b0] to-[#1a73e8] text-white p-5 sm:p-6 shadow-md border border-blue-800/40">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+              <div className="space-y-1">
+                <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white">
+                  HỆ THỐNG QUẢN LÝ TIÊU CHUẨN KHÁM SỨC KHỎE TUYỂN DỤNG
+                </h2>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleExportRecCsv}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/25 text-xs font-semibold transition cursor-pointer"
+                  title="Xuất dữ liệu tiêu chuẩn KSK tuyển dụng đang lọc ra file Excel/CSV"
+                >
+                  <Download className="w-4 h-4 text-teal-300" />
+                  <span>Xuất Excel / CSV</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsGasModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white/15 hover:bg-white/25 text-white border border-white/25 text-xs font-semibold transition cursor-pointer"
+                  title="Xem mã nguồn Google Apps Script (Code.gs) đồng bộ trực tiếp Google Sheet"
+                >
+                  <Code2 className="w-4 h-4 text-amber-300" />
+                  <span>Mã Apps Script (Sheet)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenAddModal}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-xs font-bold shadow-sm transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4 stroke-[2.5]" />
+                  <span>Thêm Phòng / Điểm Khám</span>
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {!isAdmin && (
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
-                  Chế độ chỉ xem (Không có quyền chỉnh sửa)
+          </div>
+
+          {/* 1. DASHBOARD & KPI OVERVIEW */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {/* Card 1: Total Rooms */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Tổng Điểm / Phòng Quản Lý
                 </span>
-              )}
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 text-teal-800 border border-teal-200 text-xs font-bold">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#1a73e8] flex items-center justify-center">
+                  <Building2 className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-slate-900 tabular-nums">
+                  {kpiStats.total}
+                </span>
+                <span className="text-xs text-slate-500">
+                  địa điểm (Đang hiển thị:{' '}
+                  <strong className="text-[#1a73e8] tabular-nums">
+                    {filteredRecStandards.length}
+                  </strong>
+                  )
+                </span>
+              </div>
+              <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                <span>Chuẩn 15 cột khám tuyển dụng</span>
+                <button
+                  type="button"
+                  onClick={handleResetDefaults}
+                  className="text-blue-600 hover:underline inline-flex items-center gap-1 cursor-pointer font-medium"
+                  title="Khôi phục dữ liệu mẫu"
+                >
+                  <RotateCcw className="w-3 h-3" /> Mặc định
+                </button>
+              </div>
+            </div>
+
+            {/* Card 2: Classification Distribution */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Phân Loại (Cột E)
+                </span>
+                <div className="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center">
+                  <ClipboardList className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRecFilterPhanLoai(
+                      recFilterPhanLoai === 'Bếp Samsung' ? 'ALL' : 'Bếp Samsung'
+                    )
+                  }
+                  className={`p-2 rounded-lg border text-left transition cursor-pointer ${
+                    recFilterPhanLoai === 'Bếp Samsung'
+                      ? 'bg-blue-50 border-blue-400 ring-1 ring-blue-400'
+                      : 'bg-slate-50/80 border-slate-200 hover:bg-blue-50/40'
+                  }`}
+                >
+                  <div className="text-[10px] font-semibold text-blue-700 truncate">
+                    Bếp Samsung
+                  </div>
+                  <div className="text-base font-bold text-slate-900 tabular-nums">
+                    {kpiStats.byClassification['Bếp Samsung'] || 0}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRecFilterPhanLoai(recFilterPhanLoai === 'Bếp ngoài' ? 'ALL' : 'Bếp ngoài')
+                  }
+                  className={`p-2 rounded-lg border text-left transition cursor-pointer ${
+                    recFilterPhanLoai === 'Bếp ngoài'
+                      ? 'bg-teal-50 border-teal-400 ring-1 ring-teal-400'
+                      : 'bg-slate-50/80 border-slate-200 hover:bg-teal-50/40'
+                  }`}
+                >
+                  <div className="text-[10px] font-semibold text-teal-700 truncate">
+                    Bếp ngoài
+                  </div>
+                  <div className="text-base font-bold text-slate-900 tabular-nums">
+                    {kpiStats.byClassification['Bếp ngoài'] || 0}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setRecFilterPhanLoai(recFilterPhanLoai === 'OFFICE' ? 'ALL' : 'OFFICE')
+                  }
+                  className={`p-2 rounded-lg border text-left transition cursor-pointer ${
+                    recFilterPhanLoai === 'OFFICE'
+                      ? 'bg-purple-50 border-purple-400 ring-1 ring-purple-400'
+                      : 'bg-slate-50/80 border-slate-200 hover:bg-purple-50/40'
+                  }`}
+                >
+                  <div className="text-[10px] font-semibold text-purple-700 truncate">
+                    OFFICE
+                  </div>
+                  <div className="text-base font-bold text-slate-900 tabular-nums">
+                    {kpiStats.byClassification['OFFICE'] || 0}
+                  </div>
+                </button>
+              </div>
+              <div className="mt-2 pt-1.5 text-[11px] text-slate-400">
+                Nhấn vào từng nhóm để lọc nhanh
+              </div>
+            </div>
+
+            {/* Card 3: Regional Distribution (Khu vực) */}
+            <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                  Phân Bổ Khu Vực (Cột AE)
+                </span>
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <MapPin className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5 max-h-[76px] overflow-y-auto pr-1">
+                {kpiStats.sortedRegions.map(([region, count]) => (
+                  <button
+                    key={region}
+                    type="button"
+                    onClick={() =>
+                      setRecFilterKhuVuc(recFilterKhuVuc === region ? 'ALL' : region)
+                    }
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium border transition cursor-pointer ${
+                      recFilterKhuVuc === region
+                        ? 'bg-[#1a73e8] text-white border-[#1a73e8]'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>{region}</span>
+                    <span
+                      className={`font-bold tabular-nums px-1 rounded text-[10px] ${
+                        recFilterKhuVuc === region
+                          ? 'bg-white/20 text-white'
+                          : 'bg-slate-200 text-slate-800'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 pt-1.5 text-[11px] text-slate-400">
+                {kpiStats.sortedRegions.length} tỉnh/thành phố vận hành
+              </div>
+            </div>
+          </div>
+
+          {/* 2. MULTI-CRITERIA SEARCH & REAL-TIME FILTER BAR */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-2.5">
+              {/* Global Search */}
+              <div className="lg:col-span-3 relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={recStandardSearch}
+                  onChange={(e) => setRecStandardSearch(e.target.value)}
+                  placeholder="Tìm theo Phòng, NCC, Khối, Ban..."
+                  className="w-full pl-9 pr-8 py-2 text-xs rounded-lg border border-slate-300 focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-500/20 outline-none"
+                />
+                {recStandardSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setRecStandardSearch('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Filter by Khối */}
+              <div className="lg:col-span-2">
+                <select
+                  value={recFilterKhoi}
+                  onChange={(e) => {
+                    setRecFilterKhoi(e.target.value);
+                    setRecFilterBan('ALL');
+                  }}
+                  aria-label="Lọc theo Khối"
+                  className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+                >
+                  <option value="ALL">Tất cả Khối</option>
+                  {availableKhois.map((k) => (
+                    <option key={k} value={k}>
+                      {k}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter by Ban */}
+              <div className="lg:col-span-2">
+                <select
+                  value={recFilterBan}
+                  onChange={(e) => setRecFilterBan(e.target.value)}
+                  aria-label="Lọc theo Ban"
+                  className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+                >
+                  <option value="ALL">Tất cả Ban</option>
+                  {availableRecBansForFilter.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter by Phân loại */}
+              <div className="lg:col-span-1">
+                <select
+                  value={recFilterPhanLoai}
+                  onChange={(e) => setRecFilterPhanLoai(e.target.value)}
+                  aria-label="Lọc theo Phân loại"
+                  className="w-full px-2 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+                >
+                  <option value="ALL">Phân loại</option>
+                  {availablePhanLoai.map((pl) => (
+                    <option key={pl} value={pl}>
+                      {pl}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter by Khu vực */}
+              <div className="lg:col-span-2">
+                <select
+                  value={recFilterKhuVuc}
+                  onChange={(e) => setRecFilterKhuVuc(e.target.value)}
+                  aria-label="Lọc theo Khu vực"
+                  className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+                >
+                  <option value="ALL">Khu vực</option>
+                  {availableRegions.map((kv) => (
+                    <option key={kv} value={kv}>
+                      {kv}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter by Specific Recruitment Medical Test Item (15 items) */}
+              <div className="lg:col-span-2">
+                <select
+                  value={recFilterTestItem}
+                  onChange={(e) =>
+                    setRecFilterTestItem(e.target.value as HealthCheckItemKey | 'ALL')
+                  }
+                  aria-label="Lọc theo Hạng mục xét nghiệm tuyển dụng"
+                  className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+                >
+                  <option value="ALL">Xét nghiệm (15 mục)</option>
+                  {RECRUITMENT_CHECK_ITEMS.map((col, idx) => (
+                    <option key={col.key} value={col.key}>
+                      [#{idx + 1}] {col.shortLabel}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Active filter bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                <span className="inline-flex items-center gap-1 font-medium text-slate-500">
+                  <Filter className="w-3.5 h-3.5 text-[#1a73e8]" />
+                  Kết quả lọc:{' '}
+                  <strong className="text-slate-900 tabular-nums">
+                    {filteredRecStandards.length}
+                  </strong>{' '}
+                  / {standards.length} phòng
+                </span>
+
+                {(recStandardSearch ||
+                  recFilterKhoi !== 'ALL' ||
+                  recFilterBan !== 'ALL' ||
+                  recFilterPhanLoai !== 'ALL' ||
+                  recFilterKhuVuc !== 'ALL' ||
+                  recFilterTestItem !== 'ALL') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecStandardSearch('');
+                      setRecFilterKhoi('ALL');
+                      setRecFilterBan('ALL');
+                      setRecFilterPhanLoai('ALL');
+                      setRecFilterKhuVuc('ALL');
+                      setRecFilterTestItem('ALL');
+                    }}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 text-[11px] font-semibold transition cursor-pointer"
+                  >
+                    <X className="w-3 h-3" /> Xóa bộ lọc
+                  </button>
+                )}
+              </div>
+
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-teal-50 text-teal-800 border border-teal-200 text-[11px] font-bold">
                 15 Hạng mục y khoa (Từ 1 đến 15 theo hàng ngang)
               </span>
             </div>
@@ -2762,11 +3563,14 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                     <th className="py-2.5 px-2.5 font-bold text-center border-r border-blue-800/60 w-12 sticky left-0 bg-[#1e3c72] z-30">
                       STT
                     </th>
-                    <th className="py-2.5 px-3 font-bold border-r border-blue-800/60 min-w-[140px] sticky left-12 bg-[#1e3c72] z-30">
-                      Nhóm Đối Tượng / Vị Trí
+                    <th className="py-2.5 px-2.5 font-bold border-r border-blue-800/60 min-w-[130px]">
+                      Khối
                     </th>
-                    <th className="py-2.5 px-2.5 font-bold border-r border-blue-800/60 min-w-[100px]">
-                      Thời hạn
+                    <th className="py-2.5 px-2.5 font-bold border-r border-blue-800/60 min-w-[130px]">
+                      Ban
+                    </th>
+                    <th className="py-2.5 px-3 font-bold border-r border-blue-800/60 min-w-[140px]">
+                      Nhóm Đối Tượng / Vị Trí
                     </th>
                     <th className="py-2.5 px-2.5 font-bold border-r border-blue-800/60 min-w-[100px]">
                       Phân loại
@@ -2792,73 +3596,160 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                     <th className="py-2.5 px-2 font-bold text-center border-r border-blue-800/60 min-w-[60px] bg-blue-950/50">
                       Tổng X
                     </th>
+                    <th className="py-2.5 px-2.5 font-bold border-r border-blue-800/60 min-w-[140px]">
+                      Nhà cung cấp
+                    </th>
                     <th className="py-2.5 px-3 font-bold border-r border-blue-800/60 min-w-[160px]">
                       Lưu ý đặc biệt / Tiêu chuẩn
+                    </th>
+                    <th className="py-2.5 px-2.5 font-bold border-r border-blue-800/60 min-w-[95px]">
+                      Khu vực
+                    </th>
+                    <th className="py-2.5 px-2.5 font-bold text-center min-w-[100px]">
+                      Thao tác
                     </th>
                   </tr>
                 </thead>
 
                 <tbody className="divide-y divide-slate-200">
-                  {standards.map((room, roomIdx) => {
-                    const mandatoryRecCount = RECRUITMENT_CHECK_ITEMS.filter((col) => room.items?.[col.key]).length;
-                    return (
-                      <tr
-                        key={room.id}
-                        className="hover:bg-blue-50/60 transition group"
-                      >
-                        <td className="py-2.5 px-2.5 text-center font-mono font-bold text-slate-500 border-r border-slate-100 sticky left-0 bg-white group-hover:bg-blue-50/90 z-10 tabular-nums">
-                          {roomIdx + 1}
-                        </td>
-                        <td className="py-2.5 px-3 font-bold text-slate-900 border-r border-slate-100 sticky left-12 bg-white group-hover:bg-blue-50/90 z-10">
-                          <span className="text-[#1e3c72]">
-                            {room.phong}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-2.5 text-slate-700 border-r border-slate-100">
-                          <span className="text-[11px] font-medium">{room.thoiHan}</span>
-                        </td>
-                        <td className="py-2.5 px-2.5 border-r border-slate-100 whitespace-nowrap">
-                          {renderPhanLoaiBadge(room.phanLoai)}
-                        </td>
-                        <td className="py-2.5 px-2 text-center border-r border-slate-100 whitespace-nowrap">
-                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-bold">
-                            {room.mucDichKham}
-                          </span>
-                        </td>
+                  {(() => {
+                    if (filteredRecStandards.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={26} className="py-8 text-center text-slate-400">
+                            Không tìm thấy tiêu chuẩn vị trí tuyển dụng phù hợp với bộ lọc hiện tại.
+                          </td>
+                        </tr>
+                      );
+                    }
 
-                        {/* 15 "X" cells */}
-                        {RECRUITMENT_CHECK_ITEMS.map((col) => {
-                          const checked = Boolean(room.items?.[col.key]);
-                          return (
-                            <td
-                              key={col.key}
-                              className={`py-2 px-1 text-center border-r border-slate-100 ${
-                                checked ? 'bg-teal-50/50' : ''
-                              }`}
-                            >
-                              {checked ? (
-                                <span
-                                  className="inline-flex items-center justify-center w-5 h-5 rounded bg-teal-600 text-white font-bold text-[11px] shadow-2xs"
-                                  title={`Bắt buộc ${col.label}`}
-                                >
-                                  X
+                    return filteredRecStandards.map((room, roomIdx) => {
+                      const org = lookupOrgHierarchyForRoom(room.phong, DEFAULT_ORGANIZATION_HIERARCHY);
+                      const kName = room.khoi || org.khoi || '—';
+                      const bName = room.ban || org.ban || '—';
+                      const mandatoryRecCount = RECRUITMENT_CHECK_ITEMS.filter((col) => room.items?.[col.key]).length;
+                      const providerName = room.nhaCungCap || lookupNhaCungCap(room.phong);
+                      return (
+                        <tr
+                          key={room.id}
+                          onClick={() => handleOpenDetailModal(room)}
+                          className="hover:bg-blue-50/60 transition cursor-pointer group"
+                        >
+                          <td className="py-2.5 px-2.5 text-center font-mono font-bold text-slate-500 border-r border-slate-100 sticky left-0 bg-white group-hover:bg-blue-50/90 z-10 tabular-nums">
+                            {roomIdx + 1}
+                          </td>
+                          <td className="py-2.5 px-2.5 text-slate-800 font-semibold border-r border-slate-100 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-bold">
+                              {kName}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-2.5 text-slate-800 font-medium border-r border-slate-100 whitespace-nowrap">
+                            <span className="text-slate-700 text-[11px]">
+                              {bName}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 font-bold text-slate-900 border-r border-slate-100">
+                            <span className="text-[#1e3c72]">
+                              {room.phong}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-2.5 border-r border-slate-100 whitespace-nowrap">
+                            {renderPhanLoaiBadge(room.phanLoai)}
+                          </td>
+                          <td className="py-2.5 px-2 text-center border-r border-slate-100 whitespace-nowrap">
+                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px] font-bold">
+                              {room.mucDichKham}
+                            </span>
+                          </td>
+
+                          {/* 15 "X" cells */}
+                          {RECRUITMENT_CHECK_ITEMS.map((col) => {
+                            const checked = Boolean(room.items?.[col.key]);
+                            return (
+                              <td
+                                key={col.key}
+                                className={`py-2 px-1 text-center border-r border-slate-100 ${
+                                  checked ? 'bg-teal-50/50' : ''
+                                }`}
+                              >
+                                {checked ? (
+                                  <span
+                                    className="inline-flex items-center justify-center w-5 h-5 rounded bg-teal-600 text-white font-bold text-[11px] shadow-2xs"
+                                    title={`Bắt buộc ${col.label}`}
+                                  >
+                                    X
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-300 text-[10px]">·</span>
+                                )}
+                              </td>
+                            );
+                          })}
+
+                          <td className="py-2.5 px-2 text-center font-mono font-bold text-teal-700 bg-teal-50/30 border-r border-slate-100 tabular-nums">
+                            {mandatoryRecCount}
+                          </td>
+                          <td className="py-2.5 px-2.5 text-slate-800 font-medium border-r border-slate-100 whitespace-nowrap">
+                            {providerName ? (
+                              <div className="flex items-center gap-1.5">
+                                <Hospital className="w-3.5 h-3.5 text-[#1a73e8] shrink-0" />
+                                <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/80 font-bold text-[11px]">
+                                  {providerName}
                                 </span>
-                              ) : (
-                                <span className="text-slate-300 text-[10px]">·</span>
-                              )}
-                            </td>
-                          );
-                        })}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 font-normal">—</span>
+                            )}
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-600 text-[11px] border-r border-slate-100">
+                            {room.ghiChu || 'Tiêu chuẩn KSK tuyển dụng theo quy định công ty.'}
+                          </td>
+                          <td className="py-2.5 px-2.5 text-slate-700 font-medium border-r border-slate-100 whitespace-nowrap">
+                            {room.khuVuc || '—'}
+                          </td>
 
-                        <td className="py-2.5 px-2 text-center font-mono font-bold text-teal-700 bg-teal-50/30 border-r border-slate-100 tabular-nums">
-                          {mandatoryRecCount}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-600 text-[11px]">
-                          {room.ghiChu || 'Tiêu chuẩn KSK tuyển dụng theo quy định công ty.'}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          {/* Actions */}
+                          <td
+                            className="py-2 px-2 text-center whitespace-nowrap"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => void handleCopyStandard(room)}
+                                className="p-1.5 rounded-lg text-slate-600 hover:text-[#1a73e8] hover:bg-blue-50 transition cursor-pointer"
+                                title="Sao chép tiêu chuẩn gửi Phòng khám"
+                              >
+                                {copiedId === room.id ? (
+                                  <Check className="w-3.5 h-3.5 text-teal-600" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditModal(room)}
+                                className="p-1.5 rounded-lg text-slate-600 hover:text-amber-600 hover:bg-amber-50 transition cursor-pointer"
+                                title="Chỉnh sửa tiêu chuẩn vị trí"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              {isAdmin && (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteTarget(room)}
+                                  className="p-1.5 rounded-lg text-slate-600 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                  title="Xóa vị trí khỏi danh sách"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -2973,11 +3864,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                     <option value="khong_dat">
                       KQ khám Không đạt ({countKhongDat})
                     </option>
-                    {trackingViewMode === 'declined' && (
-                      <option value="tat_ca_khong_nhan_viec">
-                        Tất cả Không nhận việc ({countAllDeclined})
-                      </option>
-                    )}
                     <option value="summary">
                       Xuất tổng hợp (3 Sheet)
                     </option>
@@ -3041,33 +3927,11 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
             );
           })()}
 
-          {/* Action Bar: Switcher & Save Button above table */}
+          {/* Action Bar: Title & Save Button above table */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-            <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-xl shrink-0">
-              <button
-                type="button"
-                onClick={() => setTrackingViewMode('active')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  trackingViewMode === 'active'
-                    ? 'bg-white text-slate-900 shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <CalendarCheck className="w-3.5 h-3.5 text-[#1a73e8]" />
-                <span>Theo dõi KSK ({activeTrackingRegs.length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setTrackingViewMode('declined')}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer whitespace-nowrap shrink-0 ${
-                  trackingViewMode === 'declined'
-                    ? 'bg-white text-rose-700 shadow-2xs'
-                    : 'text-slate-600 hover:text-rose-700'
-                }`}
-              >
-                <UserX className="w-3.5 h-3.5 text-rose-600" />
-                <span>Không nhận việc ({declinedTrackingRegs.length})</span>
-              </button>
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-100 rounded-xl text-xs font-bold text-slate-800 shrink-0">
+              <CalendarCheck className="w-3.5 h-3.5 text-[#1a73e8]" />
+              <span>Theo dõi KSK ({filteredTrackingRegs.length})</span>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -3094,8 +3958,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
             </div>
           </div>
 
-          {trackingViewMode === 'active' ? (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
@@ -3312,162 +4175,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                 </tbody>
               </table>
             </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900">
-                <span className="font-semibold">
-                  Danh sách quản lý riêng các ứng viên không nhận việc (không chuyển thành nhân viên mới).
-                </span>
-                <span className="font-mono font-bold tabular-nums">{filteredTrackingRegs.length} ứng viên</span>
-              </div>
-
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-rose-50/70 text-slate-700 font-bold border-b border-slate-200">
-                      <th className="p-3 text-center w-12">STT</th>
-                      <th className="p-3">Họ và tên ứng viên</th>
-                      <th className="p-3">Vị trí / Phòng</th>
-                      <th className="p-3">Nhà cung cấp khám</th>
-                      <th className="p-3 text-center">Ngày khám sức khỏe</th>
-                      <th className="p-3 text-center">Trạng thái KSK</th>
-                      <th className="p-3 min-w-[180px]">Ghi chú (Hạng mục khám không đạt)</th>
-                      <th className="p-3 min-w-[200px]">Lý do / Ghi chú không nhận việc</th>
-                      <th className="p-3 text-center">Khôi phục</th>
-                      <th className="p-3 text-center w-24">Xóa</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200">
-                    {filteredTrackingRegs.length === 0 ? (
-                      <tr>
-                        <td colSpan={10} className="p-8 text-center text-slate-500">
-                          Chưa có ứng viên nào trong danh sách Không nhận việc.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredTrackingRegs.map((reg, idx) => {
-                        const persistedReg = recruitmentRegs.find((item) => item.id === reg.id) || reg;
-                        const isRowLockedForUser = isStep2LockedForUser(persistedReg, isAdmin);
-                        return (
-                        <tr key={reg.id} className="hover:bg-slate-50 transition">
-                          <td className="p-3 text-center font-bold text-slate-600">{idx + 1}</td>
-                          <td className="p-3">
-                            <div className="font-bold text-slate-900">{reg.hoVaTen}</div>
-                            <div className="text-[10px] text-slate-400 font-mono">
-                              CCCD: {reg.soCCCD || '---'}{reg.soDienThoai ? ` • SĐT: ${reg.soDienThoai}` : ''}
-                            </div>
-                          </td>
-                          <td className="p-3">
-                            <div className="font-semibold text-blue-800">
-                              {reg.viTriViecLam || [reg.congViec, reg.chucVu].filter(Boolean).join(' - ') || '---'}
-                            </div>
-                            {reg.phong && (
-                              <div className="text-[10px] text-slate-500 font-medium">Phòng: {reg.phong}</div>
-                            )}
-                          </td>
-                          <td className="p-3 text-slate-700">{reg.nhaCungCap}</td>
-                          <td className="p-3 text-center font-mono font-bold text-slate-700">
-                            {reg.ngayKhamSucKhoe || reg.ngayHenKham}
-                          </td>
-                          <td className="p-3 text-center">
-                            {(() => {
-                              const currentStatus = reg.trangThai || 'Chờ khám';
-                              return (
-                                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                                  currentStatus.includes('Đạt') && !currentStatus.includes('không') ? 'bg-teal-100 text-teal-800' :
-                                  currentStatus.includes('không đạt') || currentStatus.includes('Không đạt') ? 'bg-rose-100 text-rose-800' :
-                                  currentStatus === 'Hoãn' ? 'bg-amber-100 text-amber-800' :
-                                  'bg-blue-100 text-blue-800'
-                                }`}>
-                                  {currentStatus}
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td className="p-2.5 text-slate-700 text-xs">
-                            {reg.ghiChuHangMucKhongDat || '---'}
-                          </td>
-                          <td className="p-2.5">
-                            <input
-                              type="text"
-                              value={reg.lyDoKhongNhanViec || ''}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setRecruitmentRegs((prev) =>
-                                  prev.map((r) => (r.id === reg.id ? { ...r, lyDoKhongNhanViec: val } : r))
-                                );
-                              }}
-                              placeholder="Nhập lý do không nhận việc..."
-                              className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 focus:border-[#1a73e8] bg-white text-xs text-slate-700 outline-none"
-                            />
-                          </td>
-                          <td className="p-3 text-center">
-                            <button
-                              type="button"
-                              disabled={isRowLockedForUser}
-                              onClick={() => handleMarkOfferDecision(reg, 'Chưa xử lý')}
-                              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border font-semibold text-[11px] transition whitespace-nowrap shrink-0 ${
-                                isRowLockedForUser
-                                  ? 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
-                                  : 'border-slate-300 bg-white hover:bg-slate-100 text-slate-700 cursor-pointer'
-                              }`}
-                              title={
-                                isRowLockedForUser
-                                  ? 'Đã chốt Bước 3 — vui lòng bỏ chọn tại Bước 3 hoặc liên hệ Admin để khôi phục'
-                                  : 'Chuyển lại về danh sách theo dõi KSK'
-                              }
-                            >
-                              {isRowLockedForUser ? <Lock className="w-3 h-3" /> : <RotateCcw className="w-3 h-3" />}
-                              <span>Khôi phục</span>
-                            </button>
-                          </td>
-                          <td className="p-3 text-center">
-                            {isRowLockedForUser ? (
-                              <button
-                                type="button"
-                                disabled
-                                className="p-1.5 rounded text-slate-300 cursor-not-allowed"
-                                title="Đã chốt Bước 3 — không thể xóa"
-                              >
-                                <Lock className="w-4 h-4" />
-                              </button>
-                            ) : confirmDeleteTrackingRegId === reg.id ? (
-                              <div className="inline-flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteTrackingReg(reg.id, reg.hoVaTen)}
-                                  className="px-2 py-1 rounded bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] cursor-pointer transition"
-                                >
-                                  Xác nhận xóa
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmDeleteTrackingRegId(null)}
-                                  className="px-2 py-1 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold text-[10px] cursor-pointer transition"
-                                >
-                                  Hủy
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteTrackingRegId(reg.id)}
-                                className="p-1.5 rounded hover:bg-rose-100 text-rose-600 cursor-pointer transition"
-                                title={`Xóa ứng viên ${reg.hoVaTen}`}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -3877,7 +4584,6 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
         <RecruitmentHealthDashboard
           records={recruitmentRegs}
           onNavigateToTrackingWithFilter={(status) => {
-            setTrackingViewMode('active');
             setTrackingStatusFilter(status);
             setHealthSubTab('tuyen_dung_theo_doi');
           }}
@@ -3886,75 +4592,179 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
       {healthSubTab === 'nha_cung_cap' && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-6 animate-fade-in">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 border-b border-slate-200 pb-4">
             <div>
-              <h3 className="text-base font-bold text-slate-900">Quản Lý Danh Sách Nhà Cung Cấp Khám Sức Khỏe (Bệnh Viện / Phòng Khám)</h3>
-              <p className="text-xs text-slate-500">Quản lý thời hạn hợp đồng, thông tin liên hệ phụ trách (tên, SĐT, email) và đối tác y tế.</p>
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-[#1a73e8]">
+                  <Hospital className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Quản Lý Danh Sách Nhà Cung Cấp Khám Sức Khỏe (Bệnh Viện / Phòng Khám)</h3>
+                  <p className="text-xs text-slate-500">Danh bạ 17 đối tác y tế, đầu mối liên hệ phụ trách công nợ, phương thức thanh toán và email tiếp nhận.</p>
+                </div>
+              </div>
             </div>
-            {isAdmin && (
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="relative w-full sm:w-64">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={providerSearchTerm}
+                  onChange={(e) => setProviderSearchTerm(e.target.value)}
+                  placeholder="Tìm viết tắt, tên NCC, khu vực..."
+                  className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl focus:border-[#1a73e8] focus:ring-1 focus:ring-[#1a73e8] outline-none bg-slate-50/50"
+                />
+              </div>
+
+              {isAdmin && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleResetDefaultProviders}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer transition border border-slate-300/60"
+                    title="Nạp lại danh mục 17 Nhà cung cấp chuẩn ban đầu"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Nạp lại 17 NCC chuẩn</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleOpenProviderModal()}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#1a73e8] hover:bg-blue-700 text-white text-xs font-bold shadow-sm cursor-pointer transition"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Thêm Nhà Cung Cấp Mới</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <div>
+              Hiển thị <span className="font-bold text-slate-800">{providers.filter(p => !providerSearchTerm.trim() || Object.values(p).some(v => typeof v === 'string' && v.toLowerCase().includes(providerSearchTerm.toLowerCase()))).length}</span> / <span className="font-bold text-slate-800">{providers.length}</span> nhà cung cấp y tế
+            </div>
+            {providerSearchTerm && (
               <button
                 type="button"
-                onClick={() => handleOpenProviderModal()}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1a73e8] hover:bg-blue-700 text-white text-xs font-bold shadow-sm cursor-pointer transition"
+                onClick={() => setProviderSearchTerm('')}
+                className="text-xs text-blue-600 hover:underline cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
-                <span>Thêm Nhà Cung Cấp Mới</span>
+                Xóa bộ lọc tìm kiếm
               </button>
             )}
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-xs">
             <table className="w-full border-collapse text-left text-xs">
               <thead className="bg-[#1e3c72] text-white">
                 <tr>
-                  <th className="py-3 px-3 font-bold text-center border-r border-blue-800/60 w-12">STT</th>
-                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[200px]">Tên Bệnh viện / Phòng khám</th>
-                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[120px]">Hạn hợp đồng</th>
-                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[140px]">Người phụ trách</th>
-                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[120px]">Số điện thoại</th>
-                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[160px]">Email</th>
-                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[180px]">Ghi chú</th>
-                  {isAdmin && <th className="py-3 px-3 font-bold text-center min-w-[90px]">Thao tác</th>}
+                  <th className="py-3 px-3 font-bold text-center border-r border-blue-800/60 w-12 shrink-0">STT</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[120px]">Tên viết tắt</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[270px]">TÊN NCC</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[150px]">KHU VỰC</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[140px]">THỜI GIAN THANH TOÁN</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[130px]">Ngày BĐ hợp đồng</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[130px]">Ngày KT hợp đồng</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[150px]">Người phụ trách</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[140px]">Số điện thoại</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[190px]">Email</th>
+                  <th className="py-3 px-3 font-bold border-r border-blue-800/60 min-w-[180px]">GHI CHÚ</th>
+                  {isAdmin && <th className="py-3 px-3 font-bold text-center min-w-[85px]">Thao tác</th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
-                {providers.length === 0 ? (
-                  <tr>
-                    <td colSpan={isAdmin ? 8 : 7} className="py-8 text-center text-slate-400">
-                      Chưa có nhà cung cấp nào được thêm.
-                    </td>
-                  </tr>
-                ) : (
-                  providers.map((prov, index) => (
-                    <tr key={prov.id} className="hover:bg-slate-50 transition">
-                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-500 border-r border-slate-100">
+              <tbody className="divide-y divide-slate-200 bg-white">
+                {(() => {
+                  const filtered = providers.filter(p =>
+                    !providerSearchTerm.trim() ||
+                    Object.values(p).some(v => typeof v === 'string' && v.toLowerCase().includes(providerSearchTerm.toLowerCase()))
+                  );
+                  if (filtered.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={isAdmin ? 12 : 11} className="py-8 text-center text-slate-400">
+                          {providerSearchTerm ? 'Không tìm thấy nhà cung cấp phù hợp với từ khóa.' : 'Chưa có nhà cung cấp nào được thêm.'}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return filtered.map((prov, index) => (
+                    <tr key={prov.id} className="hover:bg-blue-50/40 transition">
+                      <td className="py-3 px-3 text-center font-mono font-bold text-slate-500 border-r border-slate-100 bg-slate-50/50">
                         {index + 1}
                       </td>
-                      <td className="py-3 px-3 font-bold text-slate-900 border-r border-slate-100">
-                        <div className="flex items-center gap-2">
-                          <Hospital className="w-4 h-4 text-[#1a73e8] shrink-0" />
-                          <div>
-                            <div>{prov.tenNhaCungCap}</div>
-                            <div className="text-[11px] font-normal text-slate-500 mt-0.5">{prov.diaChi || '—'}</div>
-                          </div>
+                      <td className="py-3 px-3 font-bold border-r border-slate-100">
+                        <span className="inline-block px-2.5 py-1 rounded-md bg-blue-50 text-[#1a73e8] font-bold border border-blue-200/80">
+                          {prov.tenVietTat || '—'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 font-semibold text-slate-900 border-r border-slate-100">
+                        <div className="flex items-start gap-2">
+                          <Hospital className="w-4 h-4 text-[#1a73e8] shrink-0 mt-0.5" />
+                          <span className="leading-relaxed">{prov.tenNhaCungCap}</span>
                         </div>
                       </td>
                       <td className="py-3 px-3 border-r border-slate-100">
-                        <span className="px-2 py-0.5 rounded bg-amber-50 text-amber-900 font-mono text-[11px] font-semibold border border-amber-200">
-                          {prov.thoiHanHopDong || '—'}
+                        <div className="flex items-center gap-1.5 text-slate-700">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{prov.khuVuc || prov.diaChi || '—'}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 border-r border-slate-100">
+                        <span
+                          className={`inline-block px-2.5 py-1 rounded-md text-[11px] font-semibold border ${
+                            (prov.thoiGianThanhToan || '').includes('quý')
+                              ? 'bg-amber-50 text-amber-900 border-amber-300/80'
+                              : 'bg-emerald-50 text-emerald-900 border-emerald-300/80'
+                          }`}
+                        >
+                          {prov.thoiGianThanhToan || '—'}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-slate-700 font-medium border-r border-slate-100">
-                        {prov.nguoiPhuTrach || '—'}
+                      <td className="py-3 px-3 border-r border-slate-100 font-mono text-center text-slate-700">
+                        {prov.ngayBatDauHD ? (
+                          <span className="inline-block px-2 py-0.5 rounded bg-blue-50 text-blue-900 border border-blue-200 text-[11px] font-semibold">
+                            {prov.ngayBatDauHD}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
-                      <td className="py-3 px-3 font-mono text-slate-700 border-r border-slate-100">
-                        {prov.soDienThoai || '—'}
+                      <td className="py-3 px-3 border-r border-slate-100 font-mono text-center text-slate-700">
+                        {prov.ngayKetThucHD ? (
+                          <span className="inline-block px-2 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 text-[11px] font-semibold">
+                            {prov.ngayKetThucHD}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
-                      <td className="py-3 px-3 text-blue-600 border-r border-slate-100 truncate max-w-[180px]">
-                        {prov.email || '—'}
+                      <td className="py-3 px-3 border-r border-slate-100 font-medium text-slate-800">
+                        <div className="flex items-center gap-1.5">
+                          <UserCheck className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                          <span>{prov.nguoiPhuTrach || '—'}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 border-r border-slate-100 font-mono text-slate-700">
+                        <div className="flex items-center gap-1.5">
+                          <Phone className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>{prov.soDienThoai || '—'}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 border-r border-slate-100">
+                        <div className="flex items-start gap-1.5 text-blue-600">
+                          <Mail className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
+                          <span className="break-all" title={prov.email}>{prov.email || '—'}</span>
+                        </div>
                       </td>
                       <td className="py-3 px-3 text-slate-600 text-[11px] border-r border-slate-100">
-                        {prov.ghiChu || '—'}
+                        {prov.ghiChu ? (
+                          <span className="italic">{prov.ghiChu}</span>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
                       </td>
                       {isAdmin && (
                         <td className="py-3 px-3 text-center whitespace-nowrap">
@@ -3963,7 +4773,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                               type="button"
                               onClick={() => handleOpenProviderModal(prov)}
                               className="p-1.5 rounded-lg hover:bg-amber-50 text-slate-500 hover:text-amber-600 transition cursor-pointer"
-                              title="Chỉnh sửa"
+                              title="Chỉnh sửa thông tin NCC"
                             >
                               <Edit3 className="w-4 h-4" />
                             </button>
@@ -3971,7 +4781,7 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                               type="button"
                               onClick={() => handleDeleteProvider(prov.id)}
                               className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-500 hover:text-rose-600 transition cursor-pointer"
-                              title="Xóa"
+                              title="Xóa nhà cung cấp"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -3979,8 +4789,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                         </td>
                       )}
                     </tr>
-                  ))
-                )}
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
@@ -3993,22 +4803,10 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
           {/* TOP HEADER BANNER (Medical / Corporate Deep Blue Theme) */}
           <div className="rounded-2xl bg-gradient-to-r from-[#1e3c72] via-[#1a56b0] to-[#1a73e8] text-white p-5 sm:p-6 shadow-md border border-blue-800/40">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-teal-400/20 border border-teal-300/40 text-teal-100 text-[11px] font-bold tracking-wide uppercase">
-                <Stethoscope className="w-3.5 h-3.5 text-teal-300" />
-                Sheet: &ldquo;Tiêu chuẩn&rdquo; (Hàng 3 &bull; Cột B &rarr; AE)
-              </span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/15 text-white text-[11px] font-medium">
-                21 Hạng mục Y khoa (Cột G &rarr; AA)
-              </span>
-            </div>
+          <div className="space-y-1">
             <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white">
               HỆ THỐNG QUẢN LÝ TIÊU CHUẨN KHÁM SỨC KHỎE ĐỊNH KỲ
             </h2>
-            <p className="text-xs sm:text-sm text-blue-100 max-w-3xl">
-              Quản lý danh mục khám lâm sàng, xét nghiệm vi sinh, truyền nhiễm và độc chất bắt buộc (&ldquo;X&rdquo;) theo từng Bếp Samsung, Bếp ngoài, Văn phòng (OFFICE) và Khu vực địa lý.
-            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
@@ -4233,15 +5031,15 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
       {/* 2. MULTI-CRITERIA SEARCH & REAL-TIME FILTER BAR */}
       <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-2xs space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-12 gap-2.5">
           {/* Global Search */}
-          <div className="lg:col-span-4 relative">
+          <div className="lg:col-span-3 relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Tìm nhanh theo Phòng (SEV1, TCE...), Nhà cung cấp (Hữu Phúc, Âu Cơ...)"
+              placeholder="Tìm theo Phòng, NCC, Khối, Ban..."
               className="w-full pl-9 pr-8 py-2 text-xs rounded-lg border border-slate-300 focus:border-[#1a73e8] focus:ring-2 focus:ring-blue-500/20 outline-none"
             />
             {searchQuery && (
@@ -4255,15 +5053,52 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
             )}
           </div>
 
-          {/* Filter by Phân loại */}
+          {/* Filter by Khối */}
           <div className="lg:col-span-2">
+            <select
+              value={filterKhoi}
+              onChange={(e) => {
+                setFilterKhoi(e.target.value);
+                setFilterBan('ALL');
+              }}
+              aria-label="Lọc theo Khối"
+              className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+            >
+              <option value="ALL">Tất cả Khối</option>
+              {availableKhois.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter by Ban */}
+          <div className="lg:col-span-2">
+            <select
+              value={filterBan}
+              onChange={(e) => setFilterBan(e.target.value)}
+              aria-label="Lọc theo Ban"
+              className="w-full px-2.5 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+            >
+              <option value="ALL">Tất cả Ban</option>
+              {availableBansForFilter.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Filter by Phân loại */}
+          <div className="lg:col-span-1">
             <select
               value={filterPhanLoai}
               onChange={(e) => setFilterPhanLoai(e.target.value)}
               aria-label="Lọc theo Phân loại"
-              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+              className="w-full px-2 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
             >
-              <option value="ALL">Tất cả Phân loại (Cột E)</option>
+              <option value="ALL">Phân loại</option>
               {availablePhanLoai.map((pl) => (
                 <option key={pl} value={pl}>
                   {pl}
@@ -4273,14 +5108,14 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
           </div>
 
           {/* Filter by Khu vực */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-1">
             <select
               value={filterKhuVuc}
               onChange={(e) => setFilterKhuVuc(e.target.value)}
               aria-label="Lọc theo Khu vực"
-              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+              className="w-full px-2 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
             >
-              <option value="ALL">Tất cả Khu vực (Cột AE)</option>
+              <option value="ALL">Khu vực</option>
               {availableRegions.map((kv) => (
                 <option key={kv} value={kv}>
                   {kv}
@@ -4290,14 +5125,14 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
           </div>
 
           {/* Filter by Thời hạn */}
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-1">
             <select
               value={filterThoiHan}
               onChange={(e) => setFilterThoiHan(e.target.value)}
               aria-label="Lọc theo Thời hạn"
-              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+              className="w-full px-2 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
             >
-              <option value="ALL">Tất cả Thời hạn (Cột D)</option>
+              <option value="ALL">Thời hạn</option>
               {THOI_HAN_OPTIONS.map((th) => (
                 <option key={th} value={th}>
                   {th}
@@ -4314,9 +5149,9 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                 setFilterTestItem(e.target.value as HealthCheckItemKey | 'ALL')
               }
               aria-label="Lọc theo Hạng mục xét nghiệm"
-              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
+              className="w-full px-2 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-700 font-medium focus:border-[#1a73e8] outline-none"
             >
-              <option value="ALL">Lọc theo Xét nghiệm (21 mục)</option>
+              <option value="ALL">Xét nghiệm (21 mục)</option>
               {HEALTH_CHECK_ITEMS.map((col) => (
                 <option key={col.key} value={col.key}>
                   [{col.colLetter}] {col.shortLabel}
@@ -4339,6 +5174,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
             </span>
 
             {(searchQuery ||
+              filterKhoi !== 'ALL' ||
+              filterBan !== 'ALL' ||
               filterPhanLoai !== 'ALL' ||
               filterKhuVuc !== 'ALL' ||
               filterThoiHan !== 'ALL' ||
@@ -4347,6 +5184,8 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                 type="button"
                 onClick={() => {
                   setSearchQuery('');
+                  setFilterKhoi('ALL');
+                  setFilterBan('ALL');
                   setFilterPhanLoai('ALL');
                   setFilterKhuVuc('ALL');
                   setFilterThoiHan('ALL');
@@ -4451,7 +5290,13 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                   <th className="py-2.5 px-2.5 font-bold text-center border-r border-blue-800/60 w-12 sticky left-0 bg-[#1e3c72] z-30">
                     STT
                   </th>
-                  <th className="py-2.5 px-3 font-bold border-r border-blue-800/60 min-w-[130px] sticky left-12 bg-[#1e3c72] z-30">
+                  <th className="py-2.5 px-2.5 font-bold border-r border-blue-800/60 min-w-[130px]">
+                    Khối
+                  </th>
+                  <th className="py-2.5 px-2.5 font-bold border-r border-blue-800/60 min-w-[130px]">
+                    Ban
+                  </th>
+                  <th className="py-2.5 px-3 font-bold border-r border-blue-800/60 min-w-[130px]">
                     Phòng / Điểm
                   </th>
                   <th className="py-2.5 px-2.5 font-bold border-r border-blue-800/60 min-w-[110px]">
@@ -4499,6 +5344,9 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
 
               <tbody className="divide-y divide-slate-200">
                 {filteredStandards.map((room) => {
+                  const org = lookupOrgHierarchyForRoom(room.phong, DEFAULT_ORGANIZATION_HIERARCHY);
+                  const kName = room.khoi || org.khoi || '—';
+                  const bName = room.ban || org.ban || '—';
                   const mandatoryCount = countMandatoryTests(room);
                   return (
                     <tr
@@ -4509,7 +5357,17 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                       <td className="py-2.5 px-2.5 text-center font-mono font-bold text-slate-500 border-r border-slate-100 sticky left-0 bg-white group-hover:bg-blue-50/90 z-10 tabular-nums">
                         {room.stt}
                       </td>
-                      <td className="py-2.5 px-3 font-bold text-slate-900 border-r border-slate-100 sticky left-12 bg-white group-hover:bg-blue-50/90 z-10">
+                      <td className="py-2.5 px-2.5 text-slate-800 font-semibold border-r border-slate-100 whitespace-nowrap">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-bold">
+                          {kName}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-2.5 text-slate-800 font-medium border-r border-slate-100 whitespace-nowrap">
+                        <span className="text-slate-700 text-[11px]">
+                          {bName}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 font-bold text-slate-900 border-r border-slate-100">
                         <div className="flex items-center justify-between gap-1">
                           <span className="text-[#1e3c72] group-hover:underline">
                             {room.phong}
@@ -4797,9 +5655,44 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                     <input
                       type="text"
                       value={detailPhong}
-                      onChange={(e) => setDetailPhong(e.target.value)}
+                      onChange={(e) => {
+                        const newP = e.target.value;
+                        setDetailPhong(newP);
+                        const org = lookupOrgHierarchyForRoom(newP, DEFAULT_ORGANIZATION_HIERARCHY);
+                        if (org.khoi) setDetailKhoi(org.khoi);
+                        if (org.ban) setDetailBan(org.ban);
+                      }}
                       className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:border-[#1a73e8] outline-none font-semibold bg-white"
                     />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Khối</label>
+                    <select
+                      value={detailKhoi}
+                      onChange={(e) => {
+                        setDetailKhoi(e.target.value);
+                        setDetailBan('');
+                      }}
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white outline-none font-medium"
+                    >
+                      <option value="">-- Chọn Khối --</option>
+                      {availableKhois.map((k) => (
+                        <option key={k} value={k}>{k}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Ban</label>
+                    <select
+                      value={detailBan}
+                      onChange={(e) => setDetailBan(e.target.value)}
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white outline-none font-medium"
+                    >
+                      <option value="">-- Chọn Ban --</option>
+                      {(DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === detailKhoi)?.bans || []).map((b) => (
+                        <option key={b.id} value={b.name}>{b.name}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Phân loại</label>
@@ -4885,15 +5778,27 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                 </div>
               ) : (
                 /* Metadata Summary Grid (Read-only) */
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
                   <div>
-                    <div className="text-slate-400 font-medium">Thời hạn khám (Cột D)</div>
+                    <div className="text-slate-400 font-medium">Khối</div>
+                    <div className="font-bold text-slate-900 mt-0.5">
+                      {selectedRoom.khoi || lookupOrgHierarchyForRoom(selectedRoom.phong, DEFAULT_ORGANIZATION_HIERARCHY).khoi || '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 font-medium">Ban</div>
+                    <div className="font-bold text-slate-900 mt-0.5">
+                      {selectedRoom.ban || lookupOrgHierarchyForRoom(selectedRoom.phong, DEFAULT_ORGANIZATION_HIERARCHY).ban || '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 font-medium">Thời hạn (Cột D)</div>
                     <div className="font-bold text-slate-900 mt-0.5">
                       {selectedRoom.thoiHan}
                     </div>
                   </div>
                   <div>
-                    <div className="text-slate-400 font-medium">Mục đích khám (Cột F)</div>
+                    <div className="text-slate-400 font-medium">Mục đích (Cột F)</div>
                     <div className="font-bold text-slate-900 mt-0.5">
                       {selectedRoom.mucDichKham}
                     </div>
@@ -4905,9 +5810,9 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                     </div>
                   </div>
                   <div>
-                    <div className="text-slate-400 font-medium">Tổng hạng mục bắt buộc</div>
+                    <div className="text-slate-400 font-medium">Tổng bắt buộc</div>
                     <div className="font-bold text-teal-700 mt-0.5 tabular-nums">
-                      {countMandatoryTests(selectedRoom)} / 21 danh mục (&ldquo;X&rdquo;)
+                      {countMandatoryTests(selectedRoom)} / 21 mục (&ldquo;X&rdquo;)
                     </div>
                   </div>
                 </div>
@@ -5137,10 +6042,47 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
                     type="text"
                     required
                     value={formPhong}
-                    onChange={(e) => setFormPhong(e.target.value)}
+                    onChange={(e) => {
+                      const newP = e.target.value;
+                      setFormPhong(newP);
+                      const org = lookupOrgHierarchyForRoom(newP, DEFAULT_ORGANIZATION_HIERARCHY);
+                      if (org.khoi) setFormKhoi(org.khoi);
+                      if (org.ban) setFormBan(org.ban);
+                    }}
                     placeholder="VD: SEV1, TCE, OFFICE, REGENT2..."
                     className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 focus:border-[#1a73e8] outline-none font-semibold"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Khối</label>
+                  <select
+                    value={formKhoi}
+                    onChange={(e) => {
+                      setFormKhoi(e.target.value);
+                      setFormBan('');
+                    }}
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white focus:border-[#1a73e8] outline-none font-medium"
+                  >
+                    <option value="">-- Chọn Khối --</option>
+                    {availableKhois.map((k) => (
+                      <option key={k} value={k}>{k}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Ban</label>
+                  <select
+                    value={formBan}
+                    onChange={(e) => setFormBan(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white focus:border-[#1a73e8] outline-none font-medium"
+                  >
+                    <option value="">-- Chọn Ban --</option>
+                    {(DEFAULT_ORGANIZATION_HIERARCHY.find((k) => k.name === formKhoi)?.bans || []).map((b) => (
+                      <option key={b.id} value={b.name}>{b.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -5553,46 +6495,143 @@ export const HealthCheckStandardsManager: React.FC<HealthCheckStandardsManagerPr
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto" onClick={() => setIsProviderModalOpen(false)}>
           <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <h3 className="text-base font-bold text-slate-900">{editingProvider ? 'Cập Nhật Nhà Cung Cấp' : 'Thêm Nhà Cung Cấp Mới'}</h3>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#1a73e8] flex items-center justify-center">
+                  <Hospital className="w-4 h-4" />
+                </div>
+                <h3 className="text-base font-bold text-slate-900">{editingProvider ? 'Cập Nhật Nhà Cung Cấp' : 'Thêm Nhà Cung Cấp Mới'}</h3>
+              </div>
               <button type="button" onClick={() => setIsProviderModalOpen(false)} className="p-1 rounded hover:bg-slate-100 text-slate-500 cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleSaveProvider} className="space-y-4 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 mb-1">Tên Bệnh viện / Phòng khám *</label>
-                <input type="text" required value={provTen} onChange={(e) => setProvTen(e.target.value)} placeholder="VD: Phòng khám Đa khoa Hữu Phúc" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none font-semibold" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1">
+                  <label className="block font-bold text-slate-700 mb-1">Tên viết tắt *</label>
+                  <input
+                    type="text"
+                    required
+                    value={provTenVietTat}
+                    onChange={(e) => setProvTenVietTat(e.target.value)}
+                    placeholder="VD: Hữu Phúc"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none font-bold text-[#1a73e8]"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block font-bold text-slate-700 mb-1">TÊN NCC (Tên pháp nhân / Đầy đủ) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={provTen}
+                    onChange={(e) => setProvTen(e.target.value)}
+                    placeholder="VD: CÔNG TY TNHH Y DƯỢC HỮU PHÚC - PKĐK HỮU PHÚC"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none font-semibold"
+                  />
+                </div>
               </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Địa chỉ</label>
-                  <input type="text" value={provDiaChi} onChange={(e) => setProvDiaChi(e.target.value)} placeholder="VD: KCN Yên Phong, Bắc Ninh" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none" />
+                  <label className="block font-bold text-slate-700 mb-1">Khu vực</label>
+                  <input
+                    type="text"
+                    value={provKhuVuc}
+                    onChange={(e) => setProvKhuVuc(e.target.value)}
+                    placeholder="VD: Tam Đa- Bắc Ninh"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none"
+                  />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Thời hạn hợp đồng</label>
-                  <input type="text" value={provThoiHan} onChange={(e) => setProvThoiHan(e.target.value)} placeholder="VD: 31/12/2026" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none font-mono" />
+                  <label className="block font-bold text-slate-700 mb-1">Thời gian thanh toán</label>
+                  <input
+                    type="text"
+                    value={provThoiGianThanhToan}
+                    onChange={(e) => setProvThoiGianThanhToan(e.target.value)}
+                    placeholder="VD: Hàng tháng hoặc Theo quý 3 tháng/lần"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none font-medium"
+                  />
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Người phụ trách</label>
-                  <input type="text" value={provPhuTrach} onChange={(e) => setProvPhuTrach(e.target.value)} placeholder="VD: Bs. Hùng" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none" />
+                  <label className="block font-bold text-slate-700 mb-1">Thời hạn HĐ (Ngày bắt đầu)</label>
+                  <input
+                    type="date"
+                    value={provNgayBatDauHD}
+                    onChange={(e) => setProvNgayBatDauHD(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none font-mono"
+                  />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Số điện thoại</label>
-                  <input type="text" value={provDienThoai} onChange={(e) => setProvDienThoai(e.target.value)} placeholder="VD: 0912345678" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none font-mono" />
+                  <label className="block font-bold text-slate-700 mb-1">Thời hạn HĐ (Ngày kết thúc)</label>
+                  <input
+                    type="date"
+                    value={provNgayKetThucHD}
+                    onChange={(e) => setProvNgayKetThucHD(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Tên người phụ trách</label>
+                  <input
+                    type="text"
+                    value={provNguoiPhuTrach}
+                    onChange={(e) => setProvNguoiPhuTrach(e.target.value)}
+                    placeholder="VD: Ms Nguyên"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none font-medium"
+                  />
                 </div>
                 <div>
-                  <label className="block font-bold text-slate-700 mb-1">Email</label>
-                  <input type="email" value={provEmail} onChange={(e) => setProvEmail(e.target.value)} placeholder="VD: contact@clinic.vn" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none" />
+                  <label className="block font-bold text-slate-700 mb-1">Số điện thoại người phụ trách</label>
+                  <input
+                    type="text"
+                    value={provSoDienThoai}
+                    onChange={(e) => setProvSoDienThoai(e.target.value)}
+                    placeholder="VD: 0336.172.192"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none font-mono"
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Ghi chú</label>
-                <textarea rows={2} value={provGhiChu} onChange={(e) => setProvGhiChu(e.target.value)} placeholder="VD: Đối tác chiến lược tại khu vực..." className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none" />
+                <label className="block font-bold text-slate-700 mb-1">Email liên hệ / nhận hồ sơ</label>
+                <input
+                  type="text"
+                  value={provEmail}
+                  onChange={(e) => setProvEmail(e.target.value)}
+                  placeholder="VD: suckhoe6666@gmail.com"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none"
+                />
               </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Ghi chú</label>
+                <textarea
+                  rows={2}
+                  value={provGhiChu}
+                  onChange={(e) => setProvGhiChu(e.target.value)}
+                  placeholder="VD: Lịch thanh toán có thể thay đổi theo số lượng khám hàng tháng..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none"
+                />
+              </div>
+
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsProviderModalOpen(false)} className="px-4 py-2 border border-slate-300 rounded-xl bg-white hover:bg-slate-100 font-semibold text-slate-700 cursor-pointer">Hủy</button>
-                <button type="submit" className="px-5 py-2 bg-[#1a73e8] hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs cursor-pointer">Lưu Nhà Cung Cấp</button>
+                <button
+                  type="button"
+                  onClick={() => setIsProviderModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-xl bg-white hover:bg-slate-100 font-semibold text-slate-700 cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-[#1a73e8] hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs cursor-pointer"
+                >
+                  {editingProvider ? 'Cập Nhật Thay Đổi' : 'Thêm Nhà Cung Cấp'}
+                </button>
               </div>
             </form>
           </div>
